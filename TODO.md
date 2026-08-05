@@ -113,51 +113,48 @@ tiada Supabase Auth (`auth.uid()`) atau RLS automatik.
     - [x] Gin jalan `debug` mode → set `GIN_MODE=release` (env var Railway, tiada perlu ubah kod — Gin baca env ni native)
     - [x] Gin "trust all proxies" (client IP boleh spoof) → `router.SetTrustedProxies(...)`. **Percubaan pertama guna RFC1918 standard (10.0.0.0/8 dll) SALAH** — log lepas deploy tunjuk `ClientIP()` still papar IP dalaman Railway (`100.64.0.2`), bukan IP awam sebenar. Punca: Railway punya private network guna **CGNAT range `100.64.0.0/10`**, bukan RFC1918. Fix kedua (tambah `100.64.0.0/10`) verified betul — log lepas tu papar IP awam sebenar (`79.127.228.17`)
 - [ ] Deploy production environment (sekarang staging je live)
-- [ ] CI: build + test Go, lint (`golangci-lint`)
-- [ ] Structured logging (request id, error tracking)
-- [ ] Basic rate limiting untuk `/auth/login`, `/auth/register`
-- [ ] Verify domain `hafizbahtiar.com` kat Resend — `EMAIL_FROM` staging dah set ke `hafiz@hafizbahtiar.com` tapi belum confirm domain verified (kalau belum, Resend akan reject/bounce hantar email)
-- [x] **Prasyarat Stage 8 separuh siap**: `PUBLIC_BASE_URL` staging dah betul (`https://marc-go-staging.up.railway.app`) — tinggal tunggu portfolio punya `/verify-email` page + tukar link generation ke situ (Stage 8 penuh)
+- [x] CI: build + test Go, lint (`golangci-lint`) — `.github/workflows/ci.yml` (2 job: `build-test`, `lint`), `.golangci.yml` (v2 config, exclude errcheck untuk `defer Close()/Rollback()`). **Percubaan pertama gagal**: `golangci-lint-action@v6` tak support config schema v2 (perlu v7+) — dibetulkan, verified run pass on GitHub (`build-test` + `lint` dua-dua `success`) untuk setiap commit lepas ni
+- [x] Structured logging (request id, error tracking) — `internal/http/middleware/logging.go`, `slog` JSON handler (stdout), satu baris log per request (`request_id`, `method`, `path`, `status`, `latency`, `client_ip`), `request_id` turut dihantar balik via header `X-Request-Id`. Gantikan `gin.Default()` punya plain-text logger. Verified: JSON log line betul-betul structured, header wujud
+- [x] Basic rate limiting untuk `/auth/login`, `/auth/register` — `internal/http/middleware/ratelimit.go`, token-bucket per-IP (`golang.org/x/time/rate`, 5/min, burst 5), cleanup goroutine buang entry lama. Route lain (`/healthz`, `/me`, dsb) tak terjejas. Verified: 5 request lulus, request ke-6/7 dapat 429, refill semula lepas beberapa saat
+- [x] Domain `hafizbahtiar.com` verified kat Resend — `EMAIL_FROM=hafiz@hafizbahtiar.com` staging, confirmed hantar email berjaya (204, ~server-to-server round trip, bukan reject)
+- [x] **Prasyarat Stage 8 siap**: `PUBLIC_BASE_URL` staging betul, `EMAIL_VERIFY_URL` staging dah set — Stage 8 siap sepenuhnya (bawah)
 
-## Stage 8 — Email verification landing page di `hafizbahtiar.com` (cross-repo)
-Keputusan: link email verification patut buka page branded di portfolio
-(`hafizbahtiar.com`) — bukan HTML mentah yang Go backend render sendiri
-(`internal/http/handlers/auth.go` punya `ConfirmEmailVerificationLink` /
-`verificationHTMLPage`) — sebab `EMAIL_FROM` akan tukar ke
-`hafiz@hafizbahtiar.com`, jadi elok link pun consistent dengan domain tu.
+## Stage 8 — Email verification landing page di `hafizbahtiar.com` (cross-repo) ✅ (done)
+Keputusan: link email verification buka page branded di portfolio
+(`hafizbahtiar.com/verify-email`) — bukan HTML mentah yang Go backend
+render sendiri.
 
-**Bergantung pada Stage 7 siap dulu** — page kat portfolio perlu URL awam
-sebenar Go backend untuk di-hit server-side; tak boleh wire betul-betul
-selagi backend masih localhost-only.
-
-- [ ] Resend: verify domain `hafizbahtiar.com` (Resend dashboard →
-  Domains → tambah DNS record SPF/DKIM) — perlu sebelum `EMAIL_FROM` boleh
-  guna `hafiz@hafizbahtiar.com` (`onboarding@resend.dev` yang dipakai
-  sekarang tak perlukan verification, tapi terhad untuk testing sahaja)
-- [ ] marc_go: `RequestEmailVerification` (auth.go) — tukar `EMAIL_FROM` di
-  `.env`/Railway env ke alamat domain sendiri lepas verified
-- [ ] marc_go: tukar link yang dibina dalam `RequestEmailVerification`
-  daripada `{PUBLIC_BASE_URL}/auth/verify-email/confirm?token=...` (Go
-  render HTML sendiri) kepada `{PUBLIC_BASE_URL}/verify-email?token=...`
-  (arah ke portfolio, bukan Go backend terus)
-- [ ] portfolio-astro (`/Users/hafiz/Developments/portfolio-astro/src`):
-  page baru `src/pages/verify-email.astro` — **server-side** (SSR, sebab
-  project ni `output: 'server'` kat Cloudflare Workers), bukan
-  client-side `fetch`, supaya elak kena ubah CSP `connect-src` (yang
-  sekarang whitelist `api.hafizbahtiar.com` je, bukan Go backend punya URL)
-  - baca `?token=` dari URL
-  - server-side call `POST {MARC_API_URL}/auth/verify-email/confirm` dengan
-    `{token}` (endpoint JSON sedia wujud, tak perlu ubah Go — cuma
-    `ConfirmEmailVerificationLink`/GET jadi tak dipakai lepas ni, boleh
-    buang atau kekal sebagai fallback dev)
-  - render UI berjaya/gagal ikut design system portfolio (Tailwind +
-    komponen sedia ada, rujuk `components.json`)
-  - env baru portfolio perlukan: `MARC_API_URL` (server-side sahaja,
-    bukan `PUBLIC_*`, sebab dipanggil dari Worker bukan browser — tak
-    perlu masuk `connect-src` CSP)
-- [ ] Uji end-to-end: daftar di app Flutter → klik "Sahkan" → email dari
-  Resend (`hafiz@hafizbahtiar.com`) → klik link → page portfolio → status
-  tersahkan, `profiles.email_verified = true`
+- [x] Resend: domain `hafizbahtiar.com` verified — `EMAIL_FROM` staging
+  dah guna `hafiz@hafizbahtiar.com`, confirmed hantar email berjaya
+- [x] marc_go: config baru `EMAIL_VERIFY_URL` (`internal/config/config.go`)
+  — kalau diisi, `RequestEmailVerification` (auth.go) bina link
+  `{EMAIL_VERIFY_URL}?token=...` (arah portfolio); kalau kosong, fallback
+  ke Go punya HTML page sendiri (`{PUBLIC_BASE_URL}/auth/verify-email/confirm`)
+  — **backward compatible**, dev/persekitaran tanpa portfolio config tetap
+  jalan. Verified dua-dua path (dengan & tanpa env) lokal
+- [x] portfolio-astro: `src/pages/verify-email.astro` (BARU) — SSR (server-
+  side `fetch` dalam frontmatter Astro, bukan client-side — CSP
+  `connect-src` tak perlu diubah langsung sebab call server-to-server dalam
+  Cloudflare Worker tak lalu CSP). Baca `?token=`, `POST` ke
+  `{MARC_API_URL}/auth/verify-email/confirm`, render success/fail card
+  ikut design system sedia ada (`CoreLayout` + `Background`, style match
+  `login.astro`). `MARC_API_URL` env baru — sengaja bukan `PUBLIC_*`
+  (server-only, tak pernah masuk client bundle)
+- [x] **Verified end-to-end penuh** (bukan andaian):
+  - `npm run build` (portfolio) — TypeScript check + Vite bundle bersih
+  - Test lokal: `astro dev` + Go backend lokal (token sebenar dari log) →
+    hit `/verify-email?token=...` → page papar "Email disahkan", DB
+    `profiles.email_verified` bertukar `true` — verified terus query DB
+  - Failure path: token invalid → "Pengesahan gagal"; tiada token →
+    "Pautan tidak sah" — dua-dua verified
+  - Link construction di Go: verified `EMAIL_VERIFY_URL` diisi → link jadi
+    `https://hafizbahtiar.com/verify-email?token=...`; kosong → fallback
+    Go punya HTML page — dua-dua path verified lokal
+  - Railway staging: `EMAIL_VERIFY_URL` env di-set, redeploy `SUCCESS`,
+    full flow (register → request verification → Resend 204) diuji lawan
+    staging live
+- Fail berkaitan: `portfolio-astro` commit `a1b13a3` ("feat(verify-email):
+  add email verification landing page with server-side handling")
 
 ---
 
