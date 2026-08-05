@@ -40,6 +40,17 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 	return i, err
 }
 
+const getEmailVerifiedByUserID = `-- name: GetEmailVerifiedByUserID :one
+select email_verified from profiles where user_id = $1
+`
+
+func (q *Queries) GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getEmailVerifiedByUserID, userID)
+	var email_verified bool
+	err := row.Scan(&email_verified)
+	return email_verified, err
+}
+
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 select
   p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at,

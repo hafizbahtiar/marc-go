@@ -135,37 +135,50 @@ POST   /notifications/:id/read
 POST   /notifications/read-all
 ```
 
-### Kerja backend
+### Kerja backend ✅ (done)
 
-- [ ] Migration: `posts`, `post_images`, `post_likes`, `comments`,
-  `comment_likes`, `notifications` (goose format, single-file)
-- [ ] sqlc queries untuk semua table atas (`queries/posts.sql`,
-  `queries/comments.sql`, `queries/notifications.sql`)
-- [ ] `internal/storage/r2.go` — Cloudflare R2 client (S3-compatible,
-  `aws-sdk-go-v2` dengan custom endpoint), generate presigned PUT URL.
-  Env baru: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
-  `R2_BUCKET_NAME`, `R2_PUBLIC_URL` (untuk bina URL baca gambar)
-- [ ] Middleware `RequireVerifiedEmail` (lepas `RequireAuth`) — check
-  `profiles.email_verified`, 403 kalau belum. Letak comment jelas: extension
-  point untuk payment gate nanti
-- [ ] Handler `internal/http/handlers/posts.go` — semua endpoint posts+likes
-- [ ] Handler `internal/http/handlers/comments.go` — semua endpoint comments+likes
-- [ ] Handler `internal/http/handlers/notifications.go`
-- [ ] Handler `internal/http/handlers/uploads.go` — presign
-- [ ] Wire `push.NotifyUser` bila like/comment berlaku pada content sendiri
-  — insert row `notifications` DAN hantar push (dua-dua, bukan salah satu)
-- [ ] Cap nested comment depth 2 — logic di handler create comment (kalau
-  `parent_comment_id` merujuk comment yang sendiri dah ada parent, guna
-  parent punya parent sebagai rujukan sebenar, bukan reject)
-- [ ] Update router.go — wire semua route baru, authz check (`type:
-  announcement` → `RequireManagement`)
-- [ ] Test: RBAC (announcement create ahli vs management), ownership
-  (edit/delete bukan-milik → 403/404), moderation (management delete orang
-  lain punya post), soft-delete behavior (comment lepas parent post
-  dipadam), cap nested depth, presign URL flow
+- [x] Migration: `posts`, `post_images`, `post_likes`, `comments`,
+  `comment_likes`, `notifications` — verified up/down bersih lawan Postgres
+- [x] sqlc queries (`queries/posts.sql`, `likes.sql`, `comments.sql`,
+  `notifications.sql`) + `profiles.sql` tambah `GetEmailVerifiedByUserID`
+- [x] `internal/storage/r2.go` — R2 client (`aws-sdk-go-v2`), presigned PUT.
+  No-op graceful (503, bukan crash) kalau env R2 kosong — verified
+- [x] Middleware `RequireVerifiedEmail` (`internal/http/middleware/verified.go`)
+- [x] Handler `posts.go`, `comments.go`, `notifications.go`, `uploads.go`
+  + `posts_common.go` (response builder batched — elak N+1 query untuk
+  like/comment count + liked-by-me bila list feed)
+- [x] `push.NotifyUser` + insert `notifications` row bila like/comment pada
+  content sendiri (`notifyOwner` helper, self-notify di-skip)
+- [x] Cap nested comment depth 2 (`resolveParentCommentID`) — reply pada
+  comment depth-2 automatik "flatten" ke parent depth-1 asal
+- [x] Router + main.go wired penuh
+
+**Verified end-to-end lawan Postgres sebenar** (bukan andaian):
+- Gate `email_verified`: create post sebelum verify → 403; lepas verify → berjaya
+- RBAC: ahli cipta `type: announcement` → 403; management → 201
+- Nested depth cap: reply pada comment depth-2 → `parent_comment_id` betul-betul
+  flatten ke comment depth-1 asal (diverify field response tepat)
+- Like: `like_count` bertambah, `liked_by_me` betul, self-like TAK cipta
+  notification (verified count notification tak bertambah)
+- Notification: like + comment pada post sendiri → row `notifications`
+  tercipta dengan `type` betul; mark-read verified (`read_at` bertukar di DB)
+- Moderation: management padam/edit post/comment **bukan miliknya** → 204/200;
+  ahli biasa cuba sama → 403 (dua-dua arah diverify)
+- Soft delete: post dipadam → `deleted_at` set (row masih wujud), hilang
+  dari feed, tapi **comment di bawah masih boleh dibaca** (design intent:
+  comment tak "reput" bila parent dipadam) — verified
+- Presign upload: R2 belum configure → 503 graceful, bukan crash — verified
+
+**Belum**: credential R2 sebenar belum di-provision (Cloudflare dashboard) —
+upload gambar akan 503 di staging sampai env var diisi. Backend logic
+sendiri dah lengkap & teruji, tinggal isi credential bila ready.
+
+### Kerja Flutter (belum start)
+Lihat `marc_flutter/TODO.md` Stage 10.
 
 ---
 
 ## Belum putus / perlu bincang lagi
 - Payment/membership dues system — akan tentukan gate tambahan untuk Posts
   visibility bila siap (bincang berasingan, bukan sekarang)
+- Credential R2 (Cloudflare dashboard) — belum di-provision

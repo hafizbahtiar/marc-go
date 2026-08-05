@@ -40,6 +40,10 @@ func friendlyBindError(err error) string {
 			return "Token diperlukan"
 		case "OnesignalID":
 			return "OneSignal ID diperlukan"
+		case "Content":
+			return "Kandungan diperlukan"
+		case "ContentType":
+			return "Jenis fail diperlukan"
 		}
 	}
 	return "Data tidak sah"

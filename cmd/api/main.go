@@ -11,8 +11,12 @@ import (
 	"marc/internal/auth"
 	"marc/internal/config"
 	"marc/internal/db"
+	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	httpapi "marc/internal/http"
+	"marc/internal/onesignal"
+	"marc/internal/push"
+	"marc/internal/storage"
 )
 
 func main() {
@@ -40,7 +44,11 @@ func main() {
 
 	jwtSvc := auth.NewJWT(cfg.JWTSecret, cfg.AccessTokenTTL)
 	emailClient := email.NewClient(cfg.ResendAPIKey, cfg.EmailFrom)
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger)
+	r2Client := storage.NewR2Client(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket, cfg.R2PublicURL)
+	onesignalClient := onesignal.NewClient(cfg.OneSignalAppID, cfg.OneSignalAPIKey)
+	pushSvc := push.NewService(sqlc.New(pool), onesignalClient)
+
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc)
 
 	log.Printf("listening on :%s", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {

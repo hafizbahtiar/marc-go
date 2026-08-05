@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
 	// Atomic: DELETE...RETURNING dalam SATU statement, supaya refresh token
 	// betul-betul single-use. Kalau dua request serentak hantar hash yang
 	// sama (race), Postgres punya row-level lock jamin cuma SATU dapat row
@@ -19,7 +20,15 @@ type Querier interface {
 	// ada TOCTOU gap yang boleh buat DUA-DUA request refresh berjaya
 	// serentak guna token yang sama.
 	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
+	CountCommentLikesByCommentIDs(ctx context.Context, commentIds []uuid.UUID) ([]CountCommentLikesByCommentIDsRow, error)
+	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
+	CountPostLikes(ctx context.Context, postID uuid.UUID) (int64, error)
+	CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountPostLikesByPostIDsRow, error)
+	CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
+	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
+	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
+	CreatePostImage(ctx context.Context, arg CreatePostImageParams) (PostImage, error)
 	CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -28,18 +37,45 @@ type Querier interface {
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
+	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
+	GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
+	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error)
 	GetRoleByID(ctx context.Context, id int16) (Role, error)
 	GetRoleByKey(ctx context.Context, key string) (Role, error)
 	GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	LikeComment(ctx context.Context, arg LikeCommentParams) error
+	LikePost(ctx context.Context, arg LikePostParams) error
+	// Flat list, semua comment (top-level + reply) untuk satu post. Client
+	// bina tree guna parent_comment_id.
+	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)
 	ListDeviceTokensByUser(ctx context.Context, userID uuid.UUID) ([]DeviceToken, error)
+	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
+	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
+	// Cursor-based: pulang post yang created_at lebih lama daripada cursor
+	// (null cursor = page pertama).
+	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
 	ListProfiles(ctx context.Context) ([]ListProfilesRow, error)
 	ListRoles(ctx context.Context) ([]Role, error)
+	MarkAllNotificationsRead(ctx context.Context, recipientID uuid.UUID) error
 	MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
+	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
 	NextSequence(ctx context.Context, key string) (int64, error)
+	PostLikedByUser(ctx context.Context, arg PostLikedByUserParams) (bool, error)
+	// Untuk tandakan "liked_by_me" bila list post — pulang subset post_ids
+	// yang user ni dah like.
+	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
+	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
+	SoftDeletePost(ctx context.Context, id uuid.UUID) error
+	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
+	UnlikePost(ctx context.Context, arg UnlikePostParams) error
+	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
+	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) error
 }

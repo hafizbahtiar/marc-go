@@ -10,9 +10,12 @@ import (
 	"golang.org/x/time/rate"
 
 	"marc/internal/auth"
+	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	"marc/internal/http/handlers"
 	"marc/internal/http/middleware"
+	"marc/internal/push"
+	"marc/internal/storage"
 )
 
 // trustedProxyRanges — Railway hantar request ke container melalui proxy
@@ -43,6 +46,8 @@ func NewRouter(
 	publicBaseURL string,
 	emailVerifyURL string,
 	logger *slog.Logger,
+	r2Client *storage.R2Client,
+	pushSvc *push.Service,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger))
@@ -77,6 +82,36 @@ func NewRouter(
 	protected.POST("/device-tokens", deviceTokenHandler.Upsert)
 	protected.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)
 	protected.DELETE("/device-tokens/by-onesignal/:onesignalId", deviceTokenHandler.DeleteByOnesignalID)
+
+	// Posts (Stage 10) — perlu email_verified, lapisan tambahan atas
+	// RequireAuth. Payment gate akan ditambah dalam middleware ni bila
+	// payment system siap (bukan sekarang).
+	postHandler := handlers.NewPostHandler(pool, r2Client, pushSvc)
+	commentHandler := handlers.NewCommentHandler(pool, pushSvc)
+	notificationHandler := handlers.NewNotificationHandler(pool)
+	uploadHandler := handlers.NewUploadHandler(r2Client)
+
+	verified := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireVerifiedEmail(sqlc.New(pool)))
+	verified.GET("/posts", postHandler.List)
+	verified.POST("/posts", postHandler.Create)
+	verified.GET("/posts/:id", postHandler.Get)
+	verified.PATCH("/posts/:id", postHandler.Update)
+	verified.DELETE("/posts/:id", postHandler.Delete)
+	verified.POST("/posts/:id/like", postHandler.Like)
+	verified.DELETE("/posts/:id/like", postHandler.Unlike)
+
+	verified.GET("/posts/:id/comments", commentHandler.List)
+	verified.POST("/posts/:id/comments", commentHandler.Create)
+	verified.PATCH("/comments/:id", commentHandler.Update)
+	verified.DELETE("/comments/:id", commentHandler.Delete)
+	verified.POST("/comments/:id/like", commentHandler.Like)
+	verified.DELETE("/comments/:id/like", commentHandler.Unlike)
+
+	verified.POST("/uploads/presign", uploadHandler.Presign)
+
+	verified.GET("/notifications", notificationHandler.List)
+	verified.POST("/notifications/:id/read", notificationHandler.MarkRead)
+	verified.POST("/notifications/read-all", notificationHandler.MarkAllRead)
 
 	return r
 }

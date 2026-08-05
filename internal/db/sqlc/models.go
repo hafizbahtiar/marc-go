@@ -9,6 +9,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Comment struct {
+	ID              uuid.UUID          `json:"id"`
+	PostID          uuid.UUID          `json:"post_id"`
+	ParentCommentID pgtype.UUID        `json:"parent_comment_id"`
+	AuthorID        uuid.UUID          `json:"author_id"`
+	Content         string             `json:"content"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type CommentLike struct {
+	CommentID uuid.UUID          `json:"comment_id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type DeviceToken struct {
 	ID          uuid.UUID          `json:"id"`
 	UserID      uuid.UUID          `json:"user_id"`
@@ -23,6 +40,40 @@ type EmailVerificationToken struct {
 	UserID    uuid.UUID          `json:"user_id"`
 	TokenHash string             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type Notification struct {
+	ID          uuid.UUID          `json:"id"`
+	RecipientID uuid.UUID          `json:"recipient_id"`
+	ActorID     uuid.UUID          `json:"actor_id"`
+	Type        string             `json:"type"`
+	PostID      uuid.UUID          `json:"post_id"`
+	CommentID   pgtype.UUID        `json:"comment_id"`
+	ReadAt      pgtype.Timestamptz `json:"read_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Post struct {
+	ID        uuid.UUID          `json:"id"`
+	AuthorID  uuid.UUID          `json:"author_id"`
+	Type      string             `json:"type"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	EditedAt  pgtype.Timestamptz `json:"edited_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type PostImage struct {
+	ID       uuid.UUID `json:"id"`
+	PostID   uuid.UUID `json:"post_id"`
+	R2Key    string    `json:"r2_key"`
+	Position int16     `json:"position"`
+}
+
+type PostLike struct {
+	PostID    uuid.UUID          `json:"post_id"`
+	UserID    uuid.UUID          `json:"user_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 

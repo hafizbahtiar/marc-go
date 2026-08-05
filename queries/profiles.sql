@@ -30,6 +30,9 @@ from profiles p
 join roles r on r.id = p.role_id
 where p.user_id = $1;
 
+-- name: GetEmailVerifiedByUserID :one
+select email_verified from profiles where user_id = $1;
+
 -- name: ListProfiles :many
 select
   p.*,
