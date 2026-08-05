@@ -1,0 +1,155 @@
+# MARC Backend (Go + Gin + Postgres + sqlc) — TODO
+
+Konteks: convert dari Supabase (Auth + PostgREST + RLS) ke backend sendiri.
+Auth custom penuh di Go (bukan pakai Supabase Auth). Postgres: dev guna
+Postgres lokal (Homebrew), prod deploy ke Railway (Postgres plugin dia).
+Tiada Docker dalam project ni. Query layer guna sqlc (raw SQL, type-safe
+generated code — gantian "rasa" Drizzle di Go).
+
+Rujukan schema asal (Supabase project "MARC", `iybmmtytsibthkcmpajw`):
+tables `roles`, `profiles`, `device_tokens`, `sequences`; functions
+`handle_new_user`, `is_management`, `mark_email_verified`, `next_sequence`,
+`upsert_device_token`; RLS berdasarkan `auth.uid()` + `is_management()`.
+Semua tu perlu di-reimplement sebagai app-level logic di Go sebab dah
+tiada Supabase Auth (`auth.uid()`) atau RLS automatik.
+
+---
+
+## Stage 0 — Keputusan & setup asas ✅ (done)
+- [x] Hosting Postgres: dev = Postgres lokal (Homebrew, tiada Docker); prod = Railway (Postgres plugin)
+- [x] Struktur project: `cmd/api`, `internal/config`, `internal/db`, `internal/http` (handlers/middleware), `internal/auth` (nanti Stage 2), dsb
+- [x] Config loading dari env (`godotenv` untuk dev, plain `os.Getenv` untuk prod/Railway)
+- [x] Migration tool: `goose` (bukan `golang-migrate`) — timestamp naming (`yyyymmddhhmmss_name.sql`), satu fail per migration dengan marker `-- +goose Up` / `-- +goose Down`. Embedded via `go:embed`, auto-run on startup guna `database/sql` + `pgx/v5/stdlib` driver.
+- [x] Setup sqlc (`sqlc.yaml`, folder `queries/`, generate ke `internal/db/sqlc`) — queries sebenar tunggu Stage 1
+- [x] Init Gin router + health check endpoint (`GET /healthz`) — verified 200 OK lawan Postgres lokal
+
+## Stage 1 — Schema Postgres (port dari Supabase) ✅ (done)
+- [x] `users` table (baru — gantikan `auth.users` Supabase): id (uuid), email (unique), password_hash, created_at
+- [x] `roles` table (sama macam Supabase): id, key, name, category (check: management/ahli), rank
+  - [x] Seed data: ahli(10), supervisor(50,mgmt), manager(60,mgmt), superadmin(100,mgmt)
+- [x] `profiles` table: id, user_id (FK users, unique), member_id (unique, format `MARC{YYYY}/{MM}/{0000}` — generated di Stage 2 guna `NextSequence`), display_name, phone, role_id (FK roles), email_verified, created_at
+- [x] `device_tokens` table: id, user_id (FK users), onesignal_id (unique), platform, created_at, updated_at
+- [x] `sequences` table: key (PK), current_value, updated_at — verified atomic increment via `on conflict ... do update`
+- [x] Migration untuk semua di atas + indexes (`profiles.role_id`, `device_tokens.user_id`) — goose format, `20260805223000`–`20260805223600`
+- [x] sqlc queries: CRUD asas untuk semua table (`queries/*.sql` → generated `internal/db/sqlc`) — users, roles, profiles (dgn join role), device_tokens (upsert/delete/list), sequences (`NextSequence`)
+
+## Stage 2 — Auth (custom, Go) ✅ (done — termasuk hantar email sebenar)
+- [x] Password hashing (bcrypt) — `internal/auth/password.go`
+- [x] JWT: access token (15min, HS256) + refresh token (opaque random 32-byte, disimpan sebagai SHA-256 hash dalam `refresh_tokens`, TTL 30 hari) — `internal/auth/jwt.go`, `internal/auth/token.go`
+- [x] `POST /auth/register` — create user + profile dalam satu `pgx.Tx`:
+  - `member_id` guna `NextSequence` (port `handle_new_user`, key `auth:{YYYY}:{MM}`, timezone Asia/Kuala_Lumpur) — verified hasilkan `MARC2026/08/0001`
+  - assign role default 'ahli' — verified
+  - 409 kalau email dah wujud (unique violation `23505`)
+- [x] `POST /auth/login` — verify password, issue access+refresh (401 generik bila salah, tak bocor sama ada email/password yang salah)
+- [x] `POST /auth/refresh` — rotation: token lama dipadam, pasangan baru dikeluarkan — verified token lama tak boleh dipakai balik
+- [x] `POST /auth/logout` — hapus refresh token (idempotent)
+- [x] Middleware `RequireAuth` (`internal/http/middleware/auth.go`) — verify JWT dari header `Authorization: Bearer`, inject user id ke gin context
+- [x] Email verification flow — **provider email sebenar dah sambung (Resend)**:
+  - [x] `internal/email/client.go` — Resend REST API client (`POST https://api.resend.com/emails`), pattern sama macam `internal/onesignal` (`Enabled()` no-op senyap kalau `RESEND_API_KEY`/`EMAIL_FROM` kosong). 3 unit test (`httptest`, bukan API sebenar) — payload shape, auth header, no-op, error non-2xx
+  - [x] `POST /auth/verify-email/request` (perlu auth) — jana opaque token, simpan hash dalam `email_verification_tokens` (TTL 1 jam), bina link `{PUBLIC_BASE_URL}/auth/verify-email/confirm?token=...`, hantar guna Resend. Kalau provider belum configure → fallback `log.Printf` link tu (dev boleh test tanpa Resend)
+  - [x] `POST /auth/verify-email/confirm` (JSON body, app punya API call) — set `profiles.email_verified = true`
+  - [x] **`GET /auth/verify-email/confirm?token=...`** (BARU) — endpoint sama logic tapi untuk diklik terus dari email (bukan panggil app), render HTML ringkas. Tanpa ni, hantar email dengan token tapi takde tempat nak "consume" dia = separuh siap
+  - **Verified end-to-end** (bukan andaian): (1) call **Resend API sebenar** guna key betul dalam `.env`, hantar ke `delivered@resend.dev` (alamat test rasmi Resend, tak deliver kemana-mana tapi validate API call) — 204, ~710ms (network round-trip sebenar, bukan no-op), tiada error log; (2) klik link GET — 200, HTML "berjaya disahkan", `profiles.email_verified` bertukar `true` dalam DB; (3) klik link sama sekali lagi — 400 "token tidak sah" (single-use terkuatkuasa); (4) GET tanpa token — 400 "Pautan tidak sah"
+
+**Nota teknikal**: sqlc `sqlc.yaml` ditambah override `uuid` → `github.com/google/uuid.UUID` (bukan `pgtype.UUID` generated default) — lebih ergonomic untuk JWT subject/perbandingan id, verified pgx v5 boleh encode/decode terus tanpa masalah.
+
+## Stage 3 — Authorization (RBAC, gantikan RLS) ✅ (done)
+- [x] Helper `IsManagement(ctx, q, userID)` — `internal/authz/authz.go`, port dari `is_management()` (query `GetRoleCategoryByUserID`, check category)
+- [x] Middleware `RequireManagement` (`internal/http/middleware/management.go`) — mesti selepas `RequireAuth` dalam chain. Verified via httptest + DB sebenar: ahli → 403, management → 200, tiada token → 401
+- [x] Ownership check pattern — didokumenkan dalam `internal/authz/authz.go`: **tiada** fungsi generic, sebaliknya handler WAJIB scope query guna `middleware.UserID(c)` (dari JWT), bukan id dari URL/body client. Ini corak yang dipakai di Stage 2 punya `/auth/*` handlers (contoh: `Logout`, `RequestEmailVerification`) dan akan dipakai sama di Stage 4
+
+## Stage 4 — Core API endpoints ✅ (done)
+- [x] `GET /me` — `internal/http/handlers/profile.go` `Me` — verified return member_id/role/etc betul
+- [x] `PATCH /me` — `UpdateMe` — verified trim + string kosong → NULL, macam Flutter punya `ProfileRepository.update`
+- [x] `GET /members` — `Members`:
+  - [x] ahli biasa → verified return diri sendiri sahaja
+  - [x] management → verified return semua (2 profile termasuk ahli tadi)
+- [x] `POST /device-tokens` — `DeviceTokenHandler.Upsert` — verified 204, row masuk DB
+- [x] `DELETE /device-tokens/:id` — `Delete`, discope terus dalam SQL (`id AND user_id`) — verified: user lain cuba padam token bukan miliknya → 204 (idempotent, sama pattern dgn logout) tapi row **tak terpadam** (ownership dikuatkuasakan betul-betul, bukan sekadar response code)
+
+## Stage 5 — Push notifications (server-side)
+- [x] Integrasi OneSignal REST API dari Go — `internal/onesignal/client.go` (`Client.Send`), `internal/push/service.go` (`Service.NotifyUser` — gabung `ListDeviceTokensByUser` + OneSignal client). Diuji penuh guna `go test` + `httptest` (bukan credential sebenar): payload shape, auth header, no-op bila disabled/takde token, error bila non-2xx — 7 test kesemuanya PASS
+- [ ] Tentukan trigger: bila notification patut dihantar (event apa dalam app) — **belum putus**, `NotifyUser` sedia dipakai bila keputusan dibuat, tapi belum di-wire ke mana-mana route
+- [ ] (Optional, kalau nak notification history dalam app) table `notifications` + endpoint `GET /notifications` — `NotificationsPage` di Flutter sekarang masih placeholder kosong; skip buat masa ni sebab keperluan produk belum jelas
+
+## Stage 6 — Flutter integration (repo `marc_flutter`) ✅ (done, kecuali migrate data prod)
+- [x] Buang `supabase_flutter` dari `pubspec.yaml`, tambah `dio` + `flutter_secure_storage`
+- [x] `AuthService` (`lib/features/auth/auth_service.dart`) — guna Dio call `/auth/*` endpoints Go; error mapping backend (`{"error": "..."}`) → `extractErrorMessage`
+- [x] Token storage — `lib/core/token_storage.dart` (`flutter_secure_storage`, access+refresh)
+- [x] `lib/core/auth_state.dart` (`AuthNotifier`/`authNotifierProvider`) gantikan `authStateProvider` (stream Supabase) — hydrate dari storage di startup sebelum `runApp` (elak flicker redirect)
+- [x] `lib/core/api_client.dart` — Dio + interceptor: lampir Bearer token automatik, auto-refresh-dan-retry sekali bila 401 (kecuali endpoint `/auth/login|register|refresh` sendiri), auto-logout kalau refresh pun gagal
+- [x] `lib/core/jwt.dart` — decode claim `sub` dari access token (untuk `OneSignal.login(userId)`, gantian `session.user.id` Supabase)
+- [x] `profile_providers.dart` (`myProfileProvider`, `membersProvider`, `ProfileRepository`) — guna Dio (`GET /me`, `PATCH /me`, `GET /members`); `Profile` ditambah field `email` (backend `/me` pun ditambah join `users.email` sebab UI perlukannya, sebelum ni terlepas pandang)
+- [x] `push_service.dart` — `POST /device-tokens` gantikan RPC Supabase
+- [x] `router.dart` — `_GoRouterRefreshNotifier` dengar `authNotifierProvider` (gantian stream Supabase), redirect guna `isLoggedIn`
+- [x] `profile_page.dart` — buang rujukan `Supabase.instance.client.auth.currentUser`, guna `profile.email`
+- [x] `verify_email_banner.dart` — butang "Sahkan" sekarang panggil `POST /auth/verify-email/request` betul-betul (dulu cuma snackbar "akan datang" — dah tak tepat lepas Resend disambung)
+- [ ] Migrate data sedia ada (2 profiles, 4 roles) dari Supabase ke DB baru — **belum**, tunggu Postgres prod (Railway) sedia di Stage 7
+
+**Verified** (bukan cuma `flutter analyze`):
+- `flutter analyze` — 0 isu; `flutter test` — semua test lulus (termasuk test lama `auth_service_test.dart` yang di-rewrite sebab fungsi `mapAuthErrorToMessage` asal dah tak wujud)
+- `flutter build web --debug` — compile penuh berjaya (deep smoke test, bukan cuma static analysis)
+- **Contract test langsung lawan backend Go sebenar** (bukan mock): register → `GET /me` → `PATCH /me` → `GET /members`, parse guna `Profile.fromJson`/`MemberRow.fromJson` app sebenar — semua field padan; login salah password → `DioException` dengan mesej Melayu betul
+- Nota teknikal tambahan Go: mesej ralat validation (400) yang dulu raw Go validator text ditukar ke mesej Melayu mesra (`internal/http/handlers/bind.go`) — perlu sebab Flutter display terus mesej tu ke UI
+
+**Independent review (Opus 4.8, satu pas penuh)** jumpa 2 bug sebenar dalam `api_client.dart` punya refresh interceptor + beberapa isu LOW — semua dah dibetulkan & diuji semula:
+- [x] **HIGH** — refresh concurrent 401 boleh clear() sesi yang baru sahaja berjaya di-refresh oleh sibling request. Fix: cache in-flight refresh `Future` (dedupe bila overlap), + fallback "kalau token dah bertukar time refresh kita gagal, guna token baru tu, jangan clear". Root cause sebenar: backend punya `Refresh` handler **tak atomic** (`GetRefreshTokenByHash` + `DeleteRefreshToken` berasingan = TOCTOU gap boleh buat DUA refresh request serentak dua-dua berjaya guna token sama). Fix backend: `ConsumeRefreshToken` — satu `DELETE ... RETURNING` statement. **Verified**: 10 goroutine Go betul-betul serentak refresh token yang sama → tepat 1 berjaya (200), 9 lain 401 bersih (`success_count: 1`)
+- [x] **MEDIUM** — retry-lepas-refresh boleh infinite loop kalau retry pun 401. Fix: guard `retried_after_refresh` dalam `RequestOptions.extra`, sekali gagal terus clear+propagate, tak cuba refresh lagi. **Verified** via test langsung
+- [x] **MEDIUM** — `friendlyBindError` (bind.go) bagi mesej salah untuk login: password kosong pun cakap "minimum 6 aksara" (itu cuma betul untuk register yang ada tag `min=6`). Fix: switch guna `Field()+Tag()`, bukan `Field()` je
+- [x] **LOW** — `hydrate()` di `main.dart` boleh throw tanpa try/catch kalau secure storage rosak (keystore corrupt lepas OS upgrade) → black screen kekal. Fix: wrap try/catch, anggap logged-out kalau gagal
+- [x] **LOW** — `AuthService.signIn/signUp` cuma tangkap `DioException`; ralat lain (cth `.env` hilang) buat butang submit stuck loading selama-lamanya. Fix: tambah catch generic dengan mesej fallback
+- [x] **LOW** — `members_page.dart` papar raw `DioException.toString()` (termasuk URL) terus ke user bila gagal load. Fix: mesej generik je
+- [x] **LOW** — `middleware/auth.go` punya mesej ralat dalam English (`"missing bearer token"`, `"invalid token"`) tak konsisten dengan seluruh app yang Bahasa Melayu. Fix: tukar ke Melayu
+- [x] **LOW** — `expires_in` dalam token response hardcoded `15 * time.Minute`, tak sync dengan `cfg.AccessTokenTTL` sebenar. Fix: `auth.JWT.AccessTTL()` getter, guna terus
+
+## Stage 7 — Deployment & ops
+- [ ] Deploy Go API + Postgres ke Railway (guna `DATABASE_URL` yang Railway bekalkan terus — `config.Load()` dah sokong ni)
+- [ ] CI: build + test Go, lint (`golangci-lint`)
+- [ ] Structured logging (request id, error tracking)
+- [ ] Basic rate limiting untuk `/auth/login`, `/auth/register`
+- [ ] **Prasyarat untuk Stage 8**: bila deploy siap, kemas kini `PUBLIC_BASE_URL` (env Railway) ke URL awam sebenar backend (cth `https://api-marc.hafizbahtiar.com` atau apa-apa subdomain yang dipilih) — link email verification bergantung pada value ni
+
+## Stage 8 — Email verification landing page di `hafizbahtiar.com` (cross-repo)
+Keputusan: link email verification patut buka page branded di portfolio
+(`hafizbahtiar.com`) — bukan HTML mentah yang Go backend render sendiri
+(`internal/http/handlers/auth.go` punya `ConfirmEmailVerificationLink` /
+`verificationHTMLPage`) — sebab `EMAIL_FROM` akan tukar ke
+`hafiz@hafizbahtiar.com`, jadi elok link pun consistent dengan domain tu.
+
+**Bergantung pada Stage 7 siap dulu** — page kat portfolio perlu URL awam
+sebenar Go backend untuk di-hit server-side; tak boleh wire betul-betul
+selagi backend masih localhost-only.
+
+- [ ] Resend: verify domain `hafizbahtiar.com` (Resend dashboard →
+  Domains → tambah DNS record SPF/DKIM) — perlu sebelum `EMAIL_FROM` boleh
+  guna `hafiz@hafizbahtiar.com` (`onboarding@resend.dev` yang dipakai
+  sekarang tak perlukan verification, tapi terhad untuk testing sahaja)
+- [ ] marc_go: `RequestEmailVerification` (auth.go) — tukar `EMAIL_FROM` di
+  `.env`/Railway env ke alamat domain sendiri lepas verified
+- [ ] marc_go: tukar link yang dibina dalam `RequestEmailVerification`
+  daripada `{PUBLIC_BASE_URL}/auth/verify-email/confirm?token=...` (Go
+  render HTML sendiri) kepada `{PUBLIC_BASE_URL}/verify-email?token=...`
+  (arah ke portfolio, bukan Go backend terus)
+- [ ] portfolio-astro (`/Users/hafiz/Developments/portfolio-astro/src`):
+  page baru `src/pages/verify-email.astro` — **server-side** (SSR, sebab
+  project ni `output: 'server'` kat Cloudflare Workers), bukan
+  client-side `fetch`, supaya elak kena ubah CSP `connect-src` (yang
+  sekarang whitelist `api.hafizbahtiar.com` je, bukan Go backend punya URL)
+  - baca `?token=` dari URL
+  - server-side call `POST {MARC_API_URL}/auth/verify-email/confirm` dengan
+    `{token}` (endpoint JSON sedia wujud, tak perlu ubah Go — cuma
+    `ConfirmEmailVerificationLink`/GET jadi tak dipakai lepas ni, boleh
+    buang atau kekal sebagai fallback dev)
+  - render UI berjaya/gagal ikut design system portfolio (Tailwind +
+    komponen sedia ada, rujuk `components.json`)
+  - env baru portfolio perlukan: `MARC_API_URL` (server-side sahaja,
+    bukan `PUBLIC_*`, sebab dipanggil dari Worker bukan browser — tak
+    perlu masuk `connect-src` CSP)
+- [ ] Uji end-to-end: daftar di app Flutter → klik "Sahkan" → email dari
+  Resend (`hafiz@hafizbahtiar.com`) → klik link → page portfolio → status
+  tersahkan, `profiles.email_verified = true`
+
+---
+
+## Belum putus / perlu bincang lagi
+- Sama ada nak simpan RLS di Postgres juga sebagai defense-in-depth, atau app-level check je memadai
