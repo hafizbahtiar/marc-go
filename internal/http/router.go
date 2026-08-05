@@ -41,6 +41,7 @@ func NewRouter(
 	refreshTTL time.Duration,
 	emailClient *email.Client,
 	publicBaseURL string,
+	emailVerifyURL string,
 	logger *slog.Logger,
 ) *gin.Engine {
 	r := gin.New()
@@ -51,7 +52,7 @@ func NewRouter(
 
 	r.GET("/healthz", handlers.Health)
 
-	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL)
+	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL)
 
 	authRateLimiter := middleware.RateLimit(authRateLimit, authRateBurst)
 

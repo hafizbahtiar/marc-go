@@ -17,6 +17,7 @@ type Config struct {
 	ResendAPIKey    string
 	EmailFrom       string
 	PublicBaseURL   string
+	EmailVerifyURL  string
 }
 
 func Load() (Config, error) {
@@ -36,6 +37,10 @@ func Load() (Config, error) {
 		ResendAPIKey:  os.Getenv("RESEND_API_KEY"),
 		EmailFrom:     os.Getenv("EMAIL_FROM"),
 		PublicBaseURL: getEnv("PUBLIC_BASE_URL", "http://localhost:"+getEnv("PORT", "8080")),
+		// Optional — page landing untuk link email verification (Stage 8,
+		// portfolio-astro). Kalau kosong, fallback ke Go punya HTML page
+		// sendiri (PublicBaseURL + /auth/verify-email/confirm).
+		EmailVerifyURL: os.Getenv("EMAIL_VERIFY_URL"),
 	}
 
 	if cfg.DatabaseURL == "" {

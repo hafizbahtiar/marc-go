@@ -23,12 +23,13 @@ import (
 const emailVerificationTTL = time.Hour
 
 type AuthHandler struct {
-	pool          *pgxpool.Pool
-	queries       *sqlc.Queries
-	jwt           *auth.JWT
-	refreshTTL    time.Duration
-	emailClient   *email.Client
-	publicBaseURL string
+	pool           *pgxpool.Pool
+	queries        *sqlc.Queries
+	jwt            *auth.JWT
+	refreshTTL     time.Duration
+	emailClient    *email.Client
+	publicBaseURL  string
+	emailVerifyURL string
 }
 
 func NewAuthHandler(
@@ -37,14 +38,16 @@ func NewAuthHandler(
 	refreshTTL time.Duration,
 	emailClient *email.Client,
 	publicBaseURL string,
+	emailVerifyURL string,
 ) *AuthHandler {
 	return &AuthHandler{
-		pool:          pool,
-		queries:       sqlc.New(pool),
-		jwt:           jwtSvc,
-		refreshTTL:    refreshTTL,
-		emailClient:   emailClient,
-		publicBaseURL: publicBaseURL,
+		pool:           pool,
+		queries:        sqlc.New(pool),
+		jwt:            jwtSvc,
+		refreshTTL:     refreshTTL,
+		emailClient:    emailClient,
+		publicBaseURL:  publicBaseURL,
+		emailVerifyURL: emailVerifyURL,
 	}
 }
 
@@ -283,7 +286,14 @@ func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 		return
 	}
 
-	link := fmt.Sprintf("%s/auth/verify-email/confirm?token=%s", h.publicBaseURL, token)
+	// Kalau EMAIL_VERIFY_URL configure (Stage 8, portfolio-astro), link
+	// arah ke page branded tu. Kalau tidak, fallback ke Go punya HTML page
+	// sendiri (GET /auth/verify-email/confirm) — dev/belum-setup portfolio.
+	verifyPageBase := h.emailVerifyURL
+	if verifyPageBase == "" {
+		verifyPageBase = h.publicBaseURL + "/auth/verify-email/confirm"
+	}
+	link := fmt.Sprintf("%s?token=%s", verifyPageBase, token)
 
 	if !h.emailClient.Enabled() {
 		log.Printf("email verification (provider belum configure) untuk user %s: %s", userID, link)

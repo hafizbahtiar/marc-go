@@ -40,7 +40,7 @@ func main() {
 
 	jwtSvc := auth.NewJWT(cfg.JWTSecret, cfg.AccessTokenTTL)
 	emailClient := email.NewClient(cfg.ResendAPIKey, cfg.EmailFrom)
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, logger)
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger)
 
 	log.Printf("listening on :%s", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {
