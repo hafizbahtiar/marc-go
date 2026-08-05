@@ -102,12 +102,22 @@ tiada Supabase Auth (`auth.uid()`) atau RLS automatik.
 - [x] **LOW** — `middleware/auth.go` punya mesej ralat dalam English (`"missing bearer token"`, `"invalid token"`) tak konsisten dengan seluruh app yang Bahasa Melayu. Fix: tukar ke Melayu
 - [x] **LOW** — `expires_in` dalam token response hardcoded `15 * time.Minute`, tak sync dengan `cfg.AccessTokenTTL` sebenar. Fix: `auth.JWT.AccessTTL()` getter, guna terus
 
-## Stage 7 — Deployment & ops
-- [ ] Deploy Go API + Postgres ke Railway (guna `DATABASE_URL` yang Railway bekalkan terus — `config.Load()` dah sokong ni)
+## Stage 7 — Deployment & ops (staging ✅ deployed; production belum)
+- [x] Deploy Go API + Postgres ke Railway — **staging live**: `https://marc-go-staging.up.railway.app`
+  - Projek Railway `marc` (workspace hafizbahtiar), environment `staging` + `production` — verified dua-dua wujud
+  - Service `marc-go` (staging) — build via Nixpacks auto-detect (tiada Dockerfile custom), deploy status `SUCCESS`
+  - `Postgres` service (image `postgres-ssl:18`) — migration goose auto-apply on startup, verified (`goose: no migrations to run` = dah up to date)
+  - Env vars staging verified set: `DATABASE_URL` (private networking `postgres.railway.internal`), `JWT_SECRET`, `ONESIGNAL_APP_ID`/`API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM` (`hafiz@hafizbahtiar.com` — **nota**: perlu domain verified kat Resend, belum confirm), `PUBLIC_BASE_URL` (betul point ke domain staging sendiri)
+  - **Full smoke test lawan staging live** (bukan localhost): `POST /auth/register` → `GET /me` → 200, `member_id` generate betul, migration schema penuh wujud — confirm seluruh stack (Go + Postgres + goose + sqlc) berfungsi di persekitaran produksi sebenar
+  - **2 isu produksi jumpa & dibetulkan** (dari baca log staging sebenar, bukan andaian):
+    - [x] Gin jalan `debug` mode → set `GIN_MODE=release` (env var Railway, tiada perlu ubah kod — Gin baca env ni native)
+    - [x] Gin "trust all proxies" (client IP boleh spoof) → `router.SetTrustedProxies(...)`. **Percubaan pertama guna RFC1918 standard (10.0.0.0/8 dll) SALAH** — log lepas deploy tunjuk `ClientIP()` still papar IP dalaman Railway (`100.64.0.2`), bukan IP awam sebenar. Punca: Railway punya private network guna **CGNAT range `100.64.0.0/10`**, bukan RFC1918. Fix kedua (tambah `100.64.0.0/10`) verified betul — log lepas tu papar IP awam sebenar (`79.127.228.17`)
+- [ ] Deploy production environment (sekarang staging je live)
 - [ ] CI: build + test Go, lint (`golangci-lint`)
 - [ ] Structured logging (request id, error tracking)
 - [ ] Basic rate limiting untuk `/auth/login`, `/auth/register`
-- [ ] **Prasyarat untuk Stage 8**: bila deploy siap, kemas kini `PUBLIC_BASE_URL` (env Railway) ke URL awam sebenar backend (cth `https://api-marc.hafizbahtiar.com` atau apa-apa subdomain yang dipilih) — link email verification bergantung pada value ni
+- [ ] Verify domain `hafizbahtiar.com` kat Resend — `EMAIL_FROM` staging dah set ke `hafiz@hafizbahtiar.com` tapi belum confirm domain verified (kalau belum, Resend akan reject/bounce hantar email)
+- [x] **Prasyarat Stage 8 separuh siap**: `PUBLIC_BASE_URL` staging dah betul (`https://marc-go-staging.up.railway.app`) — tinggal tunggu portfolio punya `/verify-email` page + tukar link generation ke situ (Stage 8 penuh)
 
 ## Stage 8 — Email verification landing page di `hafizbahtiar.com` (cross-repo)
 Keputusan: link email verification patut buka page branded di portfolio
