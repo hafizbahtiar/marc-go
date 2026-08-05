@@ -64,3 +64,25 @@ func (h *DeviceTokenHandler) Delete(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+// DeleteByOnesignalID — sama macam Delete, tapi discope guna onesignal_id
+// (bukan row id Postgres). Dipakai waktu logout: Flutter tahu
+// `OneSignal.User.pushSubscription.id` terus dari SDK, tak perlu simpan/
+// query row id balik daripada POST /device-tokens (yang cuma pulang 204).
+func (h *DeviceTokenHandler) DeleteByOnesignalID(c *gin.Context) {
+	onesignalID := c.Param("onesignalId")
+	if onesignalID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "onesignal id diperlukan"})
+		return
+	}
+
+	if err := h.queries.DeleteDeviceTokenByOnesignalID(c.Request.Context(), sqlc.DeleteDeviceTokenByOnesignalIDParams{
+		OnesignalID: onesignalID,
+		UserID:      middleware.UserID(c),
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal buang device token"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}

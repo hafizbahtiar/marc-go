@@ -24,6 +24,7 @@ type Querier interface {
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteDeviceToken(ctx context.Context, arg DeleteDeviceTokenParams) error
+	DeleteDeviceTokenByOnesignalID(ctx context.Context, arg DeleteDeviceTokenByOnesignalIDParams) error
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error

@@ -26,6 +26,20 @@ func (q *Queries) DeleteDeviceToken(ctx context.Context, arg DeleteDeviceTokenPa
 	return err
 }
 
+const deleteDeviceTokenByOnesignalID = `-- name: DeleteDeviceTokenByOnesignalID :exec
+delete from device_tokens where onesignal_id = $1 and user_id = $2
+`
+
+type DeleteDeviceTokenByOnesignalIDParams struct {
+	OnesignalID string    `json:"onesignal_id"`
+	UserID      uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteDeviceTokenByOnesignalID(ctx context.Context, arg DeleteDeviceTokenByOnesignalIDParams) error {
+	_, err := q.db.Exec(ctx, deleteDeviceTokenByOnesignalID, arg.OnesignalID, arg.UserID)
+	return err
+}
+
 const listDeviceTokensByUser = `-- name: ListDeviceTokensByUser :many
 select id, user_id, onesignal_id, platform, created_at, updated_at from device_tokens where user_id = $1
 `

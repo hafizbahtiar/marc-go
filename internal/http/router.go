@@ -76,6 +76,7 @@ func NewRouter(
 	protected.GET("/members", profileHandler.Members)
 	protected.POST("/device-tokens", deviceTokenHandler.Upsert)
 	protected.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)
+	protected.DELETE("/device-tokens/by-onesignal/:onesignalId", deviceTokenHandler.DeleteByOnesignalID)
 
 	return r
 }

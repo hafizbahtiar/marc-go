@@ -9,5 +9,8 @@ on conflict (onesignal_id) do update set
 -- name: DeleteDeviceToken :exec
 delete from device_tokens where id = $1 and user_id = $2;
 
+-- name: DeleteDeviceTokenByOnesignalID :exec
+delete from device_tokens where onesignal_id = $1 and user_id = $2;
+
 -- name: ListDeviceTokensByUser :many
 select * from device_tokens where user_id = $1;
