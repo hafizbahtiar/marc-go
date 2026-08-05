@@ -13,12 +13,18 @@ import (
 	"marc/internal/http/middleware"
 )
 
-// trustedProxyRanges — Railway (dan PaaS lain macam dia) hantar request ke
-// container melalui edge/proxy dalaman atas private network. Trust range
-// RFC1918 standard supaya c.ClientIP() betul-betul baca X-Forwarded-For
-// (untuk logging/rate-limit yang tepat), tapi tak trust SEMUA proxy
-// (default Gin yang insecure — client boleh spoof X-Forwarded-For terus).
-var trustedProxyRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+// trustedProxyRanges — Railway hantar request ke container melalui proxy
+// dalaman atas "Railway Private Network", yang guna CGNAT range
+// 100.64.0.0/10 (bukan RFC1918 biasa) — verified terus daripada log
+// produksi (c.ClientIP() asalnya papar 100.64.x.x sebagai client, bukan
+// IP awam sebenar, sebelum range ni ditambah). RFC1918 standard turut
+// disertakan untuk keserasian persekitaran lain (Docker/VPC dalaman).
+var trustedProxyRanges = []string{
+	"100.64.0.0/10",
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+}
 
 func NewRouter(
 	pool *pgxpool.Pool,
