@@ -158,5 +158,40 @@ render sendiri.
 
 ---
 
-## Belum putus / perlu bincang lagi
-- Sama ada nak simpan RLS di Postgres juga sebagai defense-in-depth, atau app-level check je memadai
+## Stage 9 — Postgres RLS sebagai defense-in-depth (keputusan: YA, belum implement)
+Keputusan dibuat: RLS lebih selamat, nak tambah sebagai lapisan kedua atas
+app-level ownership check yang dah ada (Stage 3) — bukan gantikan dia.
+
+**Gotcha teknikal penting** (kena selesai dulu sebelum RLS ni ada makna):
+Railway `DATABASE_URL` sekarang connect guna role **`postgres`** (verified
+`railway variable list` — `postgresql://postgres:...@postgres.railway.internal/railway`).
+Role `postgres` di Postgres **superuser**, dan **superuser automatik bypass
+RLS**, tak kira apa policy pun ada. Kalau backend terus guna role ni, tambah
+`ENABLE ROW LEVEL SECURITY` + policy **tak buat apa-apa** — masih 100%
+bergantung app-level check macam sekarang, RLS jadi decoration je.
+
+Kerja sebenar yang perlu (bukan setakat `CREATE POLICY`):
+- [ ] Cipta DB role baru khas untuk app (bukan superuser, `NOSUPERUSER`,
+  tiada `BYPASSRLS`), `GRANT` privilege secukup pada table yang perlu
+- [ ] Tukar `DATABASE_URL` (dev + Railway staging/prod) guna role baru ni
+- [ ] Migration: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` + `CREATE POLICY`
+  untuk `profiles`, `device_tokens`, `refresh_tokens`,
+  `email_verification_tokens` (bukan `users`/`roles`/`sequences` — table
+  tu tak per-user secara sama)
+- [ ] **Perubahan besar cara app query DB**: RLS policy perlu tahu "siapa
+  user semasa" — Postgres tak tahu tentang JWT/gin context kita. Kena
+  `SET LOCAL app.current_user_id = '<uuid>'` di **setiap** transaction
+  authenticated request sebelum query jalan (policy rujuk
+  `current_setting('app.current_user_id')::uuid`). Ni bermakna:
+  - Semua handler yang guna `sqlc.Queries` terus atas `pool` (bukan `tx`)
+    kena tukar untuk sentiasa buka transaction dulu — impact kod agak luas
+    (`profile.go`, `device_tokens.go`, sebahagian `auth.go`)
+  - Perlu helper baru (cth `db.WithUserContext(ctx, pool, userID, fn)`)
+    untuk elak duplicate boilerplate di setiap handler
+- [ ] Test: pastikan app-level check + RLS dua-dua enforce (defense-in-depth
+  sebenar — cuba bypass app-level logic secara sengaja dalam test, RLS
+  patut masih tahan)
+
+**Belum start** — scope lebih besar dari nampak kat permukaan (bukan cuma
+tambah migration), sengaja tak diselitkan dalam sprint semasa. Return to
+this bila ada slot khusus.
