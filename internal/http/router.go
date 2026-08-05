@@ -2,10 +2,12 @@ package http
 
 import (
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/time/rate"
 
 	"marc/internal/auth"
 	"marc/internal/email"
@@ -26,14 +28,23 @@ var trustedProxyRanges = []string{
 	"192.168.0.0/16",
 }
 
+// authRateLimit — 5 percubaan seminit setiap IP (burst 5) untuk route
+// paling sensitif kepada brute-force/spam (login, register). Angka ni
+// baseline biasa; ketat lagi kalau mula nampak abuse.
+var authRateLimit = rate.Every(12 * time.Second)
+
+const authRateBurst = 5
+
 func NewRouter(
 	pool *pgxpool.Pool,
 	jwtSvc *auth.JWT,
 	refreshTTL time.Duration,
 	emailClient *email.Client,
 	publicBaseURL string,
+	logger *slog.Logger,
 ) *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery(), middleware.RequestLogger(logger))
 	if err := r.SetTrustedProxies(trustedProxyRanges); err != nil {
 		log.Fatalf("set trusted proxies: %v", err)
 	}
@@ -42,9 +53,11 @@ func NewRouter(
 
 	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL)
 
+	authRateLimiter := middleware.RateLimit(authRateLimit, authRateBurst)
+
 	authGroup := r.Group("/auth")
-	authGroup.POST("/register", authHandler.Register)
-	authGroup.POST("/login", authHandler.Login)
+	authGroup.POST("/register", authRateLimiter, authHandler.Register)
+	authGroup.POST("/login", authRateLimiter, authHandler.Login)
 	authGroup.POST("/refresh", authHandler.Refresh)
 	authGroup.POST("/logout", authHandler.Logout)
 	authGroup.POST("/verify-email/confirm", authHandler.ConfirmEmailVerification)

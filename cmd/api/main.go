@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
+	"os"
 
 	"github.com/joho/godotenv"
 
@@ -34,9 +36,11 @@ func main() {
 	}
 	defer pool.Close()
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 	jwtSvc := auth.NewJWT(cfg.JWTSecret, cfg.AccessTokenTTL)
 	emailClient := email.NewClient(cfg.ResendAPIKey, cfg.EmailFrom)
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL)
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, logger)
 
 	log.Printf("listening on :%s", cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {
