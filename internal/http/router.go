@@ -1,6 +1,7 @@
 package http
 
 import (
+	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,13 @@ import (
 	"marc/internal/http/middleware"
 )
 
+// trustedProxyRanges — Railway (dan PaaS lain macam dia) hantar request ke
+// container melalui edge/proxy dalaman atas private network. Trust range
+// RFC1918 standard supaya c.ClientIP() betul-betul baca X-Forwarded-For
+// (untuk logging/rate-limit yang tepat), tapi tak trust SEMUA proxy
+// (default Gin yang insecure — client boleh spoof X-Forwarded-For terus).
+var trustedProxyRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+
 func NewRouter(
 	pool *pgxpool.Pool,
 	jwtSvc *auth.JWT,
@@ -20,6 +28,9 @@ func NewRouter(
 	publicBaseURL string,
 ) *gin.Engine {
 	r := gin.Default()
+	if err := r.SetTrustedProxies(trustedProxyRanges); err != nil {
+		log.Fatalf("set trusted proxies: %v", err)
+	}
 
 	r.GET("/healthz", handlers.Health)
 
