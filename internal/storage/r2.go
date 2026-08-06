@@ -35,6 +35,13 @@ func NewR2Client(accountID, accessKeyID, secretAccessKey, bucket, publicURL stri
 		Region:       "auto",
 		BaseEndpoint: aws.String(endpoint),
 		Credentials:  credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
+		// aws-sdk-go-v2 default (WhenSupported) auto-tambah checksum
+		// CRC32 pada setiap request S3, termasuk presigned URL — R2
+		// tak fully compatible dgn ni, signature jadi tak sah, PUT
+		// client dapat 403 AccessDenied walaupun presign sendiri
+		// (langkah GENERATE URL) nampak berjaya. Verified: tanpa
+		// override ni, upload sebenar ke R2 gagal 403; dengan ni, OK.
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 	})
 
 	return &R2Client{
