@@ -169,16 +169,33 @@ POST   /notifications/read-all
   comment tak "reput" bila parent dipadam) — verified
 - Presign upload: R2 belum configure → 503 graceful, bukan crash — verified
 
-**Belum**: credential R2 sebenar belum di-provision (Cloudflare dashboard) —
-upload gambar akan 503 di staging sampai env var diisi. Backend logic
-sendiri dah lengkap & teruji, tinggal isi credential bila ready.
+**Update**: credential R2 dah di-provision (`.env` diisi). Presign generate
+URL betul (200, URL sah). Tapi jumpa bug real bila test PUT upload sebenar
+ke R2:
+- [x] **Fix**: `aws-sdk-go-v2` default auto-tambah checksum CRC32 pada
+  request S3 (termasuk presigned URL) — R2 tak fully compatible, signature
+  jadi tak sah, client dapat 403 walaupun presign sendiri berjaya. Fix:
+  `RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired`
+  (commit `7c2fe81`)
+- [ ] **Belum selesai**: lepas fix atas, PUT sebenar ke R2 **masih** 403
+  `AccessDenied` (generic, bukan `SignatureDoesNotMatch` — jadi kemungkinan
+  besar bukan isu signature/code lagi). Paling mungkin: **R2 API token
+  permission scope** — perlu semak Cloudflare dashboard: token ada "Object
+  Read & Write" untuk bucket `marc-staging` yang betul? Ini bukan sesuatu
+  saya boleh diagnose lanjut tanpa akses dashboard — perlu tindakan kau
+- [ ] `R2_PUBLIC_URL` masih kosong dalam `.env` — perlu diisi (r2.dev
+  subdomain atau custom domain) sebelum gambar yang berjaya upload boleh
+  dipaparkan balik
 
-### Kerja Flutter (belum start)
-Lihat `marc_flutter/TODO.md` Stage 10.
+### Kerja Flutter ✅ (done, kecuali R2 upload — sekat oleh isu atas)
+Lihat `marc_flutter/TODO.md` Stage 10 untuk detail penuh + hasil verifikasi.
 
 ---
 
 ## Belum putus / perlu bincang lagi
 - Payment/membership dues system — akan tentukan gate tambahan untuk Posts
   visibility bila siap (bincang berasingan, bukan sekarang)
-- Credential R2 (Cloudflare dashboard) — belum di-provision
+- R2 API token permission scope (403 AccessDenied bila upload sebenar,
+  walaupun presign + checksum dah betul) — perlu kau semak Cloudflare
+  dashboard, bukan sesuatu code boleh fix
+- `R2_PUBLIC_URL` belum diisi
