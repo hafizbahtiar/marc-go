@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -53,6 +54,10 @@ func (h *PostHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "jenis post tidak sah"})
 		return
 	}
+	if len(req.R2Keys) > storage.MaxImagesPerPost {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "maksimum 4 gambar setiap post"})
+		return
+	}
 
 	userID := middleware.UserID(c)
 	ctx := c.Request.Context()
@@ -65,6 +70,23 @@ func (h *PostHandler) Create(c *gin.Context) {
 		}
 		if !isManagement {
 			c.JSON(http.StatusForbidden, gin.H{"error": "cuma management boleh buat pengumuman"})
+			return
+		}
+	}
+
+	// R2 tak support content-length-range di presign PUT (verified: 501
+	// "Presigned post requests are not yet implemented") — jadi had saiz
+	// dikuatkuasakan DI SINI, lepas upload siap, sebelum r2_key diterima
+	// masuk post. Gambar yang lebih besar dibuang dari R2 terus (elak
+	// orphan storage).
+	for _, key := range req.R2Keys {
+		if err := h.r2.VerifyImageSize(ctx, key); err != nil {
+			_ = h.r2.DeleteImage(ctx, key)
+			if errors.Is(err, storage.ErrImageTooLarge) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "gambar melebihi had 5MB"})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
 			return
 		}
 	}

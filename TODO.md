@@ -182,10 +182,36 @@ ke R2:
   besar bukan isu signature/code lagi). Paling mungkin: **R2 API token
   permission scope** — perlu semak Cloudflare dashboard: token ada "Object
   Read & Write" untuk bucket `marc-staging` yang betul? Ini bukan sesuatu
-  saya boleh diagnose lanjut tanpa akses dashboard — perlu tindakan kau
+  saya boleh diagnose lanjut tanpa akses dashboard — perlu tindakan kau.
+  Re-verified lagi sekali semasa kerja had saiz gambar di bawah — 403 sama
+  berlaku, confirm ini isu permission token yang consistent, bukan regresi
+  code baru
 - [ ] `R2_PUBLIC_URL` masih kosong dalam `.env` — perlu diisi (r2.dev
   subdomain atau custom domain) sebelum gambar yang berjaya upload boleh
   dipaparkan balik
+
+### Had saiz & bilangan gambar ✅ (done)
+
+Keputusan: R2 **tak support presigned POST** (`PresignPostObject` →
+`501 Presigned post requests are not yet implemented`) — jadi
+`content-length-range` policy condition (cara S3 standard enforce had saiz
+di peringkat presign) tak boleh dipakai. Pivot: had dikuatkuasakan LEPAS
+upload, sebelum r2_key diterima masuk post.
+
+- [x] `internal/storage/r2.go` — `MaxImageSizeBytes` (5MB), `MaxImagesPerPost`
+  (4), `VerifyImageSize` (`HeadObject`, tolak kalau `ContentLength` lebih
+  had), `DeleteImage` (cleanup gambar ditolak, elak orphan bucket)
+- [x] `posts.go` `Create`: tolak `len(r2_keys) > 4` (400, sebelum sentuh R2
+  langsung), loop `VerifyImageSize` setiap key sebelum `tx.Begin` (400 +
+  delete kalau lebih 5MB atau r2_key tak sah/belum diupload)
+- [x] Verified: 5 r2_keys → 400 "maksimum 4 gambar setiap post"; 4 r2_keys
+  palsu → 400 "gambar tidak sah atau belum diupload" (VerifyImageSize
+  correctly reject sebab objek tak wujud di R2); post text-je tanpa gambar
+  → 201 berjaya (r2_keys tetap optional)
+- [ ] **Belum verified end-to-end**: happy-path (upload kecil berjaya →
+  post berjaya) dan reject-path saiz-lebih-5MB — kedua-dua block oleh isu
+  R2 permission token di atas (PUT sebenar masih 403), bukan isu logic
+  code. Verify bila isu token diselesaikan.
 
 ### Kerja Flutter ✅ (done, kecuali R2 upload — sekat oleh isu atas)
 Lihat `marc_flutter/TODO.md` Stage 10 untuk detail penuh + hasil verifikasi.

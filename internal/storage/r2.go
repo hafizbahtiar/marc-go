@@ -5,6 +5,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,7 +15,24 @@ import (
 	"github.com/google/uuid"
 )
 
-const presignExpiry = 5 * time.Minute
+const (
+	presignExpiry = 5 * time.Minute
+
+	// MaxImageSizeBytes — had saiz setiap gambar post (5 MB, padanan had
+	// klasik Twitter — munasabah untuk upload mobile).
+	//
+	// Nota: R2 TAK support presigned POST (`content-length-range` policy
+	// condition macam S3 sebenar) — verified terus: "Presigned post
+	// requests are not yet implemented" (501) bila cuba. Jadi had ni
+	// dikuatkuasakan LEPAS upload via HeadObject (VerifyImageSize), bukan
+	// dihalang di peringkat presign macam yang dirancang asalnya.
+	MaxImageSizeBytes = 5 * 1024 * 1024
+
+	// MaxImagesPerPost — had bilangan gambar setiap post.
+	MaxImagesPerPost = 4
+)
+
+var ErrImageTooLarge = errors.New("gambar melebihi had saiz")
 
 type R2Client struct {
 	client     *s3.Client
@@ -76,6 +94,44 @@ func (r *R2Client) PresignUpload(ctx context.Context, contentType string) (uploa
 	}
 
 	return req.URL, key, nil
+}
+
+// VerifyImageSize semak saiz objek yang DAH diupload (HeadObject) tak
+// melebihi MaxImageSizeBytes. Dipanggil dari CreatePost sebelum r2_key
+// diterima masuk post — R2 tak support content-length-range di presign
+// PUT, jadi ni satu-satunya titik enforcement sebenar (client-side check
+// pun ada, tapi cuma UX, bukan security boundary).
+func (r *R2Client) VerifyImageSize(ctx context.Context, key string) error {
+	if !r.configured {
+		return fmt.Errorf("R2 belum configure")
+	}
+
+	out, err := r.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("head object: %w", err)
+	}
+
+	if out.ContentLength != nil && *out.ContentLength > MaxImageSizeBytes {
+		return ErrImageTooLarge
+	}
+
+	return nil
+}
+
+// DeleteImage buang objek dari R2 — dipanggil bila gambar ditolak
+// (terlalu besar) supaya tak tinggal orphan dalam bucket.
+func (r *R2Client) DeleteImage(ctx context.Context, key string) error {
+	if !r.configured {
+		return nil
+	}
+	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	return err
 }
 
 // PublicURL bina URL awam untuk baca semula gambar yang dah diupload
