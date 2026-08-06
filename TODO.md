@@ -218,6 +218,49 @@ Lihat `marc_flutter/TODO.md` Stage 10 untuk detail penuh + hasil verifikasi.
 
 ---
 
+## Stage 11 — Status pendaftaran ahli (approval khusus MAIWP) — belum design
+
+App ni khusus untuk kakitangan MAIWP — pendaftaran akaun baru kena melalui
+1 lapisan verify/approve oleh pihak berkuasa (management), bukan cuma
+`email_verified` macam sekarang. Diminta 2026-08-07, **belum di-brainstorm
+penuh** — perlu putuskan soalan di bawah dulu sebelum implement.
+
+**Perlu diputuskan dulu:**
+- Status apa yang perlu: `pending` → `approved`/`rejected` je, atau ada
+  status lain lepas tu (`suspended`)?
+- Urutan gate: register → email verify → admin approve → akses penuh?
+  Atau admin approve dulu baru email verify jalan?
+- Approve oleh sesiapa dalam "management" sedia ada, atau perlu role
+  admin berasingan?
+- Notify macam mana: user pending dapat email/push bila
+  approved/rejected? Management dapat notification bila ada pendaftaran
+  baru?
+- Ahli direject — data kekal (boleh apply semula) atau padam terus?
+- Ahli sedia ada (dah daftar sebelum feature ni) — auto-approved, atau
+  kena backfill status secara manual?
+
+**Kerja backend (bila design settled):**
+- [ ] Migration: tambah column `status` kat `users` (`pending`/
+  `approved`/`rejected`, default `pending`), `approved_by`, `approved_at`
+- [ ] Middleware `RequireApprovedStatus` (padanan `RequireVerifiedEmail`,
+  `internal/http/middleware/verified.go`) — gate Posts + core endpoints
+  sehingga status `approved`
+- [ ] Endpoint management: `GET /members?status=pending`,
+  `POST /members/:id/approve`, `POST /members/:id/reject`
+- [ ] Notification bila status berubah (guna infra `notifications` +
+  push sedia ada dari Stage 10)
+
+**Kerja frontend (bila design settled):**
+- [ ] State/skrin baru selepas register: "Menunggu kelulusan" — beza
+  dengan skrin "sila verify email" sedia ada (`verify_email_banner.dart`
+  jadi rujukan pattern)
+- [ ] Router guard (`app/router.dart`): block akses Feed/Posts kalau
+  status bukan `approved`
+- [ ] Skrin management: senarai ahli pending + butang approve/reject
+- [ ] Notification UI bila status ahli berubah
+
+---
+
 ## Belum putus / perlu bincang lagi
 - Payment/membership dues system — akan tentukan gate tambahan untuk Posts
   visibility bila siap (bincang berasingan, bukan sekarang)
@@ -225,3 +268,5 @@ Lihat `marc_flutter/TODO.md` Stage 10 untuk detail penuh + hasil verifikasi.
   walaupun presign + checksum dah betul) — perlu kau semak Cloudflare
   dashboard, bukan sesuatu code boleh fix
 - `R2_PUBLIC_URL` belum diisi
+- Stage 11 (status approval pendaftaran) — soalan design belum dijawab,
+  lihat atas
