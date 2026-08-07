@@ -322,6 +322,65 @@ environment:
 
 ---
 
+## Security audit (Opus, 2026-08-07) — High fixed, Medium/Low pending
+
+Independent security/bug audit atas backend penuh (bukan diff-scoped —
+seluruh `internal/`). Ringkasan: tiada Critical, auth core (bcrypt, token
+hashing, ownership check, sqlc parameterization) solid, Stage 11 gate
+routing di-verify route-by-route — tiada lubang.
+
+**High (2/2 fixed, commits `6de90ba`, `c8a8347`, `170dae0`):**
+- [x] **H1**: Tiada had saiz request body + `router.Run()` tiada timeout
+  → memory-exhaustion DoS pada endpoint unauthenticated
+  (`/auth/refresh`, `/logout`, `/verify-email/confirm`). Fix:
+  `middleware.MaxBodySize` (1MiB, global) + `http.Server` eksplisit
+  dengan 4 timeout.
+- [x] **H2**: `/uploads/presign` tiada rate limit + tiada rekod siapa
+  minta key mana → unbounded R2 storage cost, orphan upload. Fix: table
+  `pending_uploads` (r2_key↔user_id), ownership check di `POST /posts`
+  sebelum attach, rate limit presign endpoint. Follow-up fix
+  (`170dae0`): cleanup pending_uploads row dipindah ke DALAM transaction
+  post-creation (asalnya di luar tx — kalau tx rollback lepas cleanup
+  jalan, gambar yang sah jadi tak boleh attach lagi, kena re-upload).
+
+**Belum (Medium/Low — bukan dalam skop "fix High", didokumentasikan untuk
+stage akan datang):**
+- [ ] `PATCH /me` full-replace bukan patch — `{}` atau field kosong
+  silently NULL-kan `phone`/`display_name` sedia ada. Data-loss bug
+  sebenar, bukan teori.
+- [ ] Device-token upsert (`on conflict (onesignal_id) do update set
+  user_id = ...`) tiada check row tu memang kepunyaan caller — boleh
+  hijack push notification orang lain kalau `onesignal_id` bocor.
+- [ ] Approve/reject (`setMemberStatus`) tiada self-check/rank-check —
+  management boleh reject diri sendiri ATAU management lain. Reject
+  management terakhir = **lockout permanent sistem approval** (tiada
+  in-app recovery, kena psql manual — lihat bootstrap section atas).
+  Paling urgent nak fix dari semua item Medium/Low ni.
+- [ ] Approve/reject tiada state precondition — replay endpoint sama
+  berulang kali hantar email + notification tak terhingga kat target,
+  overwrite `approved_by`/`approved_at` setiap kali (rosak audit trail).
+- [ ] Email uniqueness case-sensitive (`Ahmad@` vs `ahmad@` = 2 akaun
+  berlainan) — boleh punca duplicate account / lookalike squat.
+- [ ] Password >72 byte crash bcrypt dengan 500 generic (tiada `max=`
+  validation tag pada register/login).
+- [ ] Refresh token rotation tiada reuse detection — token dicuri +
+  ditukar dulu oleh attacker buat user asli senyap-senyap logout (bukan
+  alert), attacker punya chain terus valid sampai 30 hari. Tiada juga
+  "log out semua device" / revoke-all endpoint.
+- Low (11 item, detail penuh dalam laporan audit asal, tak diulang di
+  sini): comment cross-post leakage (parent_comment_id tak check post_id
+  sama), FK violation pulang 500 bukan 404 (like/comment kat resource
+  tak wujud), cursor pagination boleh skip row bila timestamp tie, login
+  jadi user-enumeration oracle (timing bcrypt vs early-return), dead
+  code `RequireManagement` middleware (tak wired ke mana-mana route,
+  semua check inline dalam handler — betul tapi implies coverage yang
+  tak wujud), tiada rate limit verify-email request/confirm, rejected
+  user tak revoke refresh token sedia ada, trusted-proxy config rapuh
+  kalau topology proxy berubah, tiada CORS config (okay sekarang, perlu
+  bila landing page verify-email `hafizbahtiar.com` sambung terus).
+
+---
+
 ## Belum putus / perlu bincang lagi
 - Payment/membership dues system — akan tentukan gate tambahan untuk Posts
   visibility bila siap (bincang berasingan, bukan sekarang)
