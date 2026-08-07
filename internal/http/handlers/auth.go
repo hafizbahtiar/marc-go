@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"marc/internal/auth"
+	"marc/internal/authz"
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	"marc/internal/http/middleware"
@@ -156,7 +157,32 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	notifyManagementOfPendingMember(ctx, h.queries, user.ID)
+
 	c.JSON(http.StatusCreated, tokens)
+}
+
+// notifyManagementOfPendingMember fan-out notification "ahli baru
+// menunggu kelulusan" kepada semua management (Stage 11). Best-effort —
+// kegagalan notification tak patut gagalkan pendaftaran yang dah
+// berjaya (padanan pattern notifyOwner, Stage 10).
+func notifyManagementOfPendingMember(ctx context.Context, q *sqlc.Queries, newUserID uuid.UUID) {
+	managementIDs, err := q.ListManagementUserIDs(ctx, authz.CategoryManagement)
+	if err != nil {
+		log.Printf("gagal senarai management untuk notify ahli pending: %v", err)
+		return
+	}
+	for _, recipientID := range managementIDs {
+		if _, err := q.CreateNotification(ctx, sqlc.CreateNotificationParams{
+			RecipientID: recipientID,
+			ActorID:     newUserID,
+			Type:        "member_pending",
+			PostID:      pgtype.UUID{},
+			CommentID:   pgtype.UUID{},
+		}); err != nil {
+			log.Printf("gagal cipta notification member_pending: %v", err)
+		}
+	}
 }
 
 // generateMemberID port dari Supabase `handle_new_user()`: format
