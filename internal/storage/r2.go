@@ -4,9 +4,11 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -33,6 +35,7 @@ const (
 )
 
 var ErrImageTooLarge = errors.New("gambar melebihi had saiz")
+var ErrImageInvalidFormat = errors.New("format gambar tidak sah")
 
 type R2Client struct {
 	client     *s3.Client
@@ -116,6 +119,41 @@ func (r *R2Client) VerifyImageSize(ctx context.Context, key string) error {
 
 	if out.ContentLength != nil && *out.ContentLength > MaxImageSizeBytes {
 		return ErrImageTooLarge
+	}
+
+	return nil
+}
+
+// VerifyImageFormat semak byte pertama objek (magic number) padan
+// dengan salah satu format imej dibenarkan (JPEG/PNG/WEBP) — Content-
+// Type di header PUT boleh dipalsukan client, byte sebenar tak boleh.
+// Dipanggil sekali gus dengan VerifyImageSize sebelum r2_key diterima
+// masuk post.
+func (r *R2Client) VerifyImageFormat(ctx context.Context, key string) error {
+	if !r.configured {
+		return fmt.Errorf("R2 belum configure")
+	}
+
+	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+		Range:  aws.String("bytes=0-11"),
+	})
+	if err != nil {
+		return fmt.Errorf("get object: %w", err)
+	}
+	defer out.Body.Close()
+
+	buf := make([]byte, 12)
+	n, _ := io.ReadFull(out.Body, buf)
+	buf = buf[:n]
+
+	switch {
+	case bytes.HasPrefix(buf, []byte{0xFF, 0xD8, 0xFF}): // JPEG
+	case bytes.HasPrefix(buf, []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}): // PNG
+	case len(buf) >= 12 && bytes.Equal(buf[0:4], []byte("RIFF")) && bytes.Equal(buf[8:12], []byte("WEBP")): // WEBP
+	default:
+		return ErrImageInvalidFormat
 	}
 
 	return nil

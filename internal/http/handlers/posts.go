@@ -98,6 +98,13 @@ func (h *PostHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
 			return
 		}
+
+		if err := h.r2.VerifyImageFormat(ctx, key); err != nil {
+			_ = h.r2.DeleteImage(ctx, key)
+			_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
+			return
+		}
 	}
 
 	tx, err := h.pool.Begin(ctx)
