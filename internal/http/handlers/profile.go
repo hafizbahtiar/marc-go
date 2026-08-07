@@ -121,14 +121,9 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "profil tidak dijumpai"})
 			return
 		}
-		c.JSON(http.StatusOK, []memberResponse{{
-			UserID:      row.UserID.String(),
-			MemberID:    row.MemberID,
-			DisplayName: textToPtr(row.DisplayName),
-			RoleName:    row.RoleName,
-			Category:    row.RoleCategory,
-			Status:      row.Status,
-		}})
+		c.JSON(http.StatusOK, []memberResponse{
+			toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.RoleName, row.RoleCategory, row.Status),
+		})
 		return
 	}
 
@@ -140,14 +135,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		}
 		members := make([]memberResponse, len(rows))
 		for i, row := range rows {
-			members[i] = memberResponse{
-				UserID:      row.UserID.String(),
-				MemberID:    row.MemberID,
-				DisplayName: textToPtr(row.DisplayName),
-				RoleName:    row.RoleName,
-				Category:    row.RoleCategory,
-				Status:      row.Status,
-			}
+			members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.RoleName, row.RoleCategory, row.Status)
 		}
 		c.JSON(http.StatusOK, members)
 		return
@@ -161,16 +149,20 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 
 	members := make([]memberResponse, len(rows))
 	for i, row := range rows {
-		members[i] = memberResponse{
-			UserID:      row.UserID.String(),
-			MemberID:    row.MemberID,
-			DisplayName: textToPtr(row.DisplayName),
-			RoleName:    row.RoleName,
-			Category:    row.RoleCategory,
-			Status:      row.Status,
-		}
+		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.RoleName, row.RoleCategory, row.Status)
 	}
 	c.JSON(http.StatusOK, members)
+}
+
+func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, roleName, category, status string) memberResponse {
+	return memberResponse{
+		UserID:      userID.String(),
+		MemberID:    memberID,
+		DisplayName: textToPtr(displayName),
+		RoleName:    roleName,
+		Category:    category,
+		Status:      status,
+	}
 }
 
 type memberActionResponse struct {
