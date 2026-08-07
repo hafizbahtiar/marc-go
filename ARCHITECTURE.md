@@ -18,7 +18,7 @@ internal/
   http/
     router.go                — wiring semua route
     handlers/                — satu fail per domain (auth, profile, device_tokens, health, bind)
-    middleware/               — RequireAuth, RequireManagement
+    middleware/               — RequireAuth, RequireApprovedStatus, RequireVerifiedEmail
 queries/                     — SQL sumber untuk sqlc (input, bukan output)
 ```
 
@@ -75,8 +75,11 @@ vendor dependency untuk sistem yang critical (auth).
 Supabase asal guna RLS (`auth.uid() = id`, function `is_management()`).
 Backend Go ni tiada RLS automatik — semua enforcement app-level:
 
-1. **Role check** (`internal/authz/authz.go` `IsManagement` + middleware
-   `RequireManagement`) — untuk route yang management-only.
+1. **Role check** (`internal/authz/authz.go` `IsManagement`) — dipanggil
+   terus inline dalam handler (bukan middleware route-group-level, sebab
+   check management selalunya perlu logic tambahan ikut target — cth.
+   `setMemberStatus` kena tahu SIAPA target sebelum putuskan, bukan
+   cuma "route ni management-only").
 2. **Ownership check** — **tiada fungsi generic untuk ni.** Pattern yang
    dipakai: handler WAJIB scope query guna user id daripada
    `middleware.UserID(c)` (hasil verify JWT), **tak pernah** terima "whose
