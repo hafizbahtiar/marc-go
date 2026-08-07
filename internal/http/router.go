@@ -69,19 +69,26 @@ func NewRouter(
 	authGroup.POST("/verify-email/confirm", authHandler.ConfirmEmailVerification)
 	authGroup.GET("/verify-email/confirm", authHandler.ConfirmEmailVerificationLink)
 
-	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc))
+	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	protectedAuthGroup.POST("/verify-email/request", authHandler.RequestEmailVerification)
 
-	profileHandler := handlers.NewProfileHandler(pool)
+	profileHandler := handlers.NewProfileHandler(pool, emailClient)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
 
 	protected := r.Group("/", middleware.RequireAuth(jwtSvc))
 	protected.GET("/me", profileHandler.Me)
 	protected.PATCH("/me", profileHandler.UpdateMe)
-	protected.GET("/members", profileHandler.Members)
-	protected.POST("/device-tokens", deviceTokenHandler.Upsert)
-	protected.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)
-	protected.DELETE("/device-tokens/by-onesignal/:onesignalId", deviceTokenHandler.DeleteByOnesignalID)
+
+	// approved (Stage 11) — /members, /device-tokens, dan approve/reject
+	// sendiri perlu status=approved. /me sengaja TAK di sini (lihat
+	// RequireApprovedStatus).
+	approved := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
+	approved.GET("/members", profileHandler.Members)
+	approved.POST("/members/:id/approve", profileHandler.ApproveMember)
+	approved.POST("/members/:id/reject", profileHandler.RejectMember)
+	approved.POST("/device-tokens", deviceTokenHandler.Upsert)
+	approved.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)
+	approved.DELETE("/device-tokens/by-onesignal/:onesignalId", deviceTokenHandler.DeleteByOnesignalID)
 
 	// Posts (Stage 10) — perlu email_verified, lapisan tambahan atas
 	// RequireAuth. Payment gate akan ditambah dalam middleware ni bila
@@ -91,7 +98,7 @@ func NewRouter(
 	notificationHandler := handlers.NewNotificationHandler(pool)
 	uploadHandler := handlers.NewUploadHandler(r2Client)
 
-	verified := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireVerifiedEmail(sqlc.New(pool)))
+	verified := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)), middleware.RequireVerifiedEmail(sqlc.New(pool)))
 	verified.GET("/posts", postHandler.List)
 	verified.POST("/posts", postHandler.Create)
 	verified.GET("/posts/:id", postHandler.Get)
