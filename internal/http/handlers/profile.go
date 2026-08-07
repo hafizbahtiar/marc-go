@@ -272,6 +272,9 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 		notifType = "member_rejected"
 		subject, html = "Pendaftaran MARC Ditolak",
 			"<p>Pendaftaran anda ke app MARC tidak diluluskan pada masa ini. Jika ini satu kesilapan, sila hubungi pihak pengurusan MAIWP.</p>"
+		if rerr := h.queries.DeleteRefreshTokensByUser(ctx, targetID); rerr != nil {
+			log.Printf("gagal revoke refresh token ahli ditolak: %v", rerr)
+		}
 	}
 
 	if target, err := h.queries.GetProfileByUserID(ctx, targetID); err == nil {

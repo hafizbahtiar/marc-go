@@ -66,11 +66,11 @@ func NewRouter(
 	authGroup.POST("/login", authRateLimiter, authHandler.Login)
 	authGroup.POST("/refresh", authHandler.Refresh)
 	authGroup.POST("/logout", authHandler.Logout)
-	authGroup.POST("/verify-email/confirm", authHandler.ConfirmEmailVerification)
-	authGroup.GET("/verify-email/confirm", authHandler.ConfirmEmailVerificationLink)
+	authGroup.POST("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerification)
+	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
 
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
-	protectedAuthGroup.POST("/verify-email/request", authHandler.RequestEmailVerification)
+	protectedAuthGroup.POST("/verify-email/request", authRateLimiter, authHandler.RequestEmailVerification)
 
 	profileHandler := handlers.NewProfileHandler(pool, emailClient)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
