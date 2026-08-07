@@ -26,7 +26,7 @@ type notificationResponse struct {
 	ID        string  `json:"id"`
 	ActorID   string  `json:"actor_id"`
 	Type      string  `json:"type"`
-	PostID    string  `json:"post_id"`
+	PostID    *string `json:"post_id"`
 	CommentID *string `json:"comment_id"`
 	Read      bool    `json:"read"`
 	CreatedAt string  `json:"created_at"`
@@ -66,7 +66,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 			ID:        r.ID.String(),
 			ActorID:   r.ActorID.String(),
 			Type:      r.Type,
-			PostID:    r.PostID.String(),
+			PostID:    nullableUUIDString(r.PostID),
 			CommentID: nullableUUIDString(r.CommentID),
 			Read:      r.ReadAt.Valid,
 			CreatedAt: formatTime(r.CreatedAt),

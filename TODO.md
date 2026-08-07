@@ -281,9 +281,44 @@ Keputusan design (soalan asal semua dah dijawab):
   masing-masing register (fan-out logic betul — ia hantar ke management
   yang wujud *pada masa insert*, bukan retroactive). Bukan bug — dijangka
   dalam brief task ni.
+- `member_pending` fan-out disahkan berasingan (2026-08-07, final review):
+  register `mgmt-first@example.com` dulu, promote ke management + `approved`
+  di DB, baru register `pending-after-mgmt@example.com` — hasil: tepat
+  **1 row** `member_pending`, `recipient_id` = user id `mgmt-first`
+  (`c316b258-7e77-49e3-bce7-18c592b06fde`). Confirm insert path (nullable
+  `post_id` + type baru, lalu `sqlc.CreateNotification`) betul bila
+  management wujud pada masa registration.
 
 **Note**: kerja frontend (`marc_flutter/TODO.md` Stage 11) masih pending,
 **tak blocked** oleh backend — boleh mula bila-bila.
+
+### Bootstrap management user pertama (baca dulu sebelum deploy)
+
+Registration sentiasa assign role `ahli` (ordinary member) — **tiada**
+endpoint untuk promote user ke management. Kalau environment ada 0
+management user, setiap pendaftaran baru akan stuck `pending` selama-lamanya
+sebab tiada sesiapa boleh approve. Sebelum deploy Stage 11 ke mana-mana
+environment:
+
+1. Semak dulu sama ada environment tu dah ada sekurang-kurangnya 1
+   management user:
+   ```sql
+   select count(*) from profiles p join roles r on r.id = p.role_id where r.category = 'management';
+   ```
+   Kalau pulang 0, promote seorang dulu (langkah 2) sebelum benarkan
+   sesiapa register.
+2. Promote manual (satu-satunya cara buat masa ni):
+   ```sql
+   update profiles set role_id = (select id from roles where category = 'management' limit 1)
+   where user_id = (select id from users where email = '<email>');
+   ```
+3. **Tiada** cara in-app/API untuk promote user ke management — known gap,
+   bukan dalam skop Stage 11 (design spec dah deferred role `admin`
+   berasingan secara eksplisit). Kalau ni jadi kesakitan operational
+   sebenar, boleh jadi task untuk stage akan datang:
+   - [ ] Endpoint/tooling untuk promote user ke management (role `admin`
+     berasingan ke, atau superuser bootstrap script ke) — bincang bila
+     jadi keperluan sebenar, bukan sekarang
 
 ---
 
