@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -32,10 +33,13 @@ type createCommentRequest struct {
 // reply kat comment top-level (depth 1) → jadi depth 2 macam biasa. Reply
 // kat comment yang DAH depth 2 → "flatten", attach terus kat depth-1
 // parent asal (bukan cipta depth 3).
-func resolveParentCommentID(ctx context.Context, q *sqlc.Queries, requestedParentID uuid.UUID) (pgtype.UUID, error) {
+func resolveParentCommentID(ctx context.Context, q *sqlc.Queries, postID, requestedParentID uuid.UUID) (pgtype.UUID, error) {
 	parent, err := q.GetCommentByID(ctx, requestedParentID)
 	if err != nil {
 		return pgtype.UUID{}, err
+	}
+	if parent.PostID != postID {
+		return pgtype.UUID{}, fmt.Errorf("parent comment bukan milik post ini")
 	}
 	if parent.ParentCommentID.Valid {
 		return parent.ParentCommentID, nil
@@ -65,7 +69,7 @@ func (h *CommentHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "parent_comment_id tidak sah"})
 			return
 		}
-		parentID, err = resolveParentCommentID(ctx, h.queries, requestedID)
+		parentID, err = resolveParentCommentID(ctx, h.queries, postID, requestedID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "comment induk tidak dijumpai"})
 			return
@@ -79,6 +83,10 @@ func (h *CommentHandler) Create(c *gin.Context) {
 		Content:         req.Content,
 	})
 	if err != nil {
+		if isForeignKeyViolation(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "post tidak dijumpai"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal hantar comment"})
 		return
 	}
@@ -266,6 +274,10 @@ func (h *CommentHandler) Like(c *gin.Context) {
 	userID := middleware.UserID(c)
 
 	if err := h.queries.LikeComment(ctx, sqlc.LikeCommentParams{CommentID: id, UserID: userID}); err != nil {
+		if isForeignKeyViolation(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "comment tidak dijumpai"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal like comment"})
 		return
 	}

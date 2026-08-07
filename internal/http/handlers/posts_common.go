@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"marc/internal/authz"
@@ -62,6 +64,11 @@ func nullableUUIDString(id pgtype.UUID) *string {
 	}
 	s := uuid.UUID(id.Bytes).String()
 	return &s
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
 // canModify — pattern ownership (Stage 3) + moderation (Stage 10): pemilik

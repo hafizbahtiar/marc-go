@@ -328,6 +328,10 @@ func (h *PostHandler) Like(c *gin.Context) {
 	userID := middleware.UserID(c)
 
 	if err := h.queries.LikePost(ctx, sqlc.LikePostParams{PostID: id, UserID: userID}); err != nil {
+		if isForeignKeyViolation(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "post tidak dijumpai"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal like post"})
 		return
 	}
