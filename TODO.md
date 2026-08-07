@@ -218,46 +218,72 @@ Lihat `marc_flutter/TODO.md` Stage 10 untuk detail penuh + hasil verifikasi.
 
 ---
 
-## Stage 11 — Status pendaftaran ahli (approval khusus MAIWP) — belum design
+## Stage 11 — Status pendaftaran ahli (approval khusus MAIWP)
 
 App ni khusus untuk kakitangan MAIWP — pendaftaran akaun baru kena melalui
 1 lapisan verify/approve oleh pihak berkuasa (management), bukan cuma
-`email_verified` macam sekarang. Diminta 2026-08-07, **belum di-brainstorm
-penuh** — perlu putuskan soalan di bawah dulu sebelum implement.
+`email_verified` macam sekarang. Design penuh dibrainstorm & confirmed
+dengan user (2026-08-07), spec di
+`docs/superpowers/specs/2026-08-07-member-approval-status-design.md`.
 
-**Perlu diputuskan dulu:**
-- Status apa yang perlu: `pending` → `approved`/`rejected` je, atau ada
-  status lain lepas tu (`suspended`)?
-- Urutan gate: register → email verify → admin approve → akses penuh?
-  Atau admin approve dulu baru email verify jalan?
-- Approve oleh sesiapa dalam "management" sedia ada, atau perlu role
-  admin berasingan?
-- Notify macam mana: user pending dapat email/push bila
-  approved/rejected? Management dapat notification bila ada pendaftaran
-  baru?
-- Ahli direject — data kekal (boleh apply semula) atau padam terus?
-- Ahli sedia ada (dah daftar sebelum feature ni) — auto-approved, atau
-  kena backfill status secara manual?
+Keputusan design (soalan asal semua dah dijawab):
+- Status: `pending` → `approved`/`rejected` je (tiada `suspended` buat masa ni)
+- Gate: `status` disimpan di `profiles` (bukan `users`), default `pending`
+  untuk akaun baru; akaun sedia ada backfill terus ke `approved`
+- Approve/reject oleh sesiapa dalam kategori role `management` sedia ada
+  (`IsManagement`) — tiada role `admin` berasingan
+- Reject **tak** padam data (boleh apply semula lain hari)
+- Notification dua arah: management dapat `member_pending` bila ada
+  pendaftaran baru; ahli dapat `member_approved`/`member_rejected` bila
+  status dia berubah — guna infra `notifications` (in-app) + email sedia ada
 
-**Kerja backend (bila design settled):**
-- [ ] Migration: tambah column `status` kat `users` (`pending`/
-  `approved`/`rejected`, default `pending`), `approved_by`, `approved_at`
-- [ ] Middleware `RequireApprovedStatus` (padanan `RequireVerifiedEmail`,
-  `internal/http/middleware/verified.go`) — gate Posts + core endpoints
-  sehingga status `approved`
-- [ ] Endpoint management: `GET /members?status=pending`,
+### Kerja backend ✅ (done)
+
+- [x] Migration: tambah column `status` (`pending`/`approved`/`rejected`,
+  default `pending`), `approved_by`, `approved_at` kat `profiles` —
+  backfill akaun sedia ada ke `approved`
+- [x] Migration: widen `notifications.type` terima `member_pending`/
+  `member_approved`/`member_rejected`
+- [x] sqlc queries: list ahli pending, approve/reject (set status +
+  `approved_by`/`approved_at`)
+- [x] Middleware `RequireApprovedStatus` (padanan `RequireVerifiedEmail`,
+  `internal/http/middleware/verified.go`) — gate semua endpoint kecuali
+  `/me` (GET/PATCH) sehingga status `approved`
+- [x] Router wired: `GET /members?status=pending`,
   `POST /members/:id/approve`, `POST /members/:id/reject`
-- [ ] Notification bila status berubah (guna infra `notifications` +
-  push sedia ada dari Stage 10)
+  (`ProfileHandler.ApproveMember`/`RejectMember`, guna `IsManagement`)
+- [x] Registration fan-out: notification in-app `member_pending` ke
+  setiap management user semasa akaun baru register
 
-**Kerja frontend (bila design settled):**
-- [ ] State/skrin baru selepas register: "Menunggu kelulusan" — beza
-  dengan skrin "sila verify email" sedia ada (`verify_email_banner.dart`
-  jadi rujukan pattern)
-- [ ] Router guard (`app/router.dart`): block akses Feed/Posts kalau
-  status bukan `approved`
-- [ ] Skrin management: senarai ahli pending + butang approve/reject
-- [ ] Notification UI bila status ahli berubah
+**Verified end-to-end lawan Postgres sebenar** (DB `marc_test`, bukan andaian):
+- Register: akaun baru → 201, mula `status: pending`
+- Gate `pending`: `/me` → 200 (`status: pending`); `/members` → 403
+  `"akaun anda belum diluluskan pihak pengurusan"`; `/auth/verify-email/request`
+  → 403 mesej sama — tiga-tiga diverify
+- Management: seed akaun, promote role + status `approved` terus di DB,
+  `GET /members?status=pending` pulang tepat 2 entri (dua akaun ahli baru)
+- Approve: `POST /members/:id/approve` → 200, `status: approved`,
+  `approved_by`/`approved_at` terisi betul (user id + timestamp management)
+- Reject: `POST /members/:id/reject` → 200, `status: rejected`,
+  `approved_by`/`approved_at` terisi sama macam approve
+- RBAC: ahli biasa (status `approved`, bukan management) cuba
+  `POST /members/:id/approve` → 403 `"cuma pengurusan boleh luluskan/tolak ahli"`
+- Selepas approve: akaun terbabit `/members` → 200 (unlock),
+  `/auth/verify-email/request` → 204 (tak lagi 403)
+- Selepas reject: `/me` → 200 tetap papar `status: rejected`, `/members`
+  masih 403 (kekal blocked, data tak dipadam — confirm `RejectProfile`
+  tak delete row)
+- Notification: `member_approved` (1 row) dan `member_rejected` (1 row)
+  tercipta dengan `recipient_id`/`actor_id` tepat. `member_pending`: **0
+  row** dalam run ni — sebab ketiga-tiga akaun (`pending-test`,
+  `approve-test`, `mgmt-test`) register **sebelum** `mgmt-test` di-promote
+  jadi management, jadi tiada recipient management wujud lagi masa
+  masing-masing register (fan-out logic betul — ia hantar ke management
+  yang wujud *pada masa insert*, bukan retroactive). Bukan bug — dijangka
+  dalam brief task ni.
+
+**Note**: kerja frontend (`marc_flutter/TODO.md` Stage 11) masih pending,
+**tak blocked** oleh backend — boleh mula bila-bila.
 
 ---
 
@@ -268,5 +294,3 @@ penuh** — perlu putuskan soalan di bawah dulu sebelum implement.
   walaupun presign + checksum dah betul) — perlu kau semak Cloudflare
   dashboard, bukan sesuatu code boleh fix
 - `R2_PUBLIC_URL` belum diisi
-- Stage 11 (status approval pendaftaran) — soalan design belum dijawab,
-  lihat atas

@@ -175,7 +175,7 @@ di-generate sebagai `github.com/google/uuid.UUID` (bukan default
 |---|---|
 | `users` | akaun (email, password_hash) — gantian `auth.users` Supabase |
 | `roles` | `ahli`/`supervisor`/`manager`/`superadmin`, kategori `ahli`/`management` |
-| `profiles` | member_id (`MARC{YYYY}/{MM}/{0000}`), display_name, phone, role_id, email_verified |
+| `profiles` | member_id (`MARC{YYYY}/{MM}/{0000}`), display_name, phone, role_id, email_verified, status (`pending`/`approved`/`rejected`, Stage 11), approved_by, approved_at |
 | `device_tokens` | OneSignal subscription id per user (push notification) |
 | `sequences` | counter generic — dipakai jana `member_id` atomic |
 | `refresh_tokens` | hash refresh token (single-use, dipadam lepas consume) |
