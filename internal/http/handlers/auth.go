@@ -25,6 +25,13 @@ import (
 
 const emailVerificationTTL = time.Hour
 
+// refreshReuseGraceWindow — replay token yang dah consumed DALAM tempoh
+// ni dianggap race/retry biasa (concurrent request, network retry),
+// BUKAN reuse attack — elak false-positive family revocation yang
+// paksa re-login tanpa sebab. Attacker sebenar yang curi token dan guna
+// lambat (lebih dari tempoh ni) tetap dikesan macam biasa.
+const refreshReuseGraceWindow = 5 * time.Second
+
 type AuthHandler struct {
 	pool           *pgxpool.Pool
 	queries        *sqlc.Queries
@@ -269,10 +276,12 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 			// session user asli yang sama) sama-sama terputus, paksa
 			// re-login penuh.
 			if existing, ferr := h.queries.GetRefreshTokenByHash(ctx, hash); ferr == nil && existing.ConsumedAt.Valid {
-				if rerr := h.queries.RevokeRefreshTokenFamily(ctx, existing.FamilyID); rerr != nil {
-					log.Printf("gagal revoke refresh token family lepas reuse dikesan: %v", rerr)
-				} else {
-					log.Printf("refresh token reuse dikesan, family %s direvoke", existing.FamilyID)
+				if time.Since(existing.ConsumedAt.Time) > refreshReuseGraceWindow {
+					if rerr := h.queries.RevokeRefreshTokenFamily(ctx, existing.FamilyID); rerr != nil {
+						log.Printf("gagal revoke refresh token family lepas reuse dikesan: %v", rerr)
+					} else {
+						log.Printf("refresh token reuse dikesan, family %s direvoke", existing.FamilyID)
+					}
 				}
 			}
 		}
