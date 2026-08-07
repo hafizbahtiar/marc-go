@@ -50,7 +50,7 @@ func NewRouter(
 	pushSvc *push.Service,
 ) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Recovery(), middleware.RequestLogger(logger))
+	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
 	if err := r.SetTrustedProxies(trustedProxyRanges); err != nil {
 		log.Fatalf("set trusted proxies: %v", err)
 	}
@@ -96,7 +96,7 @@ func NewRouter(
 	postHandler := handlers.NewPostHandler(pool, r2Client, pushSvc)
 	commentHandler := handlers.NewCommentHandler(pool, pushSvc)
 	notificationHandler := handlers.NewNotificationHandler(pool)
-	uploadHandler := handlers.NewUploadHandler(r2Client)
+	uploadHandler := handlers.NewUploadHandler(pool, r2Client)
 
 	verified := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)), middleware.RequireVerifiedEmail(sqlc.New(pool)))
 	verified.GET("/posts", postHandler.List)
@@ -114,7 +114,8 @@ func NewRouter(
 	verified.POST("/comments/:id/like", commentHandler.Like)
 	verified.DELETE("/comments/:id/like", commentHandler.Unlike)
 
-	verified.POST("/uploads/presign", uploadHandler.Presign)
+	uploadRateLimiter := middleware.RateLimit(rate.Every(6*time.Second), 5)
+	verified.POST("/uploads/presign", uploadRateLimiter, uploadHandler.Presign)
 
 	verified.GET("/notifications", notificationHandler.List)
 	verified.POST("/notifications/:id/read", notificationHandler.MarkRead)
