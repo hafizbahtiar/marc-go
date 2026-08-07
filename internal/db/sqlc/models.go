@@ -48,7 +48,7 @@ type Notification struct {
 	RecipientID uuid.UUID          `json:"recipient_id"`
 	ActorID     uuid.UUID          `json:"actor_id"`
 	Type        string             `json:"type"`
-	PostID      uuid.UUID          `json:"post_id"`
+	PostID      pgtype.UUID        `json:"post_id"`
 	CommentID   pgtype.UUID        `json:"comment_id"`
 	ReadAt      pgtype.Timestamptz `json:"read_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
@@ -86,6 +86,9 @@ type Profile struct {
 	RoleID        int16              `json:"role_id"`
 	EmailVerified bool               `json:"email_verified"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Status        string             `json:"status"`
+	ApprovedBy    pgtype.UUID        `json:"approved_by"`
+	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
 }
 
 type RefreshToken struct {

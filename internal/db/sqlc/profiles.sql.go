@@ -12,10 +12,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveProfile = `-- name: ApproveProfile :one
+update profiles
+set status = 'approved', approved_by = $2, approved_at = now()
+where user_id = $1
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
+`
+
+type ApproveProfileParams struct {
+	UserID     uuid.UUID   `json:"user_id"`
+	ApprovedBy pgtype.UUID `json:"approved_by"`
+}
+
+func (q *Queries) ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, approveProfile, arg.UserID, arg.ApprovedBy)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+	)
+	return i, err
+}
+
 const createProfile = `-- name: CreateProfile :one
 insert into profiles (user_id, member_id, role_id)
 values ($1, $2, $3)
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
 `
 
 type CreateProfileParams struct {
@@ -36,6 +67,9 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.RoleID,
 		&i.EmailVerified,
 		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 	)
 	return i, err
 }
@@ -53,7 +87,7 @@ func (q *Queries) GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
@@ -73,6 +107,9 @@ type GetProfileByUserIDRow struct {
 	RoleID        int16              `json:"role_id"`
 	EmailVerified bool               `json:"email_verified"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Status        string             `json:"status"`
+	ApprovedBy    pgtype.UUID        `json:"approved_by"`
+	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
 	Email         string             `json:"email"`
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
@@ -91,6 +128,9 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (Get
 		&i.RoleID,
 		&i.EmailVerified,
 		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 		&i.Email,
 		&i.RoleKey,
 		&i.RoleName,
@@ -113,9 +153,47 @@ func (q *Queries) GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID)
 	return category, err
 }
 
+const getStatusByUserID = `-- name: GetStatusByUserID :one
+select status from profiles where user_id = $1
+`
+
+func (q *Queries) GetStatusByUserID(ctx context.Context, userID uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getStatusByUserID, userID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const listManagementUserIDs = `-- name: ListManagementUserIDs :many
+select p.user_id
+from profiles p
+join roles r on r.id = p.role_id
+where r.category = $1
+`
+
+func (q *Queries) ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listManagementUserIDs, category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProfiles = `-- name: ListProfiles :many
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at,
   r.key as role_key,
   r.name as role_name,
   r.category as role_category
@@ -133,6 +211,9 @@ type ListProfilesRow struct {
 	RoleID        int16              `json:"role_id"`
 	EmailVerified bool               `json:"email_verified"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Status        string             `json:"status"`
+	ApprovedBy    pgtype.UUID        `json:"approved_by"`
+	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
 	RoleCategory  string             `json:"role_category"`
@@ -156,6 +237,73 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
 			&i.RoleID,
 			&i.EmailVerified,
 			&i.CreatedAt,
+			&i.Status,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.RoleKey,
+			&i.RoleName,
+			&i.RoleCategory,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProfilesByStatus = `-- name: ListProfilesByStatus :many
+select
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at,
+  r.key as role_key,
+  r.name as role_name,
+  r.category as role_category
+from profiles p
+join roles r on r.id = p.role_id
+where p.status = $1
+order by p.member_id
+`
+
+type ListProfilesByStatusRow struct {
+	ID            uuid.UUID          `json:"id"`
+	UserID        uuid.UUID          `json:"user_id"`
+	MemberID      string             `json:"member_id"`
+	DisplayName   pgtype.Text        `json:"display_name"`
+	Phone         pgtype.Text        `json:"phone"`
+	RoleID        int16              `json:"role_id"`
+	EmailVerified bool               `json:"email_verified"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Status        string             `json:"status"`
+	ApprovedBy    pgtype.UUID        `json:"approved_by"`
+	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
+	RoleKey       string             `json:"role_key"`
+	RoleName      string             `json:"role_name"`
+	RoleCategory  string             `json:"role_category"`
+}
+
+func (q *Queries) ListProfilesByStatus(ctx context.Context, status string) ([]ListProfilesByStatusRow, error) {
+	rows, err := q.db.Query(ctx, listProfilesByStatus, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProfilesByStatusRow
+	for rows.Next() {
+		var i ListProfilesByStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.MemberID,
+			&i.DisplayName,
+			&i.Phone,
+			&i.RoleID,
+			&i.EmailVerified,
+			&i.CreatedAt,
+			&i.Status,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
 			&i.RoleKey,
 			&i.RoleName,
 			&i.RoleCategory,
@@ -179,11 +327,42 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
 	return err
 }
 
+const rejectProfile = `-- name: RejectProfile :one
+update profiles
+set status = 'rejected', approved_by = $2, approved_at = now()
+where user_id = $1
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
+`
+
+type RejectProfileParams struct {
+	UserID     uuid.UUID   `json:"user_id"`
+	ApprovedBy pgtype.UUID `json:"approved_by"`
+}
+
+func (q *Queries) RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, rejectProfile, arg.UserID, arg.ApprovedBy)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+	)
+	return i, err
+}
+
 const updateProfile = `-- name: UpdateProfile :one
 update profiles
 set display_name = $2, phone = $3
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
 `
 
 type UpdateProfileParams struct {
@@ -204,6 +383,9 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		&i.RoleID,
 		&i.EmailVerified,
 		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
 	)
 	return i, err
 }

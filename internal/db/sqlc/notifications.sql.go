@@ -22,7 +22,7 @@ type CreateNotificationParams struct {
 	RecipientID uuid.UUID   `json:"recipient_id"`
 	ActorID     uuid.UUID   `json:"actor_id"`
 	Type        string      `json:"type"`
-	PostID      uuid.UUID   `json:"post_id"`
+	PostID      pgtype.UUID `json:"post_id"`
 	CommentID   pgtype.UUID `json:"comment_id"`
 }
 

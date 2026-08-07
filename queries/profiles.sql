@@ -42,3 +42,35 @@ select
 from profiles p
 join roles r on r.id = p.role_id
 order by p.member_id;
+
+-- name: GetStatusByUserID :one
+select status from profiles where user_id = $1;
+
+-- name: ListProfilesByStatus :many
+select
+  p.*,
+  r.key as role_key,
+  r.name as role_name,
+  r.category as role_category
+from profiles p
+join roles r on r.id = p.role_id
+where p.status = $1
+order by p.member_id;
+
+-- name: ApproveProfile :one
+update profiles
+set status = 'approved', approved_by = $2, approved_at = now()
+where user_id = $1
+returning *;
+
+-- name: RejectProfile :one
+update profiles
+set status = 'rejected', approved_by = $2, approved_at = now()
+where user_id = $1
+returning *;
+
+-- name: ListManagementUserIDs :many
+select p.user_id
+from profiles p
+join roles r on r.id = p.role_id
+where r.category = $1;

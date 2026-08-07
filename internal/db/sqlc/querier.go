@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error)
 	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
 	// Atomic: DELETE...RETURNING dalam SATU statement, supaya refresh token
 	// betul-betul single-use. Kalau dua request serentak hantar hash yang
@@ -47,6 +48,7 @@ type Querier interface {
 	GetRoleByID(ctx context.Context, id int16) (Role, error)
 	GetRoleByKey(ctx context.Context, key string) (Role, error)
 	GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID) (string, error)
+	GetStatusByUserID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	LikeComment(ctx context.Context, arg LikeCommentParams) error
@@ -55,12 +57,14 @@ type Querier interface {
 	// bina tree guna parent_comment_id.
 	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)
 	ListDeviceTokensByUser(ctx context.Context, userID uuid.UUID) ([]DeviceToken, error)
+	ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
 	// Cursor-based: pulang post yang created_at lebih lama daripada cursor
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
 	ListProfiles(ctx context.Context) ([]ListProfilesRow, error)
+	ListProfilesByStatus(ctx context.Context, status string) ([]ListProfilesByStatusRow, error)
 	ListRoles(ctx context.Context) ([]Role, error)
 	MarkAllNotificationsRead(ctx context.Context, recipientID uuid.UUID) error
 	MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
@@ -70,6 +74,7 @@ type Querier interface {
 	// Untuk tandakan "liked_by_me" bila list post — pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
+	RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error)
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
