@@ -322,7 +322,7 @@ environment:
 
 ---
 
-## Security audit (Opus, 2026-08-07) — High + Medium fixed, Low pending
+## Security audit (Opus, 2026-08-07) — High + Medium + 9/11 Low fixed
 
 Independent security/bug audit atas backend penuh (bukan diff-scoped —
 seluruh `internal/`). Ringkasan: tiada Critical, auth core (bcrypt, token
@@ -392,18 +392,46 @@ orphan-sweep gap):**
   panjang dari window reuse-detection, kalau tidak pruning buka balik
   lubang M7.
 
-**Belum (Low, 11 item — bukan dalam skop batch ni, detail penuh dalam
-laporan audit asal, tak diulang di sini):** comment cross-post leakage
-(parent_comment_id tak check post_id sama), FK violation pulang 500
-bukan 404 (like/comment kat resource tak wujud), cursor pagination
-boleh skip row bila timestamp tie, login jadi user-enumeration oracle
-(timing bcrypt vs early-return), dead code `RequireManagement`
-middleware (tak wired ke mana-mana route, semua check inline dalam
-handler — betul tapi implies coverage yang tak wujud), tiada rate
-limit verify-email request/confirm, rejected user tak revoke refresh
-token sedia ada, trusted-proxy config rapuh kalau topology proxy
-berubah, tiada CORS config (okay sekarang, perlu bila landing page
-verify-email `hafizbahtiar.com` sambung terus).
+**Low (9/11 fixed, commits `6909e27`, `2562aee`, `8e2ece5`, `5ff2c15`,
+`d49cf5d`, `265c881`, `b7c6935`):**
+- [x] **L1**: `r2_key` client-controlled + tak divalidasi masa attach —
+  dah resolved sebagai side-effect H2 (`pending_uploads` ownership
+  check di `posts.go` Create, commit `c8a8347`), tak perlu kerja baru.
+- [x] **L2**: presigned PUT boleh host arbitrary bytes bawah domain R2
+  awam (Content-Type di header PUT boleh dipalsukan). Fix:
+  `VerifyImageFormat` — semak magic number byte pertama (JPEG/PNG/WEBP)
+  guna ranged `GetObject` (bytes=0-11), dipanggil lepas VerifyImageSize.
+- [x] **L3+L4**: comment threading tak constrain kat post yang sama
+  (`parent_comment_id` boleh rujuk comment post lain); FK violation
+  (like/comment kat resource tak wujud) pulang 500 generic bukan 404.
+  Fix: `resolveParentCommentID` semak `parent.PostID == postID`; helper
+  `isForeignKeyViolation` (code `23503`, padanan `isUniqueViolation`)
+  dipakai di 3 tempat (`Like` post, `Like` comment, `CreateComment`).
+- [x] **L5**: cursor pagination (`ListPosts`/`ListNotifications`) boleh
+  skip row bila timestamp tie. Fix: keyset pagination atas
+  `(created_at, id)`, row-value comparison SQL + cursor format baru
+  `<rfc3339nano>|<uuid>` (client treat cursor opaque, tak perlu ubah
+  Flutter — confirmed semasa fix).
+- [x] **L6**: login jadi user-enumeration oracle (timing bcrypt vs
+  early-return path tak wujud). Fix: burn bcrypt compare (dummy hash
+  tetap) pada path email-tak-wujud jugak, samakan masa response.
+- [x] **L7**: dead code `RequireManagement` middleware (tak wired ke
+  mana-mana route). Fix: buang terus (fail + rujukan dalam
+  `authz.go`/`ARCHITECTURE.md`) — semua check management memang inline
+  dalam handler, bukan middleware route-group-level.
+- [x] **L8+L9**: tiada rate limit verify-email request/confirm; rejected
+  user tak revoke refresh token sedia ada. Fix: `authRateLimiter` sedia
+  ada dipakai kat 3 route verify-email; `setMemberStatus` panggil
+  `DeleteRefreshTokensByUser` (dari fix M7) bila reject berjaya.
+- [ ] **L10**: trusted-proxy config (`100.64.0.0/10` + RFC1918) betul
+  untuk Railway sekarang, tapi rapuh kalau topology proxy berubah
+  (fronting proxy ganti XFF bukan append) atau scale >1 instance
+  (rate limiter in-memory per-process). Bukan bug semasa, catatan
+  sahaja untuk masa depan.
+- [ ] **L11**: tiada CORS config — okay sekarang (client mobile-only,
+  browser tak boleh reach cross-origin). Perlu tambah allowlist
+  eksplisit bila landing page verify-email `hafizbahtiar.com`
+  (Stage 8) betul-betul call backend ni terus dari browser.
 
 ---
 
