@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -210,6 +212,27 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 		return
 	}
 
+	// Elak self-lockout: tak boleh approve/reject akaun sendiri.
+	if targetID == callerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak boleh laksanakan tindakan ini pada akaun sendiri"})
+		return
+	}
+
+	// Elak reject sesama management (fat-finger atau serangan lateral
+	// boleh reject SEMUA management, termasuk yang terakhir — sistem
+	// approval jadi buntu tanpa cara in-app untuk pulih).
+	if status == "rejected" {
+		targetCategory, err := h.queries.GetRoleCategoryByUserID(ctx, targetID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+			return
+		}
+		if targetCategory == authz.CategoryManagement {
+			c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh tolak ahli pengurusan"})
+			return
+		}
+	}
+
 	approvedBy := pgtype.UUID{Bytes: callerID, Valid: true}
 
 	var updated sqlc.Profile
@@ -219,7 +242,26 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 		updated, err = h.queries.RejectProfile(ctx, sqlc.RejectProfileParams{UserID: targetID, ApprovedBy: approvedBy})
 	}
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Sama ada target tak wujud, ATAU target dah pun dalam status
+			// ni (guard replay di query) — dua-dua kes, bezakan dengan
+			// cuba fetch profil semasa: kalau wujud, ni idempotent no-op
+			// (jangan re-hantar email/notification); kalau tak wujud
+			// langsung, 404 sebenar.
+			current, ferr := h.queries.GetProfileByUserID(ctx, targetID)
+			if ferr != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+				return
+			}
+			c.JSON(http.StatusOK, memberActionResponse{
+				UserID:     current.UserID.String(),
+				Status:     current.Status,
+				ApprovedBy: nullableUUIDString(current.ApprovedBy),
+				ApprovedAt: formatTimeNullable(current.ApprovedAt),
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
 		return
 	}
 

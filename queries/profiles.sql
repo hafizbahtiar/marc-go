@@ -62,13 +62,13 @@ order by p.member_id;
 -- name: ApproveProfile :one
 update profiles
 set status = 'approved', approved_by = $2, approved_at = now()
-where user_id = $1
+where user_id = $1 and status <> 'approved'
 returning *;
 
 -- name: RejectProfile :one
 update profiles
 set status = 'rejected', approved_by = $2, approved_at = now()
-where user_id = $1
+where user_id = $1 and status <> 'rejected'
 returning *;
 
 -- name: ListManagementUserIDs :many

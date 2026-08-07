@@ -15,7 +15,7 @@ import (
 const approveProfile = `-- name: ApproveProfile :one
 update profiles
 set status = 'approved', approved_by = $2, approved_at = now()
-where user_id = $1
+where user_id = $1 and status <> 'approved'
 returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
 `
 
@@ -330,7 +330,7 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
 const rejectProfile = `-- name: RejectProfile :one
 update profiles
 set status = 'rejected', approved_by = $2, approved_at = now()
-where user_id = $1
+where user_id = $1 and status <> 'rejected'
 returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
 `
 
