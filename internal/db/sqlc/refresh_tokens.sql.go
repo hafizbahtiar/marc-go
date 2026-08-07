@@ -13,16 +13,19 @@ import (
 )
 
 const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
-delete from refresh_tokens where token_hash = $1 returning id, user_id, token_hash, expires_at, created_at
+update refresh_tokens
+set consumed_at = now()
+where token_hash = $1 and consumed_at is null
+returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at
 `
 
-// Atomic: DELETE...RETURNING dalam SATU statement, supaya refresh token
-// betul-betul single-use. Kalau dua request serentak hantar hash yang
-// sama (race), Postgres punya row-level lock jamin cuma SATU dapat row
-// balik (menang); yang satu lagi dapat 0 rows -> pgx.ErrNoRows -> 401.
-// Guna GetRefreshTokenByHash + DeleteRefreshToken berasingan sebelum ni
-// ada TOCTOU gap yang boleh buat DUA-DUA request refresh berjaya
-// serentak guna token yang sama.
+// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
+// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
+// hash sama dihantar serentak (row-level lock Postgres). Row TAK
+// dipadam (beza dari sebelum ni) — kekal untuk reuse detection: kalau
+// hash yang SAMA cuba consume LAGI selepas ni, row dah wujud tapi
+// consumed_at dah bukan null, so 0 rows returned di sini -> caller
+// boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
 func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error) {
 	row := q.db.QueryRow(ctx, consumeRefreshToken, tokenHash)
 	var i RefreshToken
@@ -32,24 +35,32 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (Re
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.FamilyID,
+		&i.ConsumedAt,
 	)
 	return i, err
 }
 
 const createRefreshToken = `-- name: CreateRefreshToken :one
-insert into refresh_tokens (user_id, token_hash, expires_at)
-values ($1, $2, $3)
-returning id, user_id, token_hash, expires_at, created_at
+insert into refresh_tokens (user_id, token_hash, expires_at, family_id)
+values ($1, $2, $3, $4)
+returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at
 `
 
 type CreateRefreshTokenParams struct {
 	UserID    uuid.UUID          `json:"user_id"`
 	TokenHash string             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	FamilyID  uuid.UUID          `json:"family_id"`
 }
 
 func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error) {
-	row := q.db.QueryRow(ctx, createRefreshToken, arg.UserID, arg.TokenHash, arg.ExpiresAt)
+	row := q.db.QueryRow(ctx, createRefreshToken,
+		arg.UserID,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.FamilyID,
+	)
 	var i RefreshToken
 	err := row.Scan(
 		&i.ID,
@@ -57,6 +68,8 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		&i.TokenHash,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.FamilyID,
+		&i.ConsumedAt,
 	)
 	return i, err
 }
@@ -67,5 +80,42 @@ delete from refresh_tokens where token_hash = $1
 
 func (q *Queries) DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error {
 	_, err := q.db.Exec(ctx, deleteRefreshTokenByHash, tokenHash)
+	return err
+}
+
+const deleteRefreshTokensByUser = `-- name: DeleteRefreshTokensByUser :exec
+delete from refresh_tokens where user_id = $1
+`
+
+func (q *Queries) DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRefreshTokensByUser, userID)
+	return err
+}
+
+const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
+select id, user_id, token_hash, expires_at, created_at, family_id, consumed_at from refresh_tokens where token_hash = $1
+`
+
+func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, getRefreshTokenByHash, tokenHash)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.FamilyID,
+		&i.ConsumedAt,
+	)
+	return i, err
+}
+
+const revokeRefreshTokenFamily = `-- name: RevokeRefreshTokenFamily :exec
+delete from refresh_tokens where family_id = $1
+`
+
+func (q *Queries) RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, revokeRefreshTokenFamily, familyID)
 	return err
 }

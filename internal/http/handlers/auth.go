@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,7 +63,7 @@ type tokenPairResponse struct {
 // issueTokens generate access token + refresh token (rekod refresh token
 // dalam DB). Access token TTL diambil dari j.accessTTL secara implicit
 // melalui GenerateAccessToken.
-func (h *AuthHandler) issueTokens(c *gin.Context, userID uuid.UUID) (tokenPairResponse, error) {
+func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (tokenPairResponse, error) {
 	access, err := h.jwt.GenerateAccessToken(userID)
 	if err != nil {
 		return tokenPairResponse{}, err
@@ -77,6 +78,7 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID uuid.UUID) (tokenPairRe
 		UserID:    userID,
 		TokenHash: auth.HashToken(refresh),
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(h.refreshTTL), Valid: true},
+		FamilyID:  familyID,
 	})
 	if err != nil {
 		return tokenPairResponse{}, err
@@ -153,7 +155,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.issueTokens(c, user.ID)
+	tokens, err := h.issueTokens(c, user.ID, uuid.New())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pendaftaran berjaya tapi gagal log masuk, sila log masuk semula"})
 		return
@@ -230,7 +232,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.issueTokens(c, user.ID)
+	tokens, err := h.issueTokens(c, user.ID, uuid.New())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "log masuk gagal"})
 		return
@@ -252,12 +254,28 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	ctx := c.Request.Context()
 	hash := auth.HashToken(req.RefreshToken)
 
-	// Atomic delete-and-return: rotation + single-use dikuatkuasakan
-	// dalam satu statement. Kalau dua request refresh serentak guna
-	// token yang sama (race), cuma satu dapat row balik (menang);
-	// yang satu lagi dapat 0 rows -> 401, bukan dua-dua berjaya.
+	// Atomic single-use: UPDATE...RETURNING guard "consumed_at is null"
+	// dalam SATU statement, sama race-safety macam DELETE...RETURNING
+	// asal — kalau dua request serentak hantar hash yang sama, cuma
+	// satu dapat row balik (menang); yang satu lagi dapat 0 rows.
 	consumed, err := h.queries.ConsumeRefreshToken(ctx, hash)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Sama ada token ni tak pernah wujud, ATAU dah consumed
+			// sebelum ni. Kalau row wujud dan consumed_at dah set,
+			// ini REUSE — tanda token dicuri (attacker consume dulu,
+			// user asli cuba guna token yang sama lepas tu). Revoke
+			// SEMUA token dalam family ni supaya chain attacker (dan
+			// session user asli yang sama) sama-sama terputus, paksa
+			// re-login penuh.
+			if existing, ferr := h.queries.GetRefreshTokenByHash(ctx, hash); ferr == nil && existing.ConsumedAt.Valid {
+				if rerr := h.queries.RevokeRefreshTokenFamily(ctx, existing.FamilyID); rerr != nil {
+					log.Printf("gagal revoke refresh token family lepas reuse dikesan: %v", rerr)
+				} else {
+					log.Printf("refresh token reuse dikesan, family %s direvoke", existing.FamilyID)
+				}
+			}
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token tidak sah"})
 		return
 	}
@@ -267,7 +285,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.issueTokens(c, consumed.UserID)
+	tokens, err := h.issueTokens(c, consumed.UserID, consumed.FamilyID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
 		return
@@ -284,6 +302,18 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 	// Idempotent — hapus je kalau wujud, tak kisah dah luput/tak wujud.
 	_ = h.queries.DeleteRefreshTokenByHash(c.Request.Context(), auth.HashToken(req.RefreshToken))
+	c.Status(http.StatusNoContent)
+}
+
+// LogoutAll padam SEMUA refresh token milik user semasa (semua device/
+// session sekali gus) — "log keluar semua tempat". Berguna kalau akaun
+// disyaki dikompromis atau device hilang, tanpa perlu tunggu setiap
+// token luput sendiri.
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
+	if err := h.queries.DeleteRefreshTokensByUser(c.Request.Context(), middleware.UserID(c)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal log keluar semua sesi"})
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 

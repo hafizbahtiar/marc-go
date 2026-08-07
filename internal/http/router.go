@@ -78,6 +78,7 @@ func NewRouter(
 	protected := r.Group("/", middleware.RequireAuth(jwtSvc))
 	protected.GET("/me", profileHandler.Me)
 	protected.PATCH("/me", profileHandler.UpdateMe)
+	protected.POST("/auth/logout-all", authHandler.LogoutAll)
 
 	// approved (Stage 11) — /members, /device-tokens, dan approve/reject
 	// sendiri perlu status=approved. /me sengaja TAK di sini (lihat

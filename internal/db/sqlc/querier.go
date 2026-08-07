@@ -13,13 +13,13 @@ import (
 type Querier interface {
 	ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error)
 	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
-	// Atomic: DELETE...RETURNING dalam SATU statement, supaya refresh token
-	// betul-betul single-use. Kalau dua request serentak hantar hash yang
-	// sama (race), Postgres punya row-level lock jamin cuma SATU dapat row
-	// balik (menang); yang satu lagi dapat 0 rows -> pgx.ErrNoRows -> 401.
-	// Guna GetRefreshTokenByHash + DeleteRefreshToken berasingan sebelum ni
-	// ada TOCTOU gap yang boleh buat DUA-DUA request refresh berjaya
-	// serentak guna token yang sama.
+	// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
+	// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
+	// hash sama dihantar serentak (row-level lock Postgres). Row TAK
+	// dipadam (beza dari sebelum ni) — kekal untuk reuse detection: kalau
+	// hash yang SAMA cuba consume LAGI selepas ni, row dah wujud tapi
+	// consumed_at dah bukan null, so 0 rows returned di sini -> caller
+	// boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
 	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
 	CountCommentLikesByCommentIDs(ctx context.Context, commentIds []uuid.UUID) ([]CountCommentLikesByCommentIDsRow, error)
 	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
@@ -40,6 +40,7 @@ type Querier interface {
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
+	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
 	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
@@ -47,6 +48,7 @@ type Querier interface {
 	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error)
+	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
 	GetRoleByID(ctx context.Context, id int16) (Role, error)
 	GetRoleByKey(ctx context.Context, key string) (Role, error)
 	GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID) (string, error)
@@ -78,6 +80,7 @@ type Querier interface {
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
 	RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error)
+	RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
