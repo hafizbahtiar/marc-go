@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -199,19 +198,22 @@ func (h *PostHandler) List(c *gin.Context) {
 		}
 	}
 
-	var cursor pgtype.Timestamptz
+	var cursorCreatedAt pgtype.Timestamptz
+	var cursorID pgtype.UUID
 	if v := c.Query("cursor"); v != "" {
-		t, err := time.Parse(time.RFC3339, v)
+		t, id, err := decodeCursor(v)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cursor tidak sah"})
 			return
 		}
-		cursor = pgtype.Timestamptz{Time: t, Valid: true}
+		cursorCreatedAt = pgtype.Timestamptz{Time: t, Valid: true}
+		cursorID = pgtype.UUID{Bytes: id, Valid: true}
 	}
 
 	ctx := c.Request.Context()
 	rows, err := h.queries.ListPosts(ctx, sqlc.ListPostsParams{
-		CursorCreatedAt: cursor,
+		CursorCreatedAt: cursorCreatedAt,
+		CursorID:        cursorID,
 		RowLimit:        int32(limit),
 	})
 	if err != nil {
@@ -232,7 +234,9 @@ func (h *PostHandler) List(c *gin.Context) {
 
 	var nextCursor *string
 	if len(resp) == limit {
-		nextCursor = &resp[len(resp)-1].CreatedAt
+		last := cores[len(cores)-1]
+		s := encodeCursor(last.CreatedAt.Time, last.ID)
+		nextCursor = &s
 	}
 
 	c.JSON(http.StatusOK, gin.H{"posts": resp, "next_cursor": nextCursor})

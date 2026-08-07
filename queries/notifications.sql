@@ -6,8 +6,11 @@ returning *;
 -- name: ListNotifications :many
 select * from notifications
 where recipient_id = $1
-  and (sqlc.narg('cursor_created_at')::timestamptz is null or created_at < sqlc.narg('cursor_created_at'))
-order by created_at desc
+  and (
+    sqlc.narg('cursor_created_at')::timestamptz is null
+    or (created_at, id) < (sqlc.narg('cursor_created_at')::timestamptz, sqlc.narg('cursor_id')::uuid)
+  )
+order by created_at desc, id desc
 limit sqlc.arg('row_limit');
 
 -- name: MarkNotificationRead :exec

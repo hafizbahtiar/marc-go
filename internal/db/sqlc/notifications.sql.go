@@ -51,19 +51,28 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 const listNotifications = `-- name: ListNotifications :many
 select id, recipient_id, actor_id, type, post_id, comment_id, read_at, created_at from notifications
 where recipient_id = $1
-  and ($2::timestamptz is null or created_at < $2)
-order by created_at desc
-limit $3
+  and (
+    $2::timestamptz is null
+    or (created_at, id) < ($2::timestamptz, $3::uuid)
+  )
+order by created_at desc, id desc
+limit $4
 `
 
 type ListNotificationsParams struct {
 	RecipientID     uuid.UUID          `json:"recipient_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	RowLimit        int32              `json:"row_limit"`
 }
 
 func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error) {
-	rows, err := q.db.Query(ctx, listNotifications, arg.RecipientID, arg.CursorCreatedAt, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listNotifications,
+		arg.RecipientID,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

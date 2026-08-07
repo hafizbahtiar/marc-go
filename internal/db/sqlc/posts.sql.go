@@ -156,13 +156,17 @@ from posts p
 join users u on u.id = p.author_id
 join profiles pr on pr.user_id = p.author_id
 where p.deleted_at is null
-  and ($1::timestamptz is null or p.created_at < $1)
-order by p.created_at desc
-limit $2
+  and (
+    $1::timestamptz is null
+    or (p.created_at, p.id) < ($1::timestamptz, $2::uuid)
+  )
+order by p.created_at desc, p.id desc
+limit $3
 `
 
 type ListPostsParams struct {
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.UUID        `json:"cursor_id"`
 	RowLimit        int32              `json:"row_limit"`
 }
 
@@ -179,10 +183,11 @@ type ListPostsRow struct {
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
 }
 
-// Cursor-based: pulang post yang created_at lebih lama daripada cursor
+// Keyset pagination atas (created_at, id) — bukan created_at je, elak
+// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 // (null cursor = page pertama).
 func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error) {
-	rows, err := q.db.Query(ctx, listPosts, arg.CursorCreatedAt, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listPosts, arg.CursorCreatedAt, arg.CursorID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}

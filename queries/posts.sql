@@ -15,7 +15,8 @@ join profiles pr on pr.user_id = p.author_id
 where p.id = $1 and p.deleted_at is null;
 
 -- name: ListPosts :many
--- Cursor-based: pulang post yang created_at lebih lama daripada cursor
+-- Keyset pagination atas (created_at, id) — bukan created_at je, elak
+-- row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 -- (null cursor = page pertama).
 select
   p.*,
@@ -26,8 +27,11 @@ from posts p
 join users u on u.id = p.author_id
 join profiles pr on pr.user_id = p.author_id
 where p.deleted_at is null
-  and (sqlc.narg('cursor_created_at')::timestamptz is null or p.created_at < sqlc.narg('cursor_created_at'))
-order by p.created_at desc
+  and (
+    sqlc.narg('cursor_created_at')::timestamptz is null
+    or (p.created_at, p.id) < (sqlc.narg('cursor_created_at')::timestamptz, sqlc.narg('cursor_id')::uuid)
+  )
+order by p.created_at desc, p.id desc
 limit sqlc.arg('row_limit');
 
 -- name: UpdatePost :one

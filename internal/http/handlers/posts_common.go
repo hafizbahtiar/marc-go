@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,6 +66,30 @@ func nullableUUIDString(id pgtype.UUID) *string {
 	}
 	s := uuid.UUID(id.Bytes).String()
 	return &s
+}
+
+// encodeCursor/decodeCursor — keyset pagination cursor atas (created_at,
+// id), format "<rfc3339nano>|<uuid>". Client (Flutter) rawat cursor ni
+// sebagai opaque string (simpan & echo balik je), so format dalaman boleh
+// tukar bila-bila tanpa perlu ubah frontend.
+func encodeCursor(t time.Time, id uuid.UUID) string {
+	return t.Format(time.RFC3339Nano) + "|" + id.String()
+}
+
+func decodeCursor(s string) (time.Time, uuid.UUID, error) {
+	idx := strings.LastIndex(s, "|")
+	if idx < 0 {
+		return time.Time{}, uuid.UUID{}, fmt.Errorf("cursor tidak sah")
+	}
+	t, err := time.Parse(time.RFC3339Nano, s[:idx])
+	if err != nil {
+		return time.Time{}, uuid.UUID{}, err
+	}
+	id, err := uuid.Parse(s[idx+1:])
+	if err != nil {
+		return time.Time{}, uuid.UUID{}, err
+	}
+	return t, id, nil
 }
 
 func isForeignKeyViolation(err error) bool {

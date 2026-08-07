@@ -65,7 +65,8 @@ type Querier interface {
 	ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
-	// Cursor-based: pulang post yang created_at lebih lama daripada cursor
+	// Keyset pagination atas (created_at, id) — bukan created_at je, elak
+	// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
 	ListProfiles(ctx context.Context) ([]ListProfilesRow, error)
