@@ -25,20 +25,26 @@ type upsertDeviceTokenRequest struct {
 }
 
 // Upsert setara RPC `upsert_device_token` — daftar/kemas kini push
-// subscription id peranti untuk user semasa.
+// subscription id peranti untuk user semasa. Kalau onesignal_id ni dah
+// wujud dan kepunyaan USER LAIN, tolak (409) — elak hijack push
+// notification orang lain dengan cuma tahu onesignal_id mereka.
 func (h *DeviceTokenHandler) Upsert(c *gin.Context) {
 	var req upsertDeviceTokenRequest
 	if !bindJSON(c, &req) {
 		return
 	}
 
-	err := h.queries.UpsertDeviceToken(c.Request.Context(), sqlc.UpsertDeviceTokenParams{
+	rows, err := h.queries.UpsertDeviceToken(c.Request.Context(), sqlc.UpsertDeviceTokenParams{
 		UserID:      middleware.UserID(c),
 		OnesignalID: req.OnesignalID,
 		Platform:    ptrToText(req.Platform),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal simpan device token"})
+		return
+	}
+	if rows == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "peranti ini sudah didaftarkan pada akaun lain"})
 		return
 	}
 

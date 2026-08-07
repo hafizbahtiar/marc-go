@@ -85,7 +85,7 @@ type Querier interface {
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
 	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
-	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) error
+	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

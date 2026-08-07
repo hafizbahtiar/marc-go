@@ -71,13 +71,14 @@ func (q *Queries) ListDeviceTokensByUser(ctx context.Context, userID uuid.UUID) 
 	return items, nil
 }
 
-const upsertDeviceToken = `-- name: UpsertDeviceToken :exec
+const upsertDeviceToken = `-- name: UpsertDeviceToken :execrows
 insert into device_tokens (user_id, onesignal_id, platform, updated_at)
 values ($1, $2, $3, now())
 on conflict (onesignal_id) do update set
   user_id = excluded.user_id,
   platform = excluded.platform,
   updated_at = now()
+where device_tokens.user_id = excluded.user_id
 `
 
 type UpsertDeviceTokenParams struct {
@@ -86,7 +87,10 @@ type UpsertDeviceTokenParams struct {
 	Platform    pgtype.Text `json:"platform"`
 }
 
-func (q *Queries) UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) error {
-	_, err := q.db.Exec(ctx, upsertDeviceToken, arg.UserID, arg.OnesignalID, arg.Platform)
-	return err
+func (q *Queries) UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertDeviceToken, arg.UserID, arg.OnesignalID, arg.Platform)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
