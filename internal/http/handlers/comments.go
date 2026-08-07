@@ -85,7 +85,7 @@ func (h *CommentHandler) Create(c *gin.Context) {
 
 	postAuthorID, err := h.queries.GetPostAuthorID(ctx, postID)
 	if err == nil {
-		notifyOwner(ctx, h.queries, h.push, postAuthorID, userID, "post_comment", postID,
+		notifyOwner(ctx, h.queries, h.push, postAuthorID, userID, "post_comment", pgtype.UUID{Bytes: postID, Valid: true},
 			pgtype.UUID{Bytes: comment.ID, Valid: true}, "Comment baru", "Seseorang comment pada post anda")
 	}
 

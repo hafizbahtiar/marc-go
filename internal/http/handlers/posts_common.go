@@ -83,7 +83,7 @@ func notifyOwner(
 	pushSvc *push.Service,
 	recipientID, actorID uuid.UUID,
 	notifType string,
-	postID uuid.UUID,
+	postID pgtype.UUID,
 	commentID pgtype.UUID,
 	title, message string,
 ) {

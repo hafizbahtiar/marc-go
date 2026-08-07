@@ -307,7 +307,7 @@ func (h *PostHandler) Like(c *gin.Context) {
 
 	authorID, err := h.queries.GetPostAuthorID(ctx, id)
 	if err == nil {
-		notifyOwner(ctx, h.queries, h.push, authorID, userID, "post_like", id, pgtype.UUID{}, "Post anda disukai", "Seseorang menyukai post anda")
+		notifyOwner(ctx, h.queries, h.push, authorID, userID, "post_like", pgtype.UUID{Bytes: id, Valid: true}, pgtype.UUID{}, "Post anda disukai", "Seseorang menyukai post anda")
 	}
 
 	c.Status(http.StatusNoContent)
