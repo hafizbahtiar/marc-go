@@ -30,8 +30,11 @@ func friendlyBindError(err error) string {
 			}
 			return "Email diperlukan"
 		case "Password":
-			if fe.Tag() == "min" {
+			switch fe.Tag() {
+			case "min":
 				return "Kata laluan diperlukan (minimum 6 aksara)"
+			case "max":
+				return "Kata laluan terlalu panjang (maksimum 72 aksara)"
 			}
 			return "Kata laluan diperlukan"
 		case "RefreshToken":

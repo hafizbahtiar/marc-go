@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -90,7 +91,7 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID uuid.UUID) (tokenPairRe
 
 type registerRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required,min=6,max=72"`
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -98,6 +99,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -206,7 +208,7 @@ func generateMemberID(ctx context.Context, q *sqlc.Queries) (string, error) {
 
 type loginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,max=72"`
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -214,6 +216,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	ctx := c.Request.Context()
 	user, err := h.queries.GetUserByEmail(ctx, req.Email)
