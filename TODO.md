@@ -322,7 +322,7 @@ environment:
 
 ---
 
-## Security audit (Opus, 2026-08-07) — High fixed, Medium/Low pending
+## Security audit (Opus, 2026-08-07) — High + Medium fixed, Low pending
 
 Independent security/bug audit atas backend penuh (bukan diff-scoped —
 seluruh `internal/`). Ringkasan: tiada Critical, auth core (bcrypt, token
@@ -343,41 +343,67 @@ routing di-verify route-by-route — tiada lubang.
   post-creation (asalnya di luar tx — kalau tx rollback lepas cleanup
   jalan, gambar yang sah jadi tak boleh attach lagi, kena re-upload).
 
-**Belum (Medium/Low — bukan dalam skop "fix High", didokumentasikan untuk
-stage akan datang):**
-- [ ] `PATCH /me` full-replace bukan patch — `{}` atau field kosong
-  silently NULL-kan `phone`/`display_name` sedia ada. Data-loss bug
-  sebenar, bukan teori.
-- [ ] Device-token upsert (`on conflict (onesignal_id) do update set
-  user_id = ...`) tiada check row tu memang kepunyaan caller — boleh
-  hijack push notification orang lain kalau `onesignal_id` bocor.
-- [ ] Approve/reject (`setMemberStatus`) tiada self-check/rank-check —
-  management boleh reject diri sendiri ATAU management lain. Reject
-  management terakhir = **lockout permanent sistem approval** (tiada
-  in-app recovery, kena psql manual — lihat bootstrap section atas).
-  Paling urgent nak fix dari semua item Medium/Low ni.
-- [ ] Approve/reject tiada state precondition — replay endpoint sama
-  berulang kali hantar email + notification tak terhingga kat target,
-  overwrite `approved_by`/`approved_at` setiap kali (rosak audit trail).
-- [ ] Email uniqueness case-sensitive (`Ahmad@` vs `ahmad@` = 2 akaun
-  berlainan) — boleh punca duplicate account / lookalike squat.
-- [ ] Password >72 byte crash bcrypt dengan 500 generic (tiada `max=`
-  validation tag pada register/login).
-- [ ] Refresh token rotation tiada reuse detection — token dicuri +
-  ditukar dulu oleh attacker buat user asli senyap-senyap logout (bukan
-  alert), attacker punya chain terus valid sampai 30 hari. Tiada juga
-  "log out semua device" / revoke-all endpoint.
-- Low (11 item, detail penuh dalam laporan audit asal, tak diulang di
-  sini): comment cross-post leakage (parent_comment_id tak check post_id
-  sama), FK violation pulang 500 bukan 404 (like/comment kat resource
-  tak wujud), cursor pagination boleh skip row bila timestamp tie, login
-  jadi user-enumeration oracle (timing bcrypt vs early-return), dead
-  code `RequireManagement` middleware (tak wired ke mana-mana route,
-  semua check inline dalam handler — betul tapi implies coverage yang
-  tak wujud), tiada rate limit verify-email request/confirm, rejected
-  user tak revoke refresh token sedia ada, trusted-proxy config rapuh
-  kalau topology proxy berubah, tiada CORS config (okay sekarang, perlu
-  bila landing page verify-email `hafizbahtiar.com` sambung terus).
+**Medium (5/5 fixed, commits `8c8045d`, `2dab964`, `2711ab6`, `e955ad1`,
+`4af4562`, `5cf9e5f`, `40c866d`):**
+- [x] **M1**: `PATCH /me` full-replace bukan patch — `{}` atau field
+  kosong dulu silently NULL-kan `phone`/`display_name` sedia ada. Fix:
+  request field jadi `*string` (nil = tak sentuh), query guna
+  `coalesce(sqlc.narg(...), col)` — field dihantar (termasuk `""`)
+  set terus, field tak dihantar dibiarkan.
+- [x] **M2**: Device-token upsert (`on conflict (onesignal_id) do update
+  set user_id = ...`) dulu tiada check row tu kepunyaan caller — boleh
+  hijack push notification orang lain kalau `onesignal_id` bocor. Fix:
+  conflict guard `where device_tokens.user_id = excluded.user_id`,
+  `:execrows` + 409 kalau 0 rows (row wujud, kepunyaan user lain).
+- [x] **M3+M4**: `setMemberStatus` dulu tiada self-check/rank-check
+  (management boleh reject diri sendiri ATAU management lain — reject
+  yang terakhir = lockout permanent) DAN tiada state precondition
+  (replay hantar email/notification tak terhingga, rosak audit trail).
+  Fix: block self-target (approve+reject), block reject kalau target
+  category management, query guna `and status <> '<target>'` (replay
+  jadi idempotent no-op, bukan resend).
+- [x] **M5+M6**: email uniqueness case-sensitive (`Ahmad@` vs `ahmad@` =
+  2 akaun) + password >72 byte crash bcrypt dengan 500 generic. Fix:
+  normalize email (`ToLower`+`TrimSpace`) di register+login, unique
+  index `lower(email)` + backfill row sedia ada (follow-up `4af4562` —
+  round pertama terlepas backfill, login user lama jadi locked out kalau
+  email tersimpan mixed-case), `max=72` pada password field dua-dua.
+- [x] **M7**: refresh token rotation dulu tiada reuse detection — token
+  dicuri+ditukar oleh attacker buat user asli senyap-senyap logout
+  (bukan alert), chain attacker terus valid. Tiada juga "log out semua
+  device". Fix: `family_id` + `consumed_at` (row tak dipadam lagi bila
+  consume, kekal untuk detect reuse), replay token yang dah consumed →
+  revoke SEMUA token dalam family tu (verified: chain attacker DAN
+  session asli sama-sama terputus, paksa re-login). `POST
+  /auth/logout-all` baru (RequireAuth sahaja, sama exemption macam
+  `/me`). Follow-up (`40c866d`): tambah grace window 5 saat — replay
+  DALAM tempoh ni (race/retry concurrent, bukan attack) 401 tapi tak
+  revoke family; round pertama terlepas ni, boleh false-positive
+  lockout user sah kalau ada concurrent refresh request (client
+  `marc_flutter` dah ada dedupe untuk elak ni, tapi bukan client lain).
+
+**Residual diketahui, bukan bug (trade-off sengaja, macam pattern H2's
+orphan-sweep gap):**
+- `refresh_tokens` sekarang grow tak terhingga (row consumed tak
+  dipadam lagi — sengaja, untuk reuse detection). Belum ada cleanup
+  job (tiada infra cron/scheduler dalam app ni). Kalau jadi keperluan:
+  `delete from refresh_tokens where consumed_at < now() - interval
+  '30 days' or expires_at < now()` — TAPI window cleanup MESTI lebih
+  panjang dari window reuse-detection, kalau tidak pruning buka balik
+  lubang M7.
+
+**Belum (Low, 11 item — bukan dalam skop batch ni, detail penuh dalam
+laporan audit asal, tak diulang di sini):** comment cross-post leakage
+(parent_comment_id tak check post_id sama), FK violation pulang 500
+bukan 404 (like/comment kat resource tak wujud), cursor pagination
+boleh skip row bila timestamp tie, login jadi user-enumeration oracle
+(timing bcrypt vs early-return), dead code `RequireManagement`
+middleware (tak wired ke mana-mana route, semua check inline dalam
+handler — betul tapi implies coverage yang tak wujud), tiada rate
+limit verify-email request/confirm, rejected user tak revoke refresh
+token sedia ada, trusted-proxy config rapuh kalau topology proxy
+berubah, tiada CORS config (okay sekarang, perlu bila landing page
+verify-email `hafizbahtiar.com` sambung terus).
 
 ---
 
