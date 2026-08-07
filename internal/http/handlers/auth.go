@@ -25,6 +25,14 @@ import (
 
 const emailVerificationTTL = time.Hour
 
+// dummyPasswordHash — bcrypt hash tetap (bukan password sebenar
+// sesiapa) dipakai untuk "bakar" masa bcrypt yang sama pada path
+// email-tak-wujud di Login, elak timing oracle yang boleh bezakan
+// "email wujud, password salah" (compare betul-betul jalan) dengan
+// "email tak wujud" (return awal tanpa compare) — dua-dua patut ambil
+// masa yang sama dari luar.
+const dummyPasswordHash = "$2a$10$/8Dd.SDyfy2jxDvvxwPheeHLucYAitJ42OSSoz8wtyR1UTR8A3JfW"
+
 // refreshReuseGraceWindow — replay token yang dah consumed DALAM tempoh
 // ni dianggap race/retry biasa (concurrent request, network retry),
 // BUKAN reuse attack — elak false-positive family revocation yang
@@ -230,6 +238,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	ctx := c.Request.Context()
 	user, err := h.queries.GetUserByEmail(ctx, req.Email)
 	if err != nil {
+		auth.VerifyPassword(dummyPasswordHash, req.Password)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "email atau kata laluan salah"})
 		return
 	}
