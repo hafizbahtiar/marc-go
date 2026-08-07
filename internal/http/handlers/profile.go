@@ -62,24 +62,29 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 }
 
 type updateMeRequest struct {
-	DisplayName string `json:"display_name"`
-	Phone       string `json:"phone"`
+	DisplayName *string `json:"display_name"`
+	Phone       *string `json:"phone"`
 }
 
-// UpdateMe setara `ProfileRepository.update` di Flutter — string kosong
-// (lepas trim) disimpan sebagai NULL. Sengaja TIDAK di bawah
-// RequireApprovedStatus (Stage 11) — sama sebab macam Me.
+// UpdateMe setara `ProfileRepository.update` di Flutter — field yang
+// tak dihantar (nil) DIBIARKAN tak berubah; field yang dihantar
+// (termasuk string kosong) ditetapkan terus kepada nilai tu. Sengaja
+// TIDAK di bawah RequireApprovedStatus — sama sebab macam Me.
 func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 	var req updateMeRequest
 	if !bindJSON(c, &req) {
 		return
 	}
 
-	updated, err := h.queries.UpdateProfile(c.Request.Context(), sqlc.UpdateProfileParams{
-		UserID:      middleware.UserID(c),
-		DisplayName: ptrToText(req.DisplayName),
-		Phone:       ptrToText(req.Phone),
-	})
+	params := sqlc.UpdateProfileParams{UserID: middleware.UserID(c)}
+	if req.DisplayName != nil {
+		params.DisplayName = pgtype.Text{String: strings.TrimSpace(*req.DisplayName), Valid: true}
+	}
+	if req.Phone != nil {
+		params.Phone = pgtype.Text{String: strings.TrimSpace(*req.Phone), Valid: true}
+	}
+
+	updated, err := h.queries.UpdateProfile(c.Request.Context(), params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
 		return

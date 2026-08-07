@@ -360,7 +360,9 @@ func (q *Queries) RejectProfile(ctx context.Context, arg RejectProfileParams) (P
 
 const updateProfile = `-- name: UpdateProfile :one
 update profiles
-set display_name = $2, phone = $3
+set
+  display_name = coalesce($2::text, display_name),
+  phone = coalesce($3::text, phone)
 where user_id = $1
 returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
 `

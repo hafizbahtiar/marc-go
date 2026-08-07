@@ -17,7 +17,9 @@ where p.user_id = $1;
 
 -- name: UpdateProfile :one
 update profiles
-set display_name = $2, phone = $3
+set
+  display_name = coalesce(sqlc.narg('display_name')::text, display_name),
+  phone = coalesce(sqlc.narg('phone')::text, phone)
 where user_id = $1
 returning *;
 
