@@ -98,8 +98,6 @@ func (h *PostHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
 			return
 		}
-
-		_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
 	}
 
 	tx, err := h.pool.Begin(ctx)
@@ -130,6 +128,17 @@ func (h *PostHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal cipta post"})
 			return
 		}
+
+		// Padam tracking row DALAM transaksi yang sama — kalau
+		// CreatePost/CreatePostImage/Commit gagal selepas ni dan tx
+		// rollback, row pending_uploads ni SELAMAT (delete tak commit),
+		// jadi client boleh retry POST /posts dengan r2_keys yang sama
+		// tanpa kena "gambar tidak sah" sedangkan gambar tu still ada
+		// dan sah kepunyaan dia (lihat Fix H2 follow-up, audit 2026-08-07).
+		// Best-effort — kegagalan padam row ni tak patut gagalkan post
+		// yang dah berjaya dicipta (row lingering harmless, cuma
+		// tracking stale untuk key yang dah attached).
+		_ = q.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
 	}
 
 	if err := tx.Commit(ctx); err != nil {
