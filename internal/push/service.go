@@ -2,8 +2,9 @@
 // (internal/onesignal) supaya senang panggil "hantar notification kepada
 // user ni" dari mana-mana bahagian app.
 //
-// Trigger sebenar (bila NotifyUser patut dipanggil) belum ditentukan —
-// lihat TODO.md Stage 5. Package ni sedia dipakai bila keputusan tu dibuat.
+// Trigger diwire di Stage 10 (Posts) — NotifyUser dipanggil dari
+// notifyOwner (internal/http/handlers/posts_common.go) bila like/comment
+// pada post/comment sendiri.
 package push
 
 import (
