@@ -54,6 +54,12 @@ type Notification struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type PendingUpload struct {
+	R2Key     string             `json:"r2_key"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type Post struct {
 	ID        uuid.UUID          `json:"id"`
 	AuthorID  uuid.UUID          `json:"author_id"`

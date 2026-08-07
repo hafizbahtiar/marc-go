@@ -80,8 +80,17 @@ func (h *PostHandler) Create(c *gin.Context) {
 	// masuk post. Gambar yang lebih besar dibuang dari R2 terus (elak
 	// orphan storage).
 	for _, key := range req.R2Keys {
+		owned, err := h.queries.IsPendingUploadOwnedByUser(ctx, sqlc.IsPendingUploadOwnedByUserParams{
+			R2Key: key, UserID: userID,
+		})
+		if err != nil || !owned {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
+			return
+		}
+
 		if err := h.r2.VerifyImageSize(ctx, key); err != nil {
 			_ = h.r2.DeleteImage(ctx, key)
+			_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
 			if errors.Is(err, storage.ErrImageTooLarge) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "gambar melebihi had 5MB"})
 				return
@@ -89,6 +98,8 @@ func (h *PostHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
 			return
 		}
+
+		_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
 	}
 
 	tx, err := h.pool.Begin(ctx)

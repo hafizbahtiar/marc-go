@@ -28,6 +28,7 @@ type Querier interface {
 	CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
+	CreatePendingUpload(ctx context.Context, arg CreatePendingUploadParams) error
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
 	CreatePostImage(ctx context.Context, arg CreatePostImageParams) (PostImage, error)
 	CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error)
@@ -37,6 +38,7 @@ type Querier interface {
 	DeleteDeviceTokenByOnesignalID(ctx context.Context, arg DeleteDeviceTokenByOnesignalIDParams) error
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
+	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
@@ -51,6 +53,7 @@ type Querier interface {
 	GetStatusByUserID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
 	LikeComment(ctx context.Context, arg LikeCommentParams) error
 	LikePost(ctx context.Context, arg LikePostParams) error
 	// Flat list, semua comment (top-level + reply) untuk satu post. Client

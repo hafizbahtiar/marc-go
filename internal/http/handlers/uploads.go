@@ -4,16 +4,20 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"marc/internal/db/sqlc"
+	"marc/internal/http/middleware"
 	"marc/internal/storage"
 )
 
 type UploadHandler struct {
-	r2 *storage.R2Client
+	r2      *storage.R2Client
+	queries *sqlc.Queries
 }
 
-func NewUploadHandler(r2 *storage.R2Client) *UploadHandler {
-	return &UploadHandler{r2: r2}
+func NewUploadHandler(pool *pgxpool.Pool, r2 *storage.R2Client) *UploadHandler {
+	return &UploadHandler{r2: r2, queries: sqlc.New(pool)}
 }
 
 var allowedImageContentTypes = map[string]bool{
@@ -47,6 +51,14 @@ func (h *UploadHandler) Presign(c *gin.Context) {
 
 	uploadURL, key, err := h.r2.PresignUpload(c.Request.Context(), req.ContentType)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana upload URL"})
+		return
+	}
+
+	if err := h.queries.CreatePendingUpload(c.Request.Context(), sqlc.CreatePendingUploadParams{
+		R2Key:  key,
+		UserID: middleware.UserID(c),
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana upload URL"})
 		return
 	}
