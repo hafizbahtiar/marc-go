@@ -836,16 +836,7 @@ Expected: register both → 201; login both → tokens; `/me` → 200 with `"sta
 
 - [ ] **Step 3: Approve one, reject the other, using a management account**
 
-This requires an existing management account. Use the same one from prior stages' testing (see `TODO.md` Stage 3/10 for how a management test user was seeded), or seed one directly:
-
-```bash
-psql "$DATABASE_URL" -c "
-  update profiles set role_id = (select id from roles where category = 'management' limit 1)
-  where user_id = (select id from users where email = 'approve-test@example.com');
-"
-```
-
-Wait — do NOT approve-test's own role for this; seed a THIRD account as management instead:
+This requires an existing management account. Seed a third, dedicated account as management (do not reuse `approve-test@example.com` for this — it needs to stay an ordinary ahli so Step 4 can prove an ordinary approved member still can't call `/approve`):
 
 ```bash
 curl -sS -X POST $BASE/auth/register -H "Content-Type: application/json" \
