@@ -1,8 +1,9 @@
 // Package authz gantikan Postgres RLS + is_management() Supabase dengan
 // app-level check. Dua corak:
 //
-//  1. Role check (management vs ahli) — guna IsManagement, biasanya
-//     melalui middleware.RequireManagement.
+//  1. Role check (management vs ahli) — guna IsManagement dipanggil inline
+//     dalam handler (tiada middleware generic kerana setiap check perlu
+//     konteks yang unik).
 //  2. Ownership check ("hanya resource sendiri") — TIADA fungsi generic
 //     untuk ni. Handler mesti sentiasa scope query guna user id daripada
 //     middleware.UserID(c) (hasil verify JWT), bukan daripada URL/body
