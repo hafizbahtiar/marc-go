@@ -7,22 +7,25 @@ import (
 )
 
 type Config struct {
-	Port            string
-	DatabaseURL     string
-	JWTSecret       string
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
-	OneSignalAppID  string
-	OneSignalAPIKey string
-	ResendAPIKey    string
-	EmailFrom       string
-	PublicBaseURL   string
-	EmailVerifyURL  string
-	R2AccountID     string
-	R2AccessKeyID   string
-	R2SecretKey     string
-	R2Bucket        string
-	R2PublicURL     string
+	Port                 string
+	DatabaseURL          string
+	JWTSecret            string
+	AccessTokenTTL       time.Duration
+	RefreshTokenTTL      time.Duration
+	OneSignalAppID       string
+	OneSignalAPIKey      string
+	ResendAPIKey         string
+	EmailFrom            string
+	PublicBaseURL        string
+	EmailVerifyURL       string
+	R2AccountID          string
+	R2AccessKeyID        string
+	R2SecretKey          string
+	R2Bucket             string
+	R2PublicURL          string
+	StripeSecretKey      string
+	StripePublishableKey string
+	StripeWebhookSecret  string
 }
 
 func Load() (Config, error) {
@@ -53,6 +56,11 @@ func Load() (Config, error) {
 		R2SecretKey:   os.Getenv("R2_SECRET_ACCESS_KEY"),
 		R2Bucket:      os.Getenv("R2_BUCKET_NAME"),
 		R2PublicURL:   os.Getenv("R2_PUBLIC_URL"),
+		// Optional — kalau kosong, donation checkout (Stage 12) jadi
+		// disabled (503 graceful, bukan crash) — sama pattern R2 di atas.
+		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
+		StripePublishableKey: os.Getenv("STRIPE_PUBLISHABLE_KEY"),
+		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}
 
 	if cfg.DatabaseURL == "" {

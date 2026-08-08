@@ -14,6 +14,7 @@ import (
 	"marc/internal/email"
 	"marc/internal/http/handlers"
 	"marc/internal/http/middleware"
+	"marc/internal/payment"
 	"marc/internal/push"
 	"marc/internal/storage"
 )
@@ -48,6 +49,7 @@ func NewRouter(
 	logger *slog.Logger,
 	r2Client *storage.R2Client,
 	pushSvc *push.Service,
+	paymentGateways map[string]payment.Gateway,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
@@ -87,6 +89,8 @@ func NewRouter(
 	approved.GET("/members", profileHandler.Members)
 	approved.POST("/members/:id/approve", profileHandler.ApproveMember)
 	approved.POST("/members/:id/reject", profileHandler.RejectMember)
+	approved.PATCH("/members/:id/role", profileHandler.UpdateMemberRole)
+	approved.GET("/roles", profileHandler.ListRoles)
 	approved.POST("/device-tokens", deviceTokenHandler.Upsert)
 	approved.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)
 	approved.DELETE("/device-tokens/by-onesignal/:onesignalId", deviceTokenHandler.DeleteByOnesignalID)
@@ -121,6 +125,17 @@ func NewRouter(
 	verified.GET("/notifications", notificationHandler.List)
 	verified.POST("/notifications/:id/read", notificationHandler.MarkRead)
 	verified.POST("/notifications/read-all", notificationHandler.MarkAllRead)
+
+	// Donation (Stage 12, Stripe sahaja buat masa ni — SociaBuzz/threshold
+	// routing belum wired) — route AWAM sengaja, guna OptionalAuth supaya
+	// ahli MARC yang log masuk dikaitkan user_id tanpa wajibkan akaun
+	// untuk donate. Handler bergantung payment.Gateway (interface), bukan
+	// Stripe terus — tambah gateway baru = daftar dlm paymentGateways
+	// (cmd/api/main.go), tiada perubahan di sini.
+	donationHandler := handlers.NewDonationHandler(pool, paymentGateways)
+	donationRateLimiter := middleware.RateLimit(rate.Every(6*time.Second), 5)
+	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), donationHandler.Checkout)
+	r.POST("/webhooks/:gateway", donationHandler.Webhook)
 
 	return r
 }

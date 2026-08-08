@@ -18,6 +18,7 @@ import (
 	"marc/internal/email"
 	httpapi "marc/internal/http"
 	"marc/internal/onesignal"
+	"marc/internal/payment"
 	"marc/internal/push"
 	"marc/internal/storage"
 )
@@ -51,7 +52,13 @@ func main() {
 	onesignalClient := onesignal.NewClient(cfg.OneSignalAppID, cfg.OneSignalAPIKey)
 	pushSvc := push.NewService(sqlc.New(pool), onesignalClient)
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc)
+	// Payment gateway registry (Stage 12) — tambah ToyyibPay/SociaBuzz
+	// sini bila siap, satu baris setiap satu, tiada perubahan lain.
+	paymentGateways := map[string]payment.Gateway{
+		"stripe": payment.NewStripeGateway(cfg.StripeSecretKey, cfg.StripeWebhookSecret),
+	}
+
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

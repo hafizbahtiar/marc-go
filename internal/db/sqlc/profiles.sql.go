@@ -91,7 +91,8 @@ select
   u.email as email,
   r.key as role_key,
   r.name as role_name,
-  r.category as role_category
+  r.category as role_category,
+  r.rank as role_rank
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
@@ -114,6 +115,7 @@ type GetProfileByUserIDRow struct {
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
 	RoleCategory  string             `json:"role_category"`
+	RoleRank      int32              `json:"role_rank"`
 }
 
 func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error) {
@@ -135,6 +137,7 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (Get
 		&i.RoleKey,
 		&i.RoleName,
 		&i.RoleCategory,
+		&i.RoleRank,
 	)
 	return i, err
 }
@@ -197,7 +200,8 @@ select
   u.email as email,
   r.key as role_key,
   r.name as role_name,
-  r.category as role_category
+  r.category as role_category,
+  r.rank as role_rank
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
@@ -220,6 +224,7 @@ type ListProfilesRow struct {
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
 	RoleCategory  string             `json:"role_category"`
+	RoleRank      int32              `json:"role_rank"`
 }
 
 func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
@@ -247,6 +252,7 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
 			&i.RoleKey,
 			&i.RoleName,
 			&i.RoleCategory,
+			&i.RoleRank,
 		); err != nil {
 			return nil, err
 		}
@@ -264,7 +270,8 @@ select
   u.email as email,
   r.key as role_key,
   r.name as role_name,
-  r.category as role_category
+  r.category as role_category,
+  r.rank as role_rank
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
@@ -288,6 +295,7 @@ type ListProfilesByStatusRow struct {
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
 	RoleCategory  string             `json:"role_category"`
+	RoleRank      int32              `json:"role_rank"`
 }
 
 func (q *Queries) ListProfilesByStatus(ctx context.Context, status string) ([]ListProfilesByStatusRow, error) {
@@ -315,6 +323,7 @@ func (q *Queries) ListProfilesByStatus(ctx context.Context, status string) ([]Li
 			&i.RoleKey,
 			&i.RoleName,
 			&i.RoleCategory,
+			&i.RoleRank,
 		); err != nil {
 			return nil, err
 		}
@@ -383,6 +392,37 @@ type UpdateProfileParams struct {
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error) {
 	row := q.db.QueryRow(ctx, updateProfile, arg.UserID, arg.DisplayName, arg.Phone)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+	)
+	return i, err
+}
+
+const updateProfileRole = `-- name: UpdateProfileRole :one
+update profiles
+set role_id = $2
+where user_id = $1
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at
+`
+
+type UpdateProfileRoleParams struct {
+	UserID uuid.UUID `json:"user_id"`
+	RoleID int16     `json:"role_id"`
+}
+
+func (q *Queries) UpdateProfileRole(ctx context.Context, arg UpdateProfileRoleParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, updateProfileRole, arg.UserID, arg.RoleID)
 	var i Profile
 	err := row.Scan(
 		&i.ID,

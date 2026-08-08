@@ -9,7 +9,8 @@ select
   u.email as email,
   r.key as role_key,
   r.name as role_name,
-  r.category as role_category
+  r.category as role_category,
+  r.rank as role_rank
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
@@ -20,6 +21,12 @@ update profiles
 set
   display_name = coalesce(sqlc.narg('display_name')::text, display_name),
   phone = coalesce(sqlc.narg('phone')::text, phone)
+where user_id = $1
+returning *;
+
+-- name: UpdateProfileRole :one
+update profiles
+set role_id = $2
 where user_id = $1
 returning *;
 
@@ -41,7 +48,8 @@ select
   u.email as email,
   r.key as role_key,
   r.name as role_name,
-  r.category as role_category
+  r.category as role_category,
+  r.rank as role_rank
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
@@ -56,7 +64,8 @@ select
   u.email as email,
   r.key as role_key,
   r.name as role_name,
-  r.category as role_category
+  r.category as role_category,
+  r.rank as role_rank
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id

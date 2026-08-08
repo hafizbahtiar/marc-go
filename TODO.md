@@ -435,9 +435,154 @@ orphan-sweep gap):**
 
 ---
 
+## Stage 12 — Payment module (yuran ahli + donation) — Stripe slice ✅, sambungan belum start
+
+Design awal dibincang dengan user (2026-08-09). **Dua sub-sistem berasingan
+sepenuhnya**, akaun gateway berbeza, tiada overlap data:
+
+1. **Yuran ahli MAIWP** — akaun **ToyyibPay** rasmi organisasi (non-profit
+   MAIWP). Keputusan: jadi **gate akses Posts/feed** — ahli yang belum
+   bayar yuran tak boleh akses feed, lapisan gate ketiga selepas
+   `email_verified` (Stage 10) dan `status=approved` (Stage 11). Ini
+   menyelesaikan nota lama "payment gate akan ditambah bila payment
+   system siap" yang disebut sejak Stage 10. **Belum start.**
+2. **Donation page ("Donate to us")** — akaun **berasingan** (peribadi,
+   untuk pemaju app — aku & kau, bukan MAIWP), threshold **RM500**:
+   - Amount ≥ RM500 → **Stripe** ✅ (checkout + webhook backend siap,
+     lihat bawah)
+   - Amount < RM500 → **SociaBuzz** — belum start, belum research API
+   - Currency: **MYR sahaja** — keputusan eksplisit elak isu penukaran
+     mata wang. Checkout Stripe tetap dalam RM walaupun donor guna kad
+     asing (Stripe caj + settle dalam RM di pihak Stripe sendiri); tiada
+     FX API/rate table perlu dibina di backend.
+   - **Payment Element custom** (bukan Stripe Checkout hosted page) —
+     UI kad dalam app Flutter sendiri (keputusan 2026-08-09, lihat kerja
+     Flutter di bawah).
+   - **Traceability** (keputusan 2026-08-09): SEMUA donation kena ada
+     jejak dalaman, walau anonymous. Guna *optional auth*
+     (`middleware.OptionalAuth`) — ahli MARC yang log masuk dikaitkan
+     `user_id` automatik (trace balik ke emel akaun); anonymous (tiada
+     token) **wajib isi `donor_email`** — endpoint tolak 400 kalau
+     kosong. Donation TAK perlu akaun MARC untuk guna (guest boleh
+     donate), cuma perlu emel kalau guest.
+
+### Kerja backend — Stripe donation ✅ (done, kini via interface `payment.Gateway`)
+
+Refactor 2026-08-09 (keputusan user, "professional standard" + loose
+coupling): payment gateway TAK lagi struct konkrit terus dalam handler —
+semua provider (Stripe sekarang, ToyyibPay/SociaBuzz akan datang)
+implement satu interface sepunya `payment.Gateway`
+(`internal/payment/payment.go`). Strategy pattern — tambah gateway baru
+= implement interface + satu baris registry, tiada perubahan
+handler/routing sedia ada.
+
+```go
+type Gateway interface {
+    Name() string
+    Enabled() bool
+    CreatePayment(ctx, CreateParams) (CreateResult, error)
+    VerifyWebhook(payload []byte, headers http.Header) (WebhookEvent, error)
+}
+```
+
+`CreateResult{GatewayRef, ClientSecret, RedirectURL}` sengaja union
+type — HANYA SATU antara `ClientSecret`/`RedirectURL` diisi ikut model
+gateway (Stripe = client-side confirm, isi `ClientSecret`; ToyyibPay/
+SociaBuzz akan datang = hosted-redirect page, isi `RedirectURL`).
+Response `/donations/checkout` pulangkan kedua-dua field (kosong kalau
+tak relevan) + `gateway` — client tengok field mana terisi untuk tentukan
+flow, tak perlu hardcode andaian Stripe.
+
+- [x] `internal/payment/payment.go` — interface `Gateway` + types
+  (`CreateParams`, `CreateResult`, `WebhookEvent`, `ErrNotConfigured`,
+  `ErrIgnoredEvent`)
+- [x] `internal/payment/stripe.go` — `StripeGateway` implements `Gateway`
+  (`stripe-go/v82`, API client-based bukan global `stripe.Key`)
+- [x] `internal/config/config.go`: `StripeSecretKey`, `StripePublishableKey`,
+  `StripeWebhookSecret` (optional — kosong = gateway disabled, 503
+  graceful, sama pattern R2)
+- [x] Migration `donations`: `id, user_id (nullable, FK users), donor_name,
+  donor_email, amount_cents, currency, gateway ('stripe'|'sociabuzz'),
+  gateway_ref, status ('pending'|'succeeded'|'failed'), created_at`.
+  Constraint `donations_traceable`: `user_id is not null or donor_email
+  is not null` (kuatkuasa traceability di peringkat DB, bukan cuma app
+  code). Unique index `(gateway, gateway_ref)` untuk webhook idempotency.
+- [x] `middleware.OptionalAuth` + `UserIDOptional` — parse Bearer token
+  kalau ada, TAK abort kalau tiada/tak sah (padanan `RequireAuth` tapi
+  untuk route awam yang benarkan anonymous)
+- [x] `handlers/donations.go` — `DonationHandler{gateways
+  map[string]payment.Gateway}`, TAK bergantung Stripe terus:
+  - `POST /donations/checkout` (awam, `OptionalAuth` + rate limit
+    5/6s) — `selectGateway(amountCents)` (buat masa ni selalu pulang
+    Stripe; threshold RM500 vs SociaBuzz masuk SATU tempat ni bila siap),
+    validate `amount_cents` (RM1–RM50k pagar munasabah), block anonymous
+    tanpa `donor_email`, panggil `gw.CreatePayment(...)` + rekod
+    `donations` status `pending`
+  - `POST /webhooks/:gateway` (awam, tiada rate limit — gateway boleh
+    retry) — lookup `gateways[gateway]`, `gw.VerifyWebhook(payload,
+    headers)` (signature/format spesifik kekal dlm implementation
+    masing-masing), `ErrIgnoredEvent` → 200 OK senyap (elak retry-loop
+    gateway), lain → update `donations` guna `(gateway, gateway_ref)`
+- [x] `main.go`: registry `paymentGateways :=
+  map[string]payment.Gateway{"stripe": payment.NewStripeGateway(...)}`
+  — daftar ToyyibPay/SociaBuzz sini bila siap, satu baris setiap satu
+
+**Verified**: `go build`/`go vet`/`golangci-lint run` bersih; migration
+`up` jalan bersih lawan Postgres lokal; smoke test manual lepas refactor
+— checkout, `/webhooks/stripe`, DAN `/webhooks/<gateway-tak-wujud>`
+kesemuanya pulang `503 {"error":"donation belum tersedia"}` bila
+`STRIPE_SECRET_KEY` kosong (no-op graceful confirmed, padanan R2
+pattern). **Belum verified**: payment sebenar end-to-end (perlu
+`STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY`/`STRIPE_WEBHOOK_SECRET`
+diisi `.env` dulu — kau kata dah ada akaun Stripe, provisioning key
+adalah langkah kau, bukan sesuatu code boleh buat sendiri; test mode key
+cukup untuk verify dulu sebelum live key).
+
+### Draf data model — ToyyibPay yuran (belum migration, tunggu soalan bawah)
+```
+profiles          + dues_status ('unpaid'|'paid'), dues_paid_until (nullable,
+                  kalau yuran berulang — lihat soalan belum putus)
+dues_payments     id, user_id, amount, toyyibpay_bill_code, status, paid_at, created_at
+```
+
+### Draf API endpoints — ToyyibPay yuran + SociaBuzz (belum implement)
+```
+POST /dues/checkout           -- create ToyyibPay bill, pulang payment URL
+POST /webhooks/toyyibpay      -- callback ToyyibPay (unauthenticated, verify signature)
+GET  /dues/status              -- status yuran ahli semasa (untuk gate + UI profil)
+
+POST /webhooks/sociabuzz       -- callback SociaBuzz (kalau gateway ni ada webhook rasmi)
+```
+(`POST /donations/checkout` dah wujud — bila SociaBuzz siap, endpoint ni
+kena diubah untuk route ikut threshold RM500, bukan Stripe terus)
+
+### Belum putus / perlu clarify sebelum sambung
+- [ ] Yuran ToyyibPay: **sekali bayar** ke **berulang** (tahunan/bulanan)?
+  Kalau berulang — macam mana renewal reminder + grace period sebelum
+  lock akses balik (elak ahli terus ter-lock tanpa notis)?
+- [ ] Yuran ToyyibPay: bila exactly gate ni start berkuat kuasa untuk
+  ahli baru — terus lepas `status=approved`, atau ada tempoh percubaan
+  free dulu?
+- [ ] Donation page: letak dalam app MARC (tab/menu baru) atau landing
+  page luar di `hafizbahtiar.com` (pattern sama macam verify-email
+  Stage 8, cross-repo dgn `portfolio-astro`)?
+- [ ] Credential provisioning: `STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY`/
+  `STRIPE_WEBHOOK_SECRET` (test mode dulu) kena diisi `.env` sebelum
+  boleh test end-to-end sebenar. ToyyibPay + SociaBuzz punya credential
+  pun sama — perlu provisioning dulu bila sampai giliran.
+- [ ] SociaBuzz: belum research — ada API/webhook rasmi untuk verify
+  payment status secara programatik, atau perlu reconcile manual?
+- [ ] Threshold RM500 routing (`/donations/checkout` pilih Stripe vs
+  SociaBuzz ikut amount) — belum implement, tunggu SociaBuzz siap dulu.
+  Buat masa ni endpoint Stripe SAHAJA, tiada pengecualian amount <RM500.
+
+**Status**: Stripe donation checkout + webhook backend **done**, belum
+verified lawan Stripe sebenar (tunggu credential). ToyyibPay + SociaBuzz
++ Flutter UI semua **belum start**.
+
+---
+
 ## Belum putus / perlu bincang lagi
-- Payment/membership dues system — akan tentukan gate tambahan untuk Posts
-  visibility bila siap (bincang berasingan, bukan sekarang)
 - R2 API token permission scope (403 AccessDenied bila upload sebenar,
   walaupun presign + checksum dah betul) — perlu kau semak Cloudflare
   dashboard, bukan sesuatu code boleh fix

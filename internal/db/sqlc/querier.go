@@ -26,6 +26,7 @@ type Querier interface {
 	CountPostLikes(ctx context.Context, postID uuid.UUID) (int64, error)
 	CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountPostLikesByPostIDsRow, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error)
+	CreateDonation(ctx context.Context, arg CreateDonationParams) (Donation, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
 	CreatePendingUpload(ctx context.Context, arg CreatePendingUploadParams) error
@@ -43,6 +44,7 @@ type Querier interface {
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
 	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
+	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
 	GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
 	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
@@ -87,8 +89,10 @@ type Querier interface {
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
+	UpdateDonationStatusByGatewayRef(ctx context.Context, arg UpdateDonationStatusByGatewayRefParams) (Donation, error)
 	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
+	UpdateProfileRole(ctx context.Context, arg UpdateProfileRoleParams) (Profile, error)
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)
 }
 

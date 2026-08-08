@@ -37,6 +37,7 @@ type profileResponse struct {
 	RoleKey       string  `json:"role_key"`
 	RoleName      string  `json:"role_name"`
 	Category      string  `json:"category"`
+	RoleRank      int32   `json:"role_rank"`
 }
 
 // Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
@@ -60,6 +61,7 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		RoleKey:       row.RoleKey,
 		RoleName:      row.RoleName,
 		Category:      row.RoleCategory,
+		RoleRank:      row.RoleRank,
 	})
 }
 
@@ -104,7 +106,9 @@ type memberResponse struct {
 	MemberID    string  `json:"member_id"`
 	DisplayName *string `json:"display_name"`
 	Email       string  `json:"email"`
+	RoleKey     string  `json:"role_key"`
 	RoleName    string  `json:"role_name"`
+	RoleRank    int32   `json:"role_rank"`
 	Category    string  `json:"category"`
 	Status      string  `json:"status"`
 }
@@ -130,7 +134,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, []memberResponse{
-			toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleName, row.RoleCategory, row.Status),
+			toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status),
 		})
 		return
 	}
@@ -143,7 +147,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		}
 		members := make([]memberResponse, len(rows))
 		for i, row := range rows {
-			members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleName, row.RoleCategory, row.Status)
+			members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status)
 		}
 		c.JSON(http.StatusOK, members)
 		return
@@ -157,21 +161,127 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 
 	members := make([]memberResponse, len(rows))
 	for i, row := range rows {
-		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleName, row.RoleCategory, row.Status)
+		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status)
 	}
 	c.JSON(http.StatusOK, members)
 }
 
-func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, email, roleName, category, status string) memberResponse {
+func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, email, roleKey, roleName string, roleRank int32, category, status string) memberResponse {
 	return memberResponse{
 		UserID:      userID.String(),
 		MemberID:    memberID,
 		DisplayName: textToPtr(displayName),
 		Email:       email,
+		RoleKey:     roleKey,
 		RoleName:    roleName,
+		RoleRank:    roleRank,
 		Category:    category,
 		Status:      status,
 	}
+}
+
+// ListRoles (Stage 12) — management sahaja. Senarai role tersedia untuk
+// UI edit role (bottom sheet) tapis rank yang boleh diassign.
+func (h *ProfileHandler) ListRoles(c *gin.Context) {
+	ctx := c.Request.Context()
+	isManagement, err := authz.IsManagement(ctx, h.queries, middleware.UserID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai role"})
+		return
+	}
+	if !isManagement {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma pengurusan boleh lihat senarai role"})
+		return
+	}
+
+	roles, err := h.queries.ListRoles(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai role"})
+		return
+	}
+
+	type roleResponse struct {
+		Key  string `json:"key"`
+		Name string `json:"name"`
+		Rank int32  `json:"rank"`
+	}
+	res := make([]roleResponse, len(roles))
+	for i, r := range roles {
+		res[i] = roleResponse{Key: r.Key, Name: r.Name, Rank: r.Rank}
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+type updateMemberRoleRequest struct {
+	RoleKey string `json:"role_key" binding:"required"`
+}
+
+// UpdateMemberRole (Stage 12) — management sahaja, dikawal hierarki
+// `roles.rank`: editor cuma boleh edit target dengan rank LEBIH RENDAH
+// drpd dia, dan cuma boleh assign role dengan rank LEBIH RENDAH drpd
+// rank dia sendiri (elak self-service naik setaraf/lebih tinggi drpd
+// orang yang edit). Superadmin (rank tertinggi) secara praktikal boleh
+// edit semua sebab semua role lain rank lebih rendah.
+func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
+	targetID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
+		return
+	}
+
+	var req updateMemberRoleRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	if targetID == callerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak boleh tukar role akaun sendiri"})
+		return
+	}
+
+	caller, err := h.queries.GetProfileByUserID(ctx, callerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini role ahli"})
+		return
+	}
+	if caller.RoleCategory != authz.CategoryManagement {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma pengurusan boleh tukar role ahli"})
+		return
+	}
+
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+	if caller.RoleRank <= target.RoleRank {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh edit ahli setaraf/lebih tinggi drpd anda"})
+		return
+	}
+
+	newRole, err := h.queries.GetRoleByKey(ctx, req.RoleKey)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role tidak sah"})
+		return
+	}
+	if newRole.Rank >= caller.RoleRank {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh assign role setaraf/lebih tinggi drpd anda"})
+		return
+	}
+
+	updated, err := h.queries.UpdateProfileRole(ctx, sqlc.UpdateProfileRoleParams{
+		UserID: targetID,
+		RoleID: newRole.ID,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini role ahli"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toMemberResponse(updated.UserID, updated.MemberID, updated.DisplayName, target.Email, newRole.Key, newRole.Name, newRole.Rank, newRole.Category, updated.Status))
 }
 
 type memberActionResponse struct {

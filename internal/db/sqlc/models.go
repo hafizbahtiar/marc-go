@@ -35,6 +35,19 @@ type DeviceToken struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Donation struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	DonorName   pgtype.Text        `json:"donor_name"`
+	DonorEmail  pgtype.Text        `json:"donor_email"`
+	AmountCents int32              `json:"amount_cents"`
+	Currency    string             `json:"currency"`
+	Gateway     string             `json:"gateway"`
+	GatewayRef  string             `json:"gateway_ref"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type EmailVerificationToken struct {
 	ID        uuid.UUID          `json:"id"`
 	UserID    uuid.UUID          `json:"user_id"`
