@@ -83,7 +83,7 @@ func (q *Queries) GetDonationByGatewayRef(ctx context.Context, arg GetDonationBy
 const updateDonationStatusByGatewayRef = `-- name: UpdateDonationStatusByGatewayRef :one
 update donations
 set status = $3
-where gateway = $1 and gateway_ref = $2
+where gateway = $1 and gateway_ref = $2 and status <> 'succeeded'
 returning id, user_id, donor_name, donor_email, amount_cents, currency, gateway, gateway_ref, status, created_at
 `
 
@@ -93,6 +93,11 @@ type UpdateDonationStatusByGatewayRefParams struct {
 	Status     string `json:"status"`
 }
 
+// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
+// retry/replay (atau event lewat sampai tak ikut turutan) tak boleh
+// turunkan donation yang dah berjaya jadi 'failed'. Kad yang ditolak
+// kemudian dicuba semula atas PaymentIntent yang sama tetap boleh naik
+// 'failed' -> 'succeeded' (sebab itu bukan `status = 'pending'`).
 func (q *Queries) UpdateDonationStatusByGatewayRef(ctx context.Context, arg UpdateDonationStatusByGatewayRefParams) (Donation, error) {
 	row := q.db.QueryRow(ctx, updateDonationStatusByGatewayRef, arg.Gateway, arg.GatewayRef, arg.Status)
 	var i Donation

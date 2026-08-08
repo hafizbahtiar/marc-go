@@ -67,6 +67,15 @@ func (s *StripeGateway) VerifyWebhook(payload []byte, headers http.Header) (Webh
 		return WebhookEvent{}, ErrNotConfigured
 	}
 
+	// WAJIB: tanpa guard ni, `STRIPE_WEBHOOK_SECRET` kosong bermakna
+	// signature dikira HMAC dengan KUNCI KOSONG — sesiapa sahaja boleh
+	// hasilkan header `Stripe-Signature` yang sah dan tandakan mana-mana
+	// donation sebagai "succeeded". `webhook.ConstructEvent` stripe-go
+	// TIDAK tolak secret kosong dengan sendirinya.
+	if s.webhookSecret == "" {
+		return WebhookEvent{}, ErrNotConfigured
+	}
+
 	event, err := webhook.ConstructEvent(payload, headers.Get("Stripe-Signature"), s.webhookSecret)
 	if err != nil {
 		return WebhookEvent{}, err

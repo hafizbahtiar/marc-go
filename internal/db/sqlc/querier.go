@@ -89,6 +89,11 @@ type Querier interface {
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
+	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
+	// retry/replay (atau event lewat sampai tak ikut turutan) tak boleh
+	// turunkan donation yang dah berjaya jadi 'failed'. Kad yang ditolak
+	// kemudian dicuba semula atas PaymentIntent yang sama tetap boleh naik
+	// 'failed' -> 'succeeded' (sebab itu bukan `status = 'pending'`).
 	UpdateDonationStatusByGatewayRef(ctx context.Context, arg UpdateDonationStatusByGatewayRefParams) (Donation, error)
 	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)

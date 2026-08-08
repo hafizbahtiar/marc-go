@@ -7,7 +7,12 @@ returning *;
 select * from donations where gateway = $1 and gateway_ref = $2;
 
 -- name: UpdateDonationStatusByGatewayRef :one
+-- `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
+-- retry/replay (atau event lewat sampai tak ikut turutan) tak boleh
+-- turunkan donation yang dah berjaya jadi 'failed'. Kad yang ditolak
+-- kemudian dicuba semula atas PaymentIntent yang sama tetap boleh naik
+-- 'failed' -> 'succeeded' (sebab itu bukan `status = 'pending'`).
 update donations
 set status = $3
-where gateway = $1 and gateway_ref = $2
+where gateway = $1 and gateway_ref = $2 and status <> 'succeeded'
 returning *;

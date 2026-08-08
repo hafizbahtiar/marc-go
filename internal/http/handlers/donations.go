@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -37,10 +38,15 @@ const (
 	maxDonationCents = 5000000 // RM50,000
 )
 
+// max=200/max=254 — had panjang munasabah. Bukan sekadar kebersihan:
+// nilai metadata Stripe dihadkan 500 aksara, jadi nama 100KB (body limit
+// global 1MB) akan buat `CreatePayment` gagal dengan 500 daripada API
+// Stripe, bukan 400 yang betul, dan sampah tu turut masuk column `text`
+// tanpa had di DB.
 type donationCheckoutRequest struct {
 	AmountCents int64  `json:"amount_cents" binding:"required"`
-	DonorName   string `json:"donor_name"`
-	DonorEmail  string `json:"donor_email" binding:"omitempty,email"`
+	DonorName   string `json:"donor_name" binding:"omitempty,max=200"`
+	DonorEmail  string `json:"donor_email" binding:"omitempty,email,max=254"`
 }
 
 // selectGateway pilih gateway ikut amount. Buat masa ni Stripe SAHAJA
@@ -148,6 +154,13 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 			return
 		}
+		// Signing secret belum diisi — endpoint TAK boleh sahkan apa-apa,
+		// jadi ia fail-closed (503), bukan terima event tak disahkan.
+		if errors.Is(err, payment.ErrNotConfigured) {
+			log.Printf("webhook %s: signing secret belum dikonfigurasi", gw.Name())
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook belum dikonfigurasi"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "signature tidak sah"})
 		return
 	}
@@ -157,11 +170,14 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 		GatewayRef: event.GatewayRef,
 		Status:     event.Status,
 	}); err != nil {
-		// Idempotent replay webhook (retry lumrah semua gateway) — kalau
-		// row dah tiada perubahan, log je, jangan gagalkan webhook
-		// (gateway retry berterusan kalau bukan 200, boleh jadi
-		// loop tak berguna).
-		log.Printf("update donation status (gateway=%s, ref=%s): %v", gw.Name(), event.GatewayRef, err)
+		// pgx.ErrNoRows = tiada row yang layak dikemas kini: replay
+		// webhook atas donation yang dah 'succeeded' (terminal), atau ref
+		// yang bukan milik kita. Kedua-duanya normal, bukan kegagalan.
+		// Ralat lain pun sengaja tak digagalkan — gateway retry
+		// berterusan kalau bukan 200, jadi log je.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("update donation status (gateway=%s, ref=%s): %v", gw.Name(), event.GatewayRef, err)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
