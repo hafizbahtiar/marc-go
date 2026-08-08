@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	htmlpkg "html"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -17,6 +19,7 @@ import (
 	"marc/internal/email"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
+	"marc/internal/receipt"
 )
 
 // DonationHandler bergantung interface `payment.Gateway` sahaja, BUKAN
@@ -208,13 +211,21 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 // direkod, resit hilang bukan sebab kritikal untuk retry).
 func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation) {
 	to := textToPtr(d.DonorEmail)
-	if to == nil && d.UserID.Valid {
-		user, err := h.queries.GetUserByID(ctx, d.UserID.Bytes)
+	memberID := ""
+
+	// Ahli log masuk — satu query `GetProfileByUserID` bagi DUA-DUA emel
+	// akaun (fallback kalau donor_email kosong) DAN member_id (untuk
+	// papar kat resit, konteks tambahan berguna utk ahli).
+	if d.UserID.Valid {
+		profile, err := h.queries.GetProfileByUserID(ctx, d.UserID.Bytes)
 		if err != nil {
-			log.Printf("resit donation: gagal cari emel user %s: %v", d.UserID.Bytes, err)
-			return
+			log.Printf("resit donation: gagal cari profil user %s: %v", d.UserID.Bytes, err)
+		} else {
+			if to == nil {
+				to = &profile.Email
+			}
+			memberID = profile.MemberID
 		}
-		to = &user.Email
 	}
 	if to == nil {
 		// Sepatutnya tak berlaku — constraint DB `donations_traceable`
@@ -224,20 +235,105 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation)
 		return
 	}
 
-	name := "Penderma"
-	if n := textToPtr(d.DonorName); n != nil && *n != "" {
-		name = *n
+	donorName := ""
+	if n := textToPtr(d.DonorName); n != nil {
+		donorName = *n
 	}
-	amount := fmt.Sprintf("RM%.2f", float64(d.AmountCents)/100)
+	donorEmail := ""
+	if e := textToPtr(d.DonorEmail); e != nil {
+		donorEmail = *e
+	} else {
+		donorEmail = *to
+	}
+	paidAt := time.Now()
 
+	pdfBytes, err := receipt.GeneratePDF(receipt.Donation{
+		MemberID:    memberID,
+		DonorName:   donorName,
+		DonorEmail:  donorEmail,
+		AmountCents: int64(d.AmountCents),
+		Currency:    d.Currency,
+		GatewayRef:  d.GatewayRef,
+		PaidAt:      paidAt,
+	})
+	if err != nil {
+		// PDF gagal jana — hantar resit tetap (versi HTML je) drpd
+		// langsung tak hantar apa-apa. Log untuk siasat kenapa gagal.
+		log.Printf("resit donation: gagal jana PDF (gateway_ref=%s): %v", d.GatewayRef, err)
+	}
+
+	displayName := donorName
+	if displayName == "" {
+		displayName = "Penderma"
+	}
 	subject := "Resit Sumbangan MARC"
-	html := fmt.Sprintf(
-		"<p>Terima kasih %s atas sumbangan anda sebanyak <strong>%s</strong> kepada MARC.</p>"+
-			"<p>Emel ini adalah resit rasmi bagi sumbangan anda. Sila simpan untuk rekod anda.</p>",
-		name, amount,
-	)
+	body := donationReceiptHTML(displayName, formatRinggit(int64(d.AmountCents), d.Currency), d.GatewayRef, paidAt)
 
-	if err := h.emailClient.Send(ctx, *to, subject, html); err != nil {
+	var attachments []email.Attachment
+	if pdfBytes != nil {
+		attachments = append(attachments, email.Attachment{
+			Filename: fmt.Sprintf("Resit-MARC-%s.pdf", d.GatewayRef),
+			Content:  pdfBytes,
+		})
+	}
+
+	if err := h.emailClient.SendWithAttachments(ctx, *to, subject, body, attachments); err != nil {
 		log.Printf("gagal hantar resit donation (gateway_ref=%s): %v", d.GatewayRef, err)
 	}
+}
+
+func formatRinggit(cents int64, currency string) string {
+	symbol := "RM"
+	if currency != "" && currency != "myr" {
+		symbol = currency
+	}
+	return fmt.Sprintf("%s%.2f", symbol, float64(cents)/100)
+}
+
+// donationReceiptHTML — templat emel bertema (padanan warna jenama
+// AppColors di marc_flutter/lib/app/theme.dart: #2F6B4F/#FAF9F6/
+// #1C1B19/#6B6B6B). Inline style sengaja (bukan `<style>`/class) — ramai
+// email client (Gmail, Outlook) buang `<style>` block atau CSS luaran.
+// `html.EscapeString` pada nilai user-supplied (nama) — donor_name asal
+// input pengguna, tanpa escape ni jadi HTML injection vector dlm emel
+// yang kita hantar.
+func donationReceiptHTML(name, amount, ref string, paidAt time.Time) string {
+	safeName := htmlpkg.EscapeString(name)
+	return fmt.Sprintf(`<!doctype html>
+<html>
+<body style="margin:0;padding:0;background-color:#FAF9F6;font-family:Helvetica,Arial,sans-serif;color:#1C1B19;">
+  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#FAF9F6;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%%" style="max-width:480px;background-color:#FFFFFF;border-radius:12px;overflow:hidden;">
+        <tr><td style="background-color:#2F6B4F;padding:24px 32px;">
+          <span style="font-size:20px;font-weight:700;color:#FFFFFF;letter-spacing:0.5px;">MARC</span>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 16px;font-size:15px;">Terima kasih, %s.</p>
+          <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">
+            Sumbangan anda kepada MARC telah berjaya diterima. Resit rasmi
+            (PDF) dilampirkan bersama emel ini.
+          </p>
+          <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#FAF9F6;border-radius:10px;margin-bottom:24px;">
+            <tr><td style="padding:20px 24px;">
+              <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;text-transform:uppercase;letter-spacing:0.5px;">Jumlah Sumbangan</p>
+              <p style="margin:0;font-size:28px;font-weight:700;color:#1C1B19;">%s</p>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;">No. Rujukan</p>
+          <p style="margin:0 0 16px;font-size:14px;color:#1C1B19;">%s</p>
+          <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;">Tarikh</p>
+          <p style="margin:0;font-size:14px;color:#1C1B19;">%s</p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;border-top:1px solid #E4E1DA;">
+          <p style="margin:0;font-size:12px;color:#6B6B6B;line-height:1.5;">
+            Emel ini dihantar automatik oleh sistem MARC. Sila simpan resit
+            PDF terlampir untuk rekod anda.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`, safeName, amount, ref, paidAt.Format("2 January 2006, 3:04 PM"))
 }

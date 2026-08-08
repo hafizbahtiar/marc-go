@@ -529,23 +529,47 @@ flow, tak perlu hardcode andaian Stripe.
 - [x] Resit emel (2026-08-09) — `DonationHandler.sendReceiptEmail`
   dipanggil dalam `Webhook` lepas transisi **sebenar** (bukan replay) ke
   status `succeeded`: guna `donor_email` kalau ada, kalau tidak lookup
-  emel akaun via `GetUserByID(donation.UserID)`. Best-effort (log je
-  kalau `emailClient.Send` gagal, tak gagalkan webhook). Guna sifat
-  idempotent `UpdateDonationStatusByGatewayRef` (WHERE `status <>
+  profil (emel + member_id) via `GetProfileByUserID(donation.UserID)`.
+  Best-effort (log je kalau hantar gagal, tak gagalkan webhook). Guna
+  sifat idempotent `UpdateDonationStatusByGatewayRef` (WHERE `status <>
   'succeeded'`) — retry/replay webhook Stripe kena `pgx.ErrNoRows`
   sebab row dah `succeeded`, jadi TAK trigger cabang emel semula
   (resit hantar tepat SEKALI, bukan setiap retry).
+- [x] **Resit PDF + emel bertema (2026-08-09)** — `internal/receipt/receipt.go`
+  (`go-pdf/fpdf`) jana PDF satu muka: header jenama, jumlah besar, jadual
+  (no. rujukan, tarikh, nama, emel, no. ahli kalau berkaitan), footer nota.
+  `internal/email/client.go` tambah `SendWithAttachments` (Resend terima
+  attachment sbg base64 dlm body JSON, bukan multipart) — `Send` lama
+  kekal, delegate ke variant baru dgn `attachments=nil`. HTML emel
+  (`donationReceiptHTML`) guna inline style SAHAJA (bukan `<style>`
+  block/class — byk email client buang tu), padanan warna jenama
+  (`#2F6B4F`/`#FAF9F6`/`#1C1B19`/`#6B6B6B`, sama macam `AppColors` di
+  `marc_flutter/lib/app/theme.dart`). Nama donor (user input) di-escape
+  (`html.EscapeString`) sebelum masuk HTML — elak injection vector.
+  Verified: `go test` smoke check PDF keluar fail valid (`file` confirm
+  "PDF document, version 1.3"), toolkit build/vet/lint bersih.
+
+**Insiden webhook (2026-08-08/09) — punca sebenar bukan secret**: siri
+403/400 berpanjangan yang nampak macam isu `STRIPE_WEBHOOK_SECRET` (dan
+punca delete/recreate endpoint berkali-kali) sebenarnya
+**`webhook.ConstructEvent` (`stripe-go`) tolak event bila API version
+account (`2025-10-29.clover`) tak padan API version SDK dipin
+(`2025-08-27.basil`)** — signature SAH sepanjang masa, cuma version
+check yang gagal, tapi error message generic "signature tidak sah"
+buat ia nampak macam isu secret. Fix: `internal/payment/stripe.go` guna
+`webhook.ConstructEventWithOptions{IgnoreAPIVersionMismatch: true}`
+(selamat — handler cuma baca `event.Type`/`PaymentIntent.ID`, stabil
+merentasi API version). `donations.go` webhook 400-path sekarang log
+ralat SEBENAR drpd `VerifyWebhook`, bukan cuma balas 400 senyap — elak
+kelas bug ni menyamar sbg isu secret lagi. Verified end-to-end dgn
+donation sebenar (checkout → confirm via Stripe API → webhook 200 →
+row DB `succeeded` → resit emel hantar).
 
 **Verified**: `go build`/`go vet`/`golangci-lint run` bersih; migration
-`up` jalan bersih lawan Postgres lokal; smoke test manual lepas refactor
-— checkout, `/webhooks/stripe`, DAN `/webhooks/<gateway-tak-wujud>`
-kesemuanya pulang `503 {"error":"donation belum tersedia"}` bila
-`STRIPE_SECRET_KEY` kosong (no-op graceful confirmed, padanan R2
-pattern). **Belum verified**: payment sebenar end-to-end (perlu
-`STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY`/`STRIPE_WEBHOOK_SECRET`
-diisi `.env` dulu — kau kata dah ada akaun Stripe, provisioning key
-adalah langkah kau, bukan sesuatu code boleh buat sendiri; test mode key
-cukup untuk verify dulu sebelum live key).
+`up` jalan bersih lawan Postgres lokal; payment sebenar end-to-end kini
+**verified** lawan staging (lihat insiden di atas) — checkout, webhook
+signature verify, status update, DAN resit emel semua confirmed jalan
+betul dgn PaymentIntent sebenar (bukan andaian/mock).
 
 ### Draf data model — ToyyibPay yuran (belum migration, tunggu soalan bawah)
 ```
