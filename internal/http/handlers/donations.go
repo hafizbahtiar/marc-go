@@ -165,6 +165,10 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook belum dikonfigurasi"})
 			return
 		}
+		// Log sebab SEBENAR — ralat VerifyWebhook bukan semestinya
+		// signature salah (cth mismatch API version), dan tanpa log ni
+		// 400 nampak macam masalah signing secret sedangkan bukan.
+		log.Printf("webhook %s: verify gagal: %v", gw.Name(), err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "signature tidak sah"})
 		return
 	}

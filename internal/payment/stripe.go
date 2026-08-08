@@ -76,7 +76,24 @@ func (s *StripeGateway) VerifyWebhook(payload []byte, headers http.Header) (Webh
 		return WebhookEvent{}, ErrNotConfigured
 	}
 
-	event, err := webhook.ConstructEvent(payload, headers.Get("Stripe-Signature"), s.webhookSecret)
+	// IgnoreAPIVersionMismatch: WAJIB. `webhook.ConstructEvent` bukan
+	// setakat sahkan signature — ia JUGA tolak event yang API version-nya
+	// lain "release train" drpd yang stripe-go dikompil dengan
+	// (cth akaun hantar `2025-10-29.clover`, stripe-go v82 jangka
+	// `2025-08-27.basil`), dan pulangkan ralat yang nampak sama macam
+	// signature gagal. Webhook endpoint Stripe TAK boleh tukar
+	// `api_version` selepas dicipta, jadi guard tu akan kekal gagal
+	// selamanya walaupun signature 100% sah.
+	//
+	// Selamat diabaikan di sini sebab kita cuma baca `event.Type` dan
+	// `pi.ID` — dua-dua stabil merentas semua versi API Stripe. Signature
+	// masih disahkan sepenuhnya; hanya semakan versi yang dilangkau.
+	event, err := webhook.ConstructEventWithOptions(
+		payload,
+		headers.Get("Stripe-Signature"),
+		s.webhookSecret,
+		webhook.ConstructEventOptions{IgnoreAPIVersionMismatch: true},
+	)
 	if err != nil {
 		return WebhookEvent{}, err
 	}
