@@ -526,6 +526,15 @@ flow, tak perlu hardcode andaian Stripe.
 - [x] `main.go`: registry `paymentGateways :=
   map[string]payment.Gateway{"stripe": payment.NewStripeGateway(...)}`
   — daftar ToyyibPay/SociaBuzz sini bila siap, satu baris setiap satu
+- [x] Resit emel (2026-08-09) — `DonationHandler.sendReceiptEmail`
+  dipanggil dalam `Webhook` lepas transisi **sebenar** (bukan replay) ke
+  status `succeeded`: guna `donor_email` kalau ada, kalau tidak lookup
+  emel akaun via `GetUserByID(donation.UserID)`. Best-effort (log je
+  kalau `emailClient.Send` gagal, tak gagalkan webhook). Guna sifat
+  idempotent `UpdateDonationStatusByGatewayRef` (WHERE `status <>
+  'succeeded'`) — retry/replay webhook Stripe kena `pgx.ErrNoRows`
+  sebab row dah `succeeded`, jadi TAK trigger cabang emel semula
+  (resit hantar tepat SEKALI, bukan setiap retry).
 
 **Verified**: `go build`/`go vet`/`golangci-lint run` bersih; migration
 `up` jalan bersih lawan Postgres lokal; smoke test manual lepas refactor

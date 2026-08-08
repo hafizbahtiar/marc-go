@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"marc/internal/db/sqlc"
+	"marc/internal/email"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
 )
@@ -21,12 +24,13 @@ import (
 // tak perlu ubah handler ni, cuma daftar entry baru dalam `gateways`
 // (lihat `cmd/api/main.go`).
 type DonationHandler struct {
-	gateways map[string]payment.Gateway
-	queries  *sqlc.Queries
+	gateways    map[string]payment.Gateway
+	queries     *sqlc.Queries
+	emailClient *email.Client
 }
 
-func NewDonationHandler(pool *pgxpool.Pool, gateways map[string]payment.Gateway) *DonationHandler {
-	return &DonationHandler{gateways: gateways, queries: sqlc.New(pool)}
+func NewDonationHandler(pool *pgxpool.Pool, gateways map[string]payment.Gateway, emailClient *email.Client) *DonationHandler {
+	return &DonationHandler{gateways: gateways, queries: sqlc.New(pool), emailClient: emailClient}
 }
 
 // minDonationCents/maxDonationCents — pagar munasabah (elak fat-finger
@@ -165,11 +169,12 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.queries.UpdateDonationStatusByGatewayRef(c.Request.Context(), sqlc.UpdateDonationStatusByGatewayRefParams{
+	updated, err := h.queries.UpdateDonationStatusByGatewayRef(c.Request.Context(), sqlc.UpdateDonationStatusByGatewayRefParams{
 		Gateway:    gw.Name(),
 		GatewayRef: event.GatewayRef,
 		Status:     event.Status,
-	}); err != nil {
+	})
+	if err != nil {
 		// pgx.ErrNoRows = tiada row yang layak dikemas kini: replay
 		// webhook atas donation yang dah 'succeeded' (terminal), atau ref
 		// yang bukan milik kita. Kedua-duanya normal, bukan kegagalan.
@@ -178,7 +183,57 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("update donation status (gateway=%s, ref=%s): %v", gw.Name(), event.GatewayRef, err)
 		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+
+	// `err == nil` di sini bermakna row BENAR-BENAR beralih (WHERE
+	// `status <> 'succeeded'` di query terkena) — bukan replay. Jadi
+	// resit hantar TEPAT SEKALI setiap donation berjaya, retry Stripe
+	// selepas ni akan kena `pgx.ErrNoRows` (row dah 'succeeded', tak
+	// match WHERE lagi) dan skip terus cabang ni.
+	if event.Status == "succeeded" {
+		h.sendReceiptEmail(c.Request.Context(), updated)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// sendReceiptEmail best-effort — kegagalan hantar emel TAK gagalkan
+// webhook (Stripe retry kalau bukan 200, dan donation dah pun berjaya
+// direkod, resit hilang bukan sebab kritikal untuk retry).
+func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation) {
+	to := textToPtr(d.DonorEmail)
+	if to == nil && d.UserID.Valid {
+		user, err := h.queries.GetUserByID(ctx, d.UserID.Bytes)
+		if err != nil {
+			log.Printf("resit donation: gagal cari emel user %s: %v", d.UserID.Bytes, err)
+			return
+		}
+		to = &user.Email
+	}
+	if to == nil {
+		// Sepatutnya tak berlaku — constraint DB `donations_traceable`
+		// jamin user_id ATAU donor_email wujud — tapi jangan panic kalau
+		// data lama/tak dijangka, log je.
+		log.Printf("resit donation: tiada emel untuk donation gateway_ref=%s", d.GatewayRef)
+		return
+	}
+
+	name := "Penderma"
+	if n := textToPtr(d.DonorName); n != nil && *n != "" {
+		name = *n
+	}
+	amount := fmt.Sprintf("RM%.2f", float64(d.AmountCents)/100)
+
+	subject := "Resit Sumbangan MARC"
+	html := fmt.Sprintf(
+		"<p>Terima kasih %s atas sumbangan anda sebanyak <strong>%s</strong> kepada MARC.</p>"+
+			"<p>Emel ini adalah resit rasmi bagi sumbangan anda. Sila simpan untuk rekod anda.</p>",
+		name, amount,
+	)
+
+	if err := h.emailClient.Send(ctx, *to, subject, html); err != nil {
+		log.Printf("gagal hantar resit donation (gateway_ref=%s): %v", d.GatewayRef, err)
+	}
 }

@@ -132,7 +132,7 @@ func NewRouter(
 	// untuk donate. Handler bergantung payment.Gateway (interface), bukan
 	// Stripe terus — tambah gateway baru = daftar dlm paymentGateways
 	// (cmd/api/main.go), tiada perubahan di sini.
-	donationHandler := handlers.NewDonationHandler(pool, paymentGateways)
+	donationHandler := handlers.NewDonationHandler(pool, paymentGateways, emailClient)
 	donationRateLimiter := middleware.RateLimit(rate.Every(6*time.Second), 5)
 	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
