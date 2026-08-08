@@ -194,10 +194,12 @@ func (q *Queries) ListManagementUserIDs(ctx context.Context, category string) ([
 const listProfiles = `-- name: ListProfiles :many
 select
   p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at,
+  u.email as email,
   r.key as role_key,
   r.name as role_name,
   r.category as role_category
 from profiles p
+join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
 order by p.member_id
 `
@@ -214,6 +216,7 @@ type ListProfilesRow struct {
 	Status        string             `json:"status"`
 	ApprovedBy    pgtype.UUID        `json:"approved_by"`
 	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
+	Email         string             `json:"email"`
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
 	RoleCategory  string             `json:"role_category"`
@@ -240,6 +243,7 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
 			&i.Status,
 			&i.ApprovedBy,
 			&i.ApprovedAt,
+			&i.Email,
 			&i.RoleKey,
 			&i.RoleName,
 			&i.RoleCategory,
@@ -257,10 +261,12 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
 const listProfilesByStatus = `-- name: ListProfilesByStatus :many
 select
   p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at,
+  u.email as email,
   r.key as role_key,
   r.name as role_name,
   r.category as role_category
 from profiles p
+join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
 where p.status = $1
 order by p.member_id
@@ -278,6 +284,7 @@ type ListProfilesByStatusRow struct {
 	Status        string             `json:"status"`
 	ApprovedBy    pgtype.UUID        `json:"approved_by"`
 	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
+	Email         string             `json:"email"`
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
 	RoleCategory  string             `json:"role_category"`
@@ -304,6 +311,7 @@ func (q *Queries) ListProfilesByStatus(ctx context.Context, status string) ([]Li
 			&i.Status,
 			&i.ApprovedBy,
 			&i.ApprovedAt,
+			&i.Email,
 			&i.RoleKey,
 			&i.RoleName,
 			&i.RoleCategory,

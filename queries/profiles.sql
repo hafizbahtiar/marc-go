@@ -38,10 +38,12 @@ select email_verified from profiles where user_id = $1;
 -- name: ListProfiles :many
 select
   p.*,
+  u.email as email,
   r.key as role_key,
   r.name as role_name,
   r.category as role_category
 from profiles p
+join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
 order by p.member_id;
 
@@ -51,10 +53,12 @@ select status from profiles where user_id = $1;
 -- name: ListProfilesByStatus :many
 select
   p.*,
+  u.email as email,
   r.key as role_key,
   r.name as role_name,
   r.category as role_category
 from profiles p
+join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
 where p.status = $1
 order by p.member_id;

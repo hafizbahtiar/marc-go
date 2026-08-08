@@ -103,6 +103,7 @@ type memberResponse struct {
 	UserID      string  `json:"user_id"`
 	MemberID    string  `json:"member_id"`
 	DisplayName *string `json:"display_name"`
+	Email       string  `json:"email"`
 	RoleName    string  `json:"role_name"`
 	Category    string  `json:"category"`
 	Status      string  `json:"status"`
@@ -129,7 +130,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, []memberResponse{
-			toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.RoleName, row.RoleCategory, row.Status),
+			toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleName, row.RoleCategory, row.Status),
 		})
 		return
 	}
@@ -142,7 +143,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		}
 		members := make([]memberResponse, len(rows))
 		for i, row := range rows {
-			members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.RoleName, row.RoleCategory, row.Status)
+			members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleName, row.RoleCategory, row.Status)
 		}
 		c.JSON(http.StatusOK, members)
 		return
@@ -156,16 +157,17 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 
 	members := make([]memberResponse, len(rows))
 	for i, row := range rows {
-		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.RoleName, row.RoleCategory, row.Status)
+		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleName, row.RoleCategory, row.Status)
 	}
 	c.JSON(http.StatusOK, members)
 }
 
-func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, roleName, category, status string) memberResponse {
+func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, email, roleName, category, status string) memberResponse {
 	return memberResponse{
 		UserID:      userID.String(),
 		MemberID:    memberID,
 		DisplayName: textToPtr(displayName),
+		Email:       email,
 		RoleName:    roleName,
 		Category:    category,
 		Status:      status,
