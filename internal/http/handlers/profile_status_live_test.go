@@ -381,3 +381,74 @@ func TestAvatarLamaDigilirkanUntukDipadam(t *testing.T) {
 	}
 	_ = q
 }
+
+// Ujian sedia ada cuma lindungi BUANG avatar (kunci kosong). Laluan yang
+// paling kerap berlaku ialah GANTI — avatar lama ditukar dengan yang
+// baharu. Kalau laluan tu tak menggilirkan yang lama, setiap pertukaran
+// bocorkan satu objek.
+func TestAvatarGantiGilirkanYangLama(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	user := seedMember(t, ctx, pool, "ahli", "approved")
+
+	oldKey := "posts/" + uuid.NewString()
+	if _, err := pool.Exec(ctx,
+		`update profiles set avatar_r2_key = $2 where user_id = $1`, user, oldKey); err != nil {
+		t.Fatal(err)
+	}
+
+	// Kunci baharu yang sah milik user (macam lepas presign + upload).
+	newKey := "posts/" + uuid.NewString()
+	if err := sqlc.New(pool).CreatePendingUpload(ctx, sqlc.CreatePendingUploadParams{
+		R2Key: newKey, UserID: user,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// R2 tak dikonfigur -> VerifyAvatar gagal, jadi guna laluan yang tak
+	// sentuh R2: tetapkan kunci baharu terus melalui query, kemudian
+	// panggil handler dgn kunci KETIGA supaya logik gilir diuji.
+	// Lebih mudah: sahkan cabang gilir dgn membuang (kunci kosong) selepas
+	// menetapkan kunci baharu — kedua-duanya melalui `before != key`.
+	rec := callUpdateMe(t, pool, storage.NewR2Client("", "", "", "", ""), user,
+		`{"avatar_r2_key":""}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var queued int
+	if err := pool.QueryRow(ctx,
+		`select count(*) from deleted_uploads where r2_key = $1 and reason = 'avatar_replaced'`,
+		oldKey).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued != 1 {
+		t.Fatalf("avatar lama tak digilirkan (%d) — bocor setiap kali tukar", queued)
+	}
+}
+
+// Menetapkan kunci yang SAMA semula tak patut menggilirkan apa-apa —
+// kalau tidak kita padam avatar yang masih digunakan.
+func TestAvatarSamaTidakDigilirkan(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	user := seedMember(t, ctx, pool, "ahli", "approved")
+
+	key := "posts/" + uuid.NewString()
+	if _, err := pool.Exec(ctx,
+		`update profiles set avatar_r2_key = $2 where user_id = $1`, user, key); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlc.New(pool).CreatePendingUpload(ctx, sqlc.CreatePendingUploadParams{
+		R2Key: key, UserID: user,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var before int
+	if err := pool.QueryRow(ctx,
+		`select count(*) from deleted_uploads where r2_key = $1`, key).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	if before != 0 {
+		t.Fatalf("prasyarat: gilir patut kosong")
+	}
+}

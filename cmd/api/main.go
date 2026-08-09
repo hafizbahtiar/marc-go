@@ -21,6 +21,7 @@ import (
 	"marc/internal/payment"
 	"marc/internal/push"
 	"marc/internal/reaper"
+	"marc/internal/redisclient"
 	"marc/internal/retention"
 	"marc/internal/storage"
 )
@@ -47,6 +48,27 @@ func main() {
 	defer pool.Close()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Redis pilihan. Sahkan kebolehcapaian semasa boot supaya salah
+	// konfigurasi muncul di sini dan bukan pada permintaan pengguna
+	// pertama — tapi JANGAN gagalkan boot: tiada apa dalam app ni yang
+	// menyimpan kebenaran dalam Redis, jadi kehilangannya bermakna hilang
+	// penyelarasan antara instance, bukan hilang data.
+	redisCli, err := redisclient.New(cfg.RedisURL)
+	if err != nil {
+		log.Fatalf("redis: %v", err)
+	}
+	defer redisCli.Close()
+	switch {
+	case !redisCli.Enabled():
+		log.Printf("redis: REDIS_URL kosong — ciri berkaitan guna state setempat")
+	default:
+		if err := redisCli.Ping(ctx); err != nil {
+			log.Printf("AMARAN redis: dikonfigur tapi tak dapat dicapai: %v", err)
+		} else {
+			log.Printf("redis: bersambung")
+		}
+	}
 
 	jwtSvc := auth.NewJWT(cfg.JWTSecret, cfg.AccessTokenTTL)
 	emailClient := email.NewClient(cfg.ResendAPIKey, cfg.EmailFrom)

@@ -29,6 +29,10 @@ type Config struct {
 	StripePublishableKey string
 	StripeWebhookSecret  string
 
+	// Optional — kosong = ciri yang bergantung padanya jatuh balik kepada
+	// tingkah laku setempat (per-instance), bukan gagal.
+	RedisURL string
+
 	// Polisi simpanan. Boleh ubah tanpa deploy semula (env var), sebab ni
 	// keputusan POLISI dan bukan keputusan teknikal — lihat
 	// internal/retention.
@@ -70,6 +74,8 @@ func Load() (Config, error) {
 		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
 		StripePublishableKey: os.Getenv("STRIPE_PUBLISHABLE_KEY"),
 		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
+
+		RedisURL: os.Getenv("REDIS_URL"),
 
 		// Default: metadata permintaan (IP/user-agent) hidup 90 hari —
 		// cukup untuk menyiasat penyalahgunaan, tak lebih. Catatan audit
