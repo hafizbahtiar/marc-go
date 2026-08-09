@@ -107,12 +107,21 @@ type memberResponse struct {
 	UserID      string  `json:"user_id"`
 	MemberID    string  `json:"member_id"`
 	DisplayName *string `json:"display_name"`
-	Email       string  `json:"email"`
-	RoleKey     string  `json:"role_key"`
-	RoleName    string  `json:"role_name"`
-	RoleRank    int32   `json:"role_rank"`
-	Category    string  `json:"category"`
-	Status      string  `json:"status"`
+
+	// Nullable: emel ahli LAIN cuma didedahkan kepada management. Sejak
+	// keterlihatan ahli diluaskan (ahli kini nampak ahli + supervisor),
+	// menghantarnya kepada semua orang bermakna setiap ahli boleh menyalin
+	// direktori emel penuh — pendedahan yang jauh lebih luas daripada niat
+	// asal medan ni, semasa senarai ahli management-sahaja.
+	//
+	// `null` = disembunyikan (bukan "tiada emel"), jadi client boleh
+	// bezakan dua keadaan itu.
+	Email    *string `json:"email"`
+	RoleKey  string  `json:"role_key"`
+	RoleName string  `json:"role_name"`
+	RoleRank int32   `json:"role_rank"`
+	Category string  `json:"category"`
+	Status   string  `json:"status"`
 }
 
 // Members setara `membersProvider` di Flutter — gantian RLS
@@ -161,7 +170,13 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 
 	members := make([]memberResponse, len(rows))
 	for i, row := range rows {
-		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status)
+		// Ahli biasa nampak emel SENDIRI sahaja. Ditapis di sini dan bukan
+		// dalam SQL sebab baris caller sendiri tetap perlukan emel itu.
+		email := row.Email
+		if !isManagement && row.UserID != userID {
+			email = ""
+		}
+		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status)
 	}
 	c.JSON(http.StatusOK, members)
 }
@@ -201,12 +216,17 @@ func visibleRankCeiling(roles []sqlc.Role, viewerRank int32) int32 {
 	return ceiling
 }
 
+// toMemberResponse — `email` kosong bermakna sembunyikan medan itu.
 func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, email, roleKey, roleName string, roleRank int32, category, status string) memberResponse {
+	var emailPtr *string
+	if email != "" {
+		emailPtr = &email
+	}
 	return memberResponse{
 		UserID:      userID.String(),
 		MemberID:    memberID,
 		DisplayName: textToPtr(displayName),
-		Email:       email,
+		Email:       emailPtr,
 		RoleKey:     roleKey,
 		RoleName:    roleName,
 		RoleRank:    roleRank,

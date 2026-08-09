@@ -214,3 +214,76 @@ func TestTolakManagementTidakMenulisApaApa(t *testing.T) {
 		t.Errorf("status berubah kepada %q walaupun 403", status)
 	}
 }
+
+func callMembers(t *testing.T, pool *pgxpool.Pool, callerID uuid.UUID) []map[string]any {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	h := &ProfileHandler{pool: pool, queries: sqlc.New(pool), emailClient: email.NewClient("", "")}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/members", nil)
+	c.Set("userID", callerID)
+	h.Members(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /members = %d: %s", rec.Code, rec.Body.String())
+	}
+	var out []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return out
+}
+
+// Emel ialah data peribadi. Sejak ahli boleh nampak ahli lain, menghantar
+// emel kepada semua orang bermakna sesiapa boleh menyalin direktori penuh.
+func TestEmelAhliLainDisembunyikanDaripadaAhliBiasa(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	if _, err := pool.Exec(ctx, `delete from profiles; delete from users`); err != nil {
+		t.Fatalf("bersih: %v", err)
+	}
+
+	viewer := seedMember(t, ctx, pool, "ahli", "approved")
+	other := seedMember(t, ctx, pool, "ahli", "approved")
+	_ = other
+
+	rows := callMembers(t, pool, viewer)
+	if len(rows) < 2 {
+		t.Fatalf("mahu sekurang-kurangnya 2 baris, dapat %d", len(rows))
+	}
+
+	var sawSelf bool
+	for _, r := range rows {
+		isSelf := r["user_id"] == viewer.String()
+		if isSelf {
+			sawSelf = true
+			if r["email"] == nil {
+				t.Error("ahli patut nampak emel SENDIRI")
+			}
+			continue
+		}
+		if r["email"] != nil {
+			t.Errorf("emel ahli lain terdedah kepada ahli biasa: %v", r["email"])
+		}
+	}
+	if !sawSelf {
+		t.Error("baris sendiri tiada dalam senarai")
+	}
+}
+
+func TestManagementMasihNampakSemuaEmel(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	if _, err := pool.Exec(ctx, `delete from profiles; delete from users`); err != nil {
+		t.Fatalf("bersih: %v", err)
+	}
+
+	manager := seedMember(t, ctx, pool, "manager", "approved")
+	seedMember(t, ctx, pool, "ahli", "approved")
+
+	for _, r := range callMembers(t, pool, manager) {
+		if r["email"] == nil {
+			t.Errorf("management patut nampak semua emel, %v disembunyikan", r["member_id"])
+		}
+	}
+}
