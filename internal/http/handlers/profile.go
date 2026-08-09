@@ -401,49 +401,79 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 		return
 	}
 
+	// Satu fetch di sini beri semua yang diperlukan kemudian: status LAMA
+	// (untuk jejak audit), kategori role (semakan di bawah), dan emel
+	// (notifikasi). Dulu tiga query berasingan pada baris yang sama.
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+
 	// Elak reject sesama management (fat-finger atau serangan lateral
 	// boleh reject SEMUA management, termasuk yang terakhir — sistem
 	// approval jadi buntu tanpa cara in-app untuk pulih).
-	if status == "rejected" {
-		targetCategory, err := h.queries.GetRoleCategoryByUserID(ctx, targetID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
-			return
-		}
-		if targetCategory == authz.CategoryManagement {
-			c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh tolak ahli pengurusan"})
-			return
-		}
+	if status == "rejected" && target.RoleCategory == authz.CategoryManagement {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh tolak ahli pengurusan"})
+		return
 	}
+
+	// Status dah sama — no-op idempotent. Pulang keadaan semasa TANPA
+	// menulis catatan audit atau menghantar semula emel/notifikasi:
+	// tiada apa yang berubah, jadi tiada apa untuk direkodkan.
+	if target.Status == status {
+		c.JSON(http.StatusOK, memberActionResponse{
+			UserID:     target.UserID.String(),
+			Status:     target.Status,
+			ApprovedBy: nullableUUIDString(target.ApprovedBy),
+			ApprovedAt: formatTimeNullable(target.ApprovedAt),
+		})
+		return
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
 
 	approvedBy := pgtype.UUID{Bytes: callerID, Valid: true}
 
 	var updated sqlc.Profile
 	if status == "approved" {
-		updated, err = h.queries.ApproveProfile(ctx, sqlc.ApproveProfileParams{UserID: targetID, ApprovedBy: approvedBy})
+		updated, err = q.ApproveProfile(ctx, sqlc.ApproveProfileParams{UserID: targetID, ApprovedBy: approvedBy})
 	} else {
-		updated, err = h.queries.RejectProfile(ctx, sqlc.RejectProfileParams{UserID: targetID, ApprovedBy: approvedBy})
+		updated, err = q.RejectProfile(ctx, sqlc.RejectProfileParams{UserID: targetID, ApprovedBy: approvedBy})
 	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Sama ada target tak wujud, ATAU target dah pun dalam status
-			// ni (guard replay di query) — dua-dua kes, bezakan dengan
-			// cuba fetch profil semasa: kalau wujud, ni idempotent no-op
-			// (jangan re-hantar email/notification); kalau tak wujud
-			// langsung, 404 sebenar.
-			current, ferr := h.queries.GetProfileByUserID(ctx, targetID)
-			if ferr != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
-				return
-			}
+			// Guard replay dalam query — dua permintaan serentak, yang kalah
+			// sampai sini. Layan sama macam no-op di atas.
 			c.JSON(http.StatusOK, memberActionResponse{
-				UserID:     current.UserID.String(),
-				Status:     current.Status,
-				ApprovedBy: nullableUUIDString(current.ApprovedBy),
-				ApprovedAt: formatTimeNullable(current.ApprovedAt),
+				UserID:     target.UserID.String(),
+				Status:     status,
+				ApprovedBy: nullableUUIDString(target.ApprovedBy),
+				ApprovedAt: formatTimeNullable(target.ApprovedAt),
 			})
 			return
 		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+		return
+	}
+
+	// Kelulusan keahlian ialah keputusan pentadbiran — siapa yang benarkan
+	// (atau halang) seseorang masuk mesti dapat dijawab kemudian.
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityProfile,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, h.queries),
+		Old:        map[string]any{"status": target.Status},
+		New:        map[string]any{"status": updated.Status},
+	}); err != nil {
+		log.Printf("audit status ahli: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
 		return
 	}
@@ -454,16 +484,29 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 	if status == "rejected" {
 		notifType = "member_rejected"
 		subject, html = "Pendaftaran MARC Ditolak",
-			"<p>Pendaftaran anda ke app MARC tidak diluluskan pada masa ini. Jika ini satu kesilapan, sila hubungi pihak pengurusan MAIWP.</p>"
-		if rerr := h.queries.DeleteRefreshTokensByUser(ctx, targetID); rerr != nil {
-			log.Printf("gagal revoke refresh token ahli ditolak: %v", rerr)
+			"<p>Pendaftaran anda ke app MARC tidak diluluskan pada masa ini. Jika ini satu kesilapan, sila hubungi pihak pengurusan MARC.</p>"
+
+		// Dipindahkan ke DALAM transaksi: sesi yang masih hidup untuk ahli
+		// yang baru ditolak ialah jurang keselamatan, jadi penolakan dan
+		// pembatalan token mesti jadi atau gagal BERSAMA. Sebelum ni ia
+		// best-effort di luar — kegagalan cuma dilog, dan ahli yang ditolak
+		// kekal membawa refresh token yang sah.
+		if err := q.DeleteRefreshTokensByUser(ctx, targetID); err != nil {
+			log.Printf("gagal revoke refresh token ahli ditolak: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+			return
 		}
 	}
 
-	if target, err := h.queries.GetProfileByUserID(ctx, targetID); err == nil {
-		if err := h.emailClient.Send(ctx, target.Email, subject, html); err != nil {
-			log.Printf("gagal hantar email status ahli: %v", err)
-		}
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+		return
+	}
+
+	// Selepas commit — best effort. Emel/notifikasi yang gagal tak patut
+	// membatalkan keputusan kelulusan yang dah dibuat.
+	if err := h.emailClient.Send(ctx, target.Email, subject, html); err != nil {
+		log.Printf("gagal hantar email status ahli: %v", err)
 	}
 
 	if _, err := h.queries.CreateNotification(ctx, sqlc.CreateNotificationParams{

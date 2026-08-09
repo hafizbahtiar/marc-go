@@ -639,7 +639,11 @@ Baca: `GET /audit-logs` (management sahaja) — tapis ikut
 Belum:
 - [x] Polisi simpanan + pruning — siap, lihat Stage 15
 - [x] UI Flutter untuk baca jejak — siap, lihat Stage 15
-- [ ] Audit untuk approve/reject ahli — nilai tinggi, belum dipasang
+- [x] Audit untuk approve/reject ahli — siap. `setMemberStatus` kini
+      transaksi penuh: kemas kini status + catatan audit + (untuk reject)
+      pembatalan refresh token, jadi atau gagal bersama. No-op idempotent
+      (status dah sama) TIDAK menulis catatan. Diuji lawan Postgres sebenar:
+      `HANDLER_TEST_DB="postgres://localhost:5432/<db>?sslmode=disable" go test ./internal/http/handlers/ -v`
 - [ ] Audit untuk `create` post/comment (volum tinggi, faedah rendah sebab
       entiti sendiri dah simpan author + created_at) — putuskan dulu
 

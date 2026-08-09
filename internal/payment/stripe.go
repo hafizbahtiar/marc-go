@@ -10,7 +10,7 @@ import (
 )
 
 // StripeGateway implements Gateway — akaun Stripe BERASINGAN drpd
-// ToyyibPay (yuran ahli MAIWP), khas untuk "Donate to us".
+// ToyyibPay (yuran ahli), khas untuk sokongan penyelenggaraan app.
 type StripeGateway struct {
 	client        *stripe.Client
 	webhookSecret string

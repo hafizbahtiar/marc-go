@@ -27,7 +27,7 @@ func RequireVerifiedEmail(q *sqlc.Queries) gin.HandlerFunc {
 
 // RequireApprovedStatus mesti dipasang selepas RequireAuth. Gate akses
 // sehingga profiles.status = 'approved' (Stage 11) — app khusus
-// kakitangan MAIWP, pendaftaran baru kena diluluskan management dulu.
+// ahli komuniti, pendaftaran baru kena diluluskan management dulu.
 //
 // GET/PATCH /me SENGAJA tak diletak di bawah middleware ni — user
 // pending/rejected tetap perlu boleh papar status semasa dia sendiri
