@@ -109,7 +109,7 @@ func (h *CommentHandler) Create(c *gin.Context) {
 			s := profile.DisplayName.String
 			author.DisplayName = &s
 		}
-		author.AvatarURL = avatarURLFor(h.r2, profile.AvatarR2Key)
+		author.AvatarURL = avatarURLFor(ctx, h.r2, profile.AvatarR2Key)
 	}
 
 	c.JSON(http.StatusCreated, commentResponse{
@@ -186,7 +186,7 @@ func (h *CommentHandler) List(c *gin.Context) {
 			Author: authorResponse{
 				MemberID:    r.AuthorMemberID,
 				DisplayName: displayName,
-				AvatarURL:   avatarURLFor(h.r2, r.AuthorAvatarR2Key),
+				AvatarURL:   avatarURLFor(ctx, h.r2, r.AuthorAvatarR2Key),
 			},
 			LikeCount: likeCountByComment[r.ID],
 			LikedByMe: likedByMe[r.ID],

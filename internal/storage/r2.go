@@ -12,6 +12,7 @@ import (
 	_ "image/jpeg" // daftar decoder untuk image.DecodeConfig
 	_ "image/png"
 	"io"
+	"log"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,6 +23,21 @@ import (
 
 const (
 	presignExpiry = 5 * time.Minute
+
+	// signedGetExpiry — tempoh sah URL GET yang ditandatangani.
+	//
+	// Perlu cukup panjang supaya feed yang dicache pada peranti tak
+	// menunjuk kepada URL mati, tapi cukup pendek supaya URL yang bocor
+	// tak kekal berguna selamanya. Dua jam ialah kompromi.
+	signedGetExpiry = 2 * time.Hour
+
+	// signedGetCacheTTL — berapa lama URL yang sama diguna semula.
+	//
+	// SEPARUH daripada tempoh sah, sengaja: klien yang menerima URL pada
+	// saat terakhir tetingkap cache masih dapat sekurang-kurangnya satu
+	// jam kesahan. Kalau TTL sama dgn tempoh sah, klien boleh terima URL
+	// yang luput sekelip mata kemudian.
+	signedGetCacheTTL = 1 * time.Hour
 
 	// MaxImageSizeBytes — had saiz setiap gambar post (5 MB, padanan had
 	// klasik Twitter — munasabah untuk upload mobile).
@@ -72,6 +88,17 @@ type R2Client struct {
 	bucket     string
 	publicURL  string
 	configured bool
+	urlCache   URLCache
+}
+
+// SetURLCache tukar cache URL yang ditandatangani. Lalai ialah cache
+// dalam-memori per-instance; hantar cache bersandar-Redis supaya semua
+// replika memulangkan URL yang sama (kalau tidak klien terlepas cache
+// setiap kali ia mencapai instance berlainan).
+func (r *R2Client) SetURLCache(c URLCache) {
+	if c != nil {
+		r.urlCache = c
+	}
 }
 
 func NewR2Client(accountID, accessKeyID, secretAccessKey, bucket, publicURL string) *R2Client {
@@ -100,6 +127,7 @@ func NewR2Client(accountID, accessKeyID, secretAccessKey, bucket, publicURL stri
 		bucket:     bucket,
 		publicURL:  publicURL,
 		configured: true,
+		urlCache:   NewMemoryURLCache(),
 	}
 }
 
@@ -236,11 +264,45 @@ func (r *R2Client) DeleteImage(ctx context.Context, key string) error {
 	return err
 }
 
-// HasPublicURL — sama ada domain awam bucket dah dikonfigur. Tanpa ni
-// gambar boleh diupload tapi TAK BOLEH dipapar semula: PublicURL pulang
-// string kosong untuk setiap kunci.
+// HasPublicURL — sama ada domain awam bucket dah dikonfigur.
+//
+// Tak lagi diperlukan untuk memapar gambar: SignedURL guna endpoint S3
+// dan berfungsi pada bucket PERSENDIRIAN. Dikekalkan cuma untuk
+// diagnostik.
 func (r *R2Client) HasPublicURL() bool {
 	return r.publicURL != ""
+}
+
+// SignedURL bina URL GET yang ditandatangani dan berumur pendek untuk satu
+// objek.
+//
+// Gantian `PublicURL`. Dengan URL awam r2.dev, SESIAPA yang ada pautan
+// boleh mengambil objek selama-lamanya, tanpa auth — dan sejak avatar
+// wujud, itu bermakna muka ahli. URL yang ditandatangani luput, jadi
+// pautan yang bocor berhenti berfungsi.
+//
+// Pulang "" (dan log) bila R2 tak dikonfigur atau penandatanganan gagal —
+// pemanggil dah pun melangkau rentetan kosong.
+func (r *R2Client) SignedURL(ctx context.Context, key string) string {
+	if !r.configured || key == "" {
+		return ""
+	}
+
+	if url, ok := r.urlCache.Get(ctx, key); ok {
+		return url
+	}
+
+	req, err := r.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(signedGetExpiry))
+	if err != nil {
+		log.Printf("presign GET gagal (r2_key=%s): %v", key, err)
+		return ""
+	}
+
+	r.urlCache.Set(ctx, key, req.URL, signedGetCacheTTL)
+	return req.URL
 }
 
 // PublicURL bina URL awam untuk baca semula gambar yang dah diupload

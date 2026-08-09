@@ -104,3 +104,14 @@ func TestR2LivePermissions(t *testing.T) {
 		}
 	})
 }
+
+// putProbeObject naikkan objek ujian kecil terus melalui SDK.
+func putProbeObject(t *testing.T, r *R2Client, key string, body []byte) {
+	t.Helper()
+	if _, err := r.client.PutObject(context.Background(), &s3.PutObjectInput{
+		Bucket: aws.String(r.bucket), Key: aws.String(key),
+		Body: bytes.NewReader(body), ContentType: aws.String("image/jpeg"),
+	}); err != nil {
+		t.Fatalf("upload probe: %v", err)
+	}
+}

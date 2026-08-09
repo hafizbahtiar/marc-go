@@ -73,13 +73,22 @@ func main() {
 	jwtSvc := auth.NewJWT(cfg.JWTSecret, cfg.AccessTokenTTL)
 	emailClient := email.NewClient(cfg.ResendAPIKey, cfg.EmailFrom)
 	r2Client := storage.NewR2Client(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket, cfg.R2PublicURL)
-	// Separuh-konfigur ialah keadaan paling mengelirukan yang mungkin:
-	// upload berjaya, jadi semuanya nampak elok, tapi setiap gambar
-	// dipaparkan sebagai kosong. Jerit masa boot dan bukan biarkan ia
-	// ditemui melalui post yang rosak.
-	if r2Client.Enabled() && !r2Client.HasPublicURL() {
-		log.Printf("AMARAN: R2 aktif tetapi R2_PUBLIC_URL kosong — gambar boleh diupload TAPI tak akan dipapar")
+	// R2_PUBLIC_URL tak lagi diperlukan untuk memapar gambar — SignedURL
+	// bina URL dari endpoint S3 dan berfungsi pada bucket persendirian.
+	// Kalau ia masih diset, bucket berkemungkinan masih terdedah secara
+	// awam, yang membatalkan tujuan URL bertandatangan.
+	if r2Client.Enabled() && r2Client.HasPublicURL() {
+		log.Printf("AMARAN: R2_PUBLIC_URL masih diset — kalau Public Development URL masih hidup di Cloudflare, objek boleh diambil TANPA tandatangan dan URL bertandatangan tak melindungi apa-apa")
 	}
+	// URL R2 yang ditandatangani dicache supaya rentetan URL kekal stabil
+	// dalam satu tetingkap — cache imej peranti dikunci ikut URL, jadi
+	// menandatangani semula setiap permintaan akan memaksa muat turun
+	// semula setiap gambar. Cache Redis (bukan per-instance) supaya semua
+	// replika memulangkan URL yang sama.
+	if cache := redisCli.URLCache("r2:signed:"); cache != nil {
+		r2Client.SetURLCache(cache)
+	}
+
 	onesignalClient := onesignal.NewClient(cfg.OneSignalAppID, cfg.OneSignalAPIKey)
 	pushSvc := push.NewService(sqlc.New(pool), onesignalClient)
 

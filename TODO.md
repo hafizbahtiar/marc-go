@@ -15,12 +15,13 @@ simpanan.
 
 - [ ] **Deploy environment `production` Railway** — `staging` sahaja live.
 - [ ] **Migrate data lama dari Supabase** (2 profiles, 4 roles).
-- [ ] **Ganti r2.dev sebelum produksi.** `R2_PUBLIC_URL` sekarang guna
-      Public Development URL. Dua masalah: Cloudflare kadar-hadkan dan kata
-      ia bukan untuk produksi, DAN ia menjadikan seluruh bucket boleh dibaca
-      sesiapa yang ada URL. Kunci UUID tak diteka — itu kekaburan, bukan
-      kawalan akses. Untuk app ahli-sahaja yang simpan gambar ahli,
-      gantinya ialah **presigned GET** (perubahan kod, belum dibuat).
+- [ ] **MATIKAN Public Development URL r2.dev di Cloudflare.** Kod dah
+      guna presigned GET (lihat bawah), tapi disahkan 2026-08-09: objek
+      MASIH boleh diambil tanpa tandatangan melalui
+      `https://pub-....r2.dev/posts/...` (status 200). Selagi toggle tu
+      hidup, perubahan kod tak menutup apa-apa.
+      Cloudflare → R2 → bucket → Settings → Public Development URL →
+      **Disable**. Selepas tu `R2_PUBLIC_URL` boleh dikosongkan.
 - [ ] **Rotate kunci test Stripe** yang sempat masuk git (commit `c170391`,
       dah di-amend sebelum push — tapi rotate tetap lebih selamat).
 - [ ] **Sambungkan Redis ke marc-go**: tambah pemboleh ubah rujukan
@@ -120,6 +121,36 @@ Migration `20260809210000` meluaskan peraturan: `actor_id`, `ip_address`
 dan `user_agent` boleh DIKOSONGKAN kepada NULL, tiada apa lagi boleh
 berubah, dan ketiga-tiganya tak boleh ditulis ganti dengan nilai lain.
 Sejarah kekal tak boleh ditulis semula. Ditutup dengan ujian.
+
+## URL R2 ditandatangani (presigned GET) ✅ kod — tetapan Cloudflare belum
+
+`PublicURL` diganti `SignedURL(ctx, key)` di SEMUA tapak: gambar post,
+avatar dalam profil, senarai ahli, dan penulis post/comment. URL sah
+**2 jam**, dijana melalui endpoint S3, jadi ia berfungsi pada bucket
+PERSENDIRIAN.
+
+**Masalah yang hampir terlepas: kestabilan URL.** Presigned URL
+mengandungi `X-Amz-Date`. Menandatangani semula setiap permintaan
+menghasilkan rentetan URL berbeza setiap kali — dan cache imej pada
+peranti dikunci ikut URL. Tanpa apa-apa, setiap tatalan feed akan memuat
+turun semula SETIAP gambar, memusnahkan cache klien dan menghentam
+bucket yang dikadar-hadkan. Penyelesaian: cache URL yang ditandatangani
+selama **1 jam** (separuh tempoh sah, supaya klien tak pernah menerima
+URL yang hampir luput).
+
+Cache guna **Redis** bila ada — ini kegunaan Redis KEDUA yang sah, dan
+satu yang aku terlepas dalam analisis awal. Tanpa cache kongsi, setiap
+replika menandatangani URL sendiri dan klien terlepas cache setiap kali
+ia mencapai instance berlainan. Jatuh balik kepada cache dalam-memori
+bila Redis tiada.
+
+Disahkan lawan R2 sebenar: URL ditandatangani pulang 200; URL S3 yang
+SAMA tanpa query tandatangan ditolak.
+
+- [ ] **Belum selesai sehingga r2.dev dimatikan** — lihat item pertama
+      dalam "Perlu tindakan kau". Objek masih 200 melalui r2.dev.
+- [ ] Semak had kadar r2.dev tak lagi relevan selepas dimatikan; endpoint
+      S3 ada had berbeza.
 
 ## Redis — modul mana yang patut guna, dan mana yang TIDAK
 

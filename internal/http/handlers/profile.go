@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -56,7 +57,8 @@ type profileResponse struct {
 // kena boleh baca status dia sendiri supaya app boleh papar skrin yang
 // betul.
 func (h *ProfileHandler) Me(c *gin.Context) {
-	row, err := h.queries.GetProfileByUserID(c.Request.Context(), middleware.UserID(c))
+	ctx := c.Request.Context()
+	row, err := h.queries.GetProfileByUserID(ctx, middleware.UserID(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "profil tidak dijumpai"})
 		return
@@ -73,7 +75,7 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		RoleName:      row.RoleName,
 		Category:      row.RoleCategory,
 		RoleRank:      row.RoleRank,
-		AvatarURL:     h.avatarURL(row.AvatarR2Key),
+		AvatarURL:     h.avatarURL(ctx, row.AvatarR2Key),
 	})
 }
 
@@ -125,7 +127,7 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 		"member_id":    updated.MemberID,
 		"display_name": textToPtr(updated.DisplayName),
 		"phone":        textToPtr(updated.Phone),
-		"avatar_url":   h.avatarURL(updated.AvatarR2Key),
+		"avatar_url":   h.avatarURL(ctx, updated.AvatarR2Key),
 	})
 }
 
@@ -236,11 +238,11 @@ var errAvatarRejected = errors.New("avatar ditolak")
 // avatarURL bina URL awam, atau nil kalau ahli tiada avatar / R2 belum
 // dikonfigur. Nil (bukan "") supaya client boleh bezakan "tiada gambar"
 // daripada rentetan kosong yang mengelirukan.
-func (h *ProfileHandler) avatarURL(key pgtype.Text) *string {
+func (h *ProfileHandler) avatarURL(ctx context.Context, key pgtype.Text) *string {
 	if !key.Valid || key.String == "" {
 		return nil
 	}
-	url := h.r2.PublicURL(key.String)
+	url := h.r2.SignedURL(ctx, key.String)
 	if url == "" {
 		return nil
 	}
@@ -331,7 +333,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		if !isManagement && row.UserID != userID {
 			email = ""
 		}
-		members[i] = h.toMemberResponse(memberRow{
+		members[i] = h.toMemberResponse(ctx, memberRow{
 			UserID: row.UserID, MemberID: row.MemberID, DisplayName: row.DisplayName,
 			Email: email, RoleKey: row.RoleKey, RoleName: row.RoleName,
 			RoleRank: row.RoleRank, Category: row.RoleCategory, Status: row.Status,
@@ -394,7 +396,7 @@ type memberRow struct {
 	AvatarKey   pgtype.Text
 }
 
-func (h *ProfileHandler) toMemberResponse(m memberRow) memberResponse {
+func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memberResponse {
 	var emailPtr *string
 	if m.Email != "" {
 		emailPtr = &m.Email
@@ -409,7 +411,7 @@ func (h *ProfileHandler) toMemberResponse(m memberRow) memberResponse {
 		RoleRank:    m.RoleRank,
 		Category:    m.Category,
 		Status:      m.Status,
-		AvatarURL:   h.avatarURL(m.AvatarKey),
+		AvatarURL:   h.avatarURL(ctx, m.AvatarKey),
 	}
 }
 
@@ -550,7 +552,7 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, h.toMemberResponse(memberRow{
+	c.JSON(http.StatusOK, h.toMemberResponse(ctx, memberRow{
 		UserID: updated.UserID, MemberID: updated.MemberID, DisplayName: updated.DisplayName,
 		Email: target.Email, RoleKey: newRole.Key, RoleName: newRole.Name,
 		RoleRank: newRole.Rank, Category: newRole.Category, Status: updated.Status,

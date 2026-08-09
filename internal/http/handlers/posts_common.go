@@ -55,11 +55,11 @@ type commentResponse struct {
 
 // avatarURLFor bina URL awam avatar penulis, atau nil. Dikongsi oleh
 // laluan post dan comment supaya ketiga-tiga tapak tak berbeza cara.
-func avatarURLFor(r2 *storage.R2Client, key pgtype.Text) *string {
+func avatarURLFor(ctx context.Context, r2 *storage.R2Client, key pgtype.Text) *string {
 	if !key.Valid || key.String == "" {
 		return nil
 	}
-	url := r2.PublicURL(key.String)
+	url := r2.SignedURL(ctx, key.String)
 	if url == "" {
 		return nil
 	}
@@ -237,14 +237,13 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 	}
 	imagesByPost := make(map[uuid.UUID][]string)
 	for _, img := range images {
-		url := h.r2.PublicURL(img.R2Key)
+		url := h.r2.SignedURL(ctx, img.R2Key)
 		if url == "" {
-			// R2_PUBLIC_URL tak diset — gambar berjaya diupload tapi tiada
-			// domain untuk membacanya semula. Langkau, jangan hantar ""
-			// kepada client: string kosong cuma jadi kotak "broken image"
-			// dan menyembunyikan fakta bahawa ini salah KONFIGURASI, bukan
-			// gambar rosak.
-			log.Printf("R2_PUBLIC_URL tak diset — gambar %s tak dapat dipapar", img.R2Key)
+			// R2 tak dikonfigur atau penandatanganan gagal. Langkau,
+			// jangan hantar "" kepada client: string kosong cuma jadi
+			// kotak "broken image" dan menyembunyikan fakta bahawa ini
+			// masalah konfigurasi, bukan gambar rosak.
+			log.Printf("gagal tandatangan URL gambar %s", img.R2Key)
 			continue
 		}
 		imagesByPost[img.PostID] = append(imagesByPost[img.PostID], url)
@@ -270,7 +269,7 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 			Author: authorResponse{
 				MemberID:    c.AuthorMemberID,
 				DisplayName: displayName,
-				AvatarURL:   avatarURLFor(h.r2, c.AuthorAvatarR2Key),
+				AvatarURL:   avatarURLFor(ctx, h.r2, c.AuthorAvatarR2Key),
 			},
 			Images:       images,
 			LikeCount:    likeCountByPost[c.ID],

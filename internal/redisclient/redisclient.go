@@ -79,3 +79,44 @@ func (c *Client) Close() error {
 	}
 	return c.rdb.Close()
 }
+
+// URLCache — cache rentetan berumur pendek yang dikongsi semua instance.
+//
+// Digunakan untuk URL R2 yang ditandatangani. Tanpa cache KONGSI, setiap
+// replika menandatangani URL sendiri; klien yang mencapai instance
+// berlainan dapat URL berlainan untuk gambar yang SAMA, dan cache imej
+// pada peranti (dikunci ikut URL) terlepas setiap kali.
+//
+// Pulang nil bila Redis dimatikan — caller patut jatuh balik kepada cache
+// dalam-memori.
+func (c *Client) URLCache(prefix string) *URLCache {
+	if !c.Enabled() {
+		return nil
+	}
+	return &URLCache{rdb: c.rdb, prefix: prefix}
+}
+
+type URLCache struct {
+	rdb    *redis.Client
+	prefix string
+}
+
+func (u *URLCache) Get(ctx context.Context, key string) (string, bool) {
+	ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+
+	val, err := u.rdb.Get(ctx, u.prefix+key).Result()
+	if err != nil {
+		// Terlepas cache ATAU Redis bermasalah — dua-dua bermakna
+		// "tandatangan baharu". Jangan gagalkan permintaan sebab cache
+		// tak dapat dibaca.
+		return "", false
+	}
+	return val, true
+}
+
+func (u *URLCache) Set(ctx context.Context, key, url string, ttl time.Duration) {
+	ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	_ = u.rdb.Set(ctx, u.prefix+key, url, ttl).Err()
+}
