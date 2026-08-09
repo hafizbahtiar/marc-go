@@ -57,8 +57,7 @@ const deleteAuditLogsBefore = `-- name: DeleteAuditLogsBefore :execrows
 delete from audit_logs where created_at < $1
 `
 
-// Pruning polisi simpanan. Belum dipanggil dari mana-mana — sengaja,
-// supaya polisi diputuskan dulu sebelum data dibuang.
+// Pruning polisi simpanan (lihat internal/retention).
 func (q *Queries) DeleteAuditLogsBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteAuditLogsBefore, createdAt)
 	if err != nil {
@@ -174,4 +173,23 @@ func (q *Queries) ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsBy
 		return nil, err
 	}
 	return items, nil
+}
+
+const redactAuditLogPIIBefore = `-- name: RedactAuditLogPIIBefore :execrows
+update audit_logs
+set ip_address = null, user_agent = null
+where created_at < $1
+  and (ip_address is not null or user_agent is not null)
+`
+
+// Buang metadata permintaan daripada catatan lama TANPA memusnahkan
+// catatan itu sendiri. Dibenarkan oleh trigger append-only kerana ia
+// hanya menetapkan kedua-dua lajur ini kepada NULL — lihat migration
+// 20260809180000.
+func (q *Queries) RedactAuditLogPIIBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, redactAuditLogPIIBefore, createdAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

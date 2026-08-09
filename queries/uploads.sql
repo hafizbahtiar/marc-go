@@ -42,3 +42,10 @@ limit $2;
 -- name: DeletePendingUploadByKey :exec
 -- Tanpa skop user — untuk penyapu latar, bukan permintaan pengguna.
 delete from pending_uploads where r2_key = $1;
+
+-- name: DeleteDoneDeletedUploadsBefore :execrows
+-- Prune batu nisan lama. Selamat sebab objek R2 sendiri dah tiada; baris
+-- ni cuma menghalang penggiliran semula, dan objek yang dah dipadam
+-- takkan muncul semula dalam post_images/pending_uploads.
+delete from deleted_uploads
+where deleted_at is not null and deleted_at < $1;

@@ -37,11 +37,14 @@ type Querier interface {
 	CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	// Pruning polisi simpanan. Belum dipanggil dari mana-mana — sengaja,
-	// supaya polisi diputuskan dulu sebelum data dibuang.
+	// Pruning polisi simpanan (lihat internal/retention).
 	DeleteAuditLogsBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	DeleteDeviceToken(ctx context.Context, arg DeleteDeviceTokenParams) error
 	DeleteDeviceTokenByOnesignalID(ctx context.Context, arg DeleteDeviceTokenByOnesignalIDParams) error
+	// Prune batu nisan lama. Selamat sebab objek R2 sendiri dah tiada; baris
+	// ni cuma menghalang penggiliran semula, dan objek yang dah dipadam
+	// takkan muncul semula dalam post_images/pending_uploads.
+	DeleteDoneDeletedUploadsBefore(ctx context.Context, deletedAt pgtype.Timestamptz) (int64, error)
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
@@ -119,6 +122,11 @@ type Querier interface {
 	// Untuk tandakan "liked_by_me" bila list post — pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
+	// Buang metadata permintaan daripada catatan lama TANPA memusnahkan
+	// catatan itu sendiri. Dibenarkan oleh trigger append-only kerana ia
+	// hanya menetapkan kedua-dua lajur ini kepada NULL — lihat migration
+	// 20260809180000.
+	RedactAuditLogPIIBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error)
 	RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error

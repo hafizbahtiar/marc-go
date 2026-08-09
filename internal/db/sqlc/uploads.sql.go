@@ -26,6 +26,22 @@ func (q *Queries) CreatePendingUpload(ctx context.Context, arg CreatePendingUplo
 	return err
 }
 
+const deleteDoneDeletedUploadsBefore = `-- name: DeleteDoneDeletedUploadsBefore :execrows
+delete from deleted_uploads
+where deleted_at is not null and deleted_at < $1
+`
+
+// Prune batu nisan lama. Selamat sebab objek R2 sendiri dah tiada; baris
+// ni cuma menghalang penggiliran semula, dan objek yang dah dipadam
+// takkan muncul semula dalam post_images/pending_uploads.
+func (q *Queries) DeleteDoneDeletedUploadsBefore(ctx context.Context, deletedAt pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDoneDeletedUploadsBefore, deletedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deletePendingUpload = `-- name: DeletePendingUpload :exec
 delete from pending_uploads where r2_key = $1 and user_id = $2
 `

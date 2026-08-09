@@ -21,6 +21,7 @@ import (
 	"marc/internal/payment"
 	"marc/internal/push"
 	"marc/internal/reaper"
+	"marc/internal/retention"
 	"marc/internal/storage"
 )
 
@@ -69,6 +70,13 @@ func main() {
 	// Pembersih storan (Stage 10 lanjutan) — gambar post yang dipadam dan
 	// karangan post yang ditinggalkan sebelum ni kekal dalam R2 selamanya.
 	reaper.New(sqlc.New(pool), r2Client, 15*time.Minute).Start(ctx)
+
+	// Polisi simpanan — jalan sekali sehari (lihat internal/retention).
+	retention.New(sqlc.New(pool), retention.Policy{
+		AuditPII:        cfg.AuditPIIRetention,
+		AuditRecord:     cfg.AuditRecordRetention,
+		UploadTombstone: cfg.UploadTombstoneRetention,
+	}, 24*time.Hour).Start(ctx)
 
 	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways)
 

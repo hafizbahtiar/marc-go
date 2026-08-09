@@ -637,10 +637,8 @@ Baca: `GET /audit-logs` (management sahaja) — tapis ikut
 `entity_type`/`entity_id`/`action`/`actor_id`, pagination keyset `before_id`.
 
 Belum:
-- [ ] Polisi simpanan + jadual pruning (`DeleteAuditLogsBefore` dah ada tapi
-      tak dipanggil dari mana-mana — sengaja, tunggu polisi diputuskan).
-      `ip_address`/`user_agent` ialah data peribadi (PDPA).
-- [ ] UI Flutter untuk baca jejak (endpoint dah sedia)
+- [x] Polisi simpanan + pruning — siap, lihat Stage 15
+- [x] UI Flutter untuk baca jejak — siap, lihat Stage 15
 - [ ] Audit untuk approve/reject ahli — nilai tinggi, belum dipasang
 - [ ] Audit untuk `create` post/comment (volum tinggi, faedah rendah sebab
       entiti sendiri dah simpan author + created_at) — putuskan dulu
@@ -673,10 +671,48 @@ Disahkan lawan R2 + Postgres sebenar (4 ujian, `R2_LIVE_TEST=1`
 TAK disentuh, dan kunci tak digilir semula selepas berjaya.
 
 Belum:
-- [ ] Prune batu nisan `deleted_uploads` yang dah lama (jadual membesar
-      perlahan-lahan; belum jadi masalah)
+- [x] Prune batu nisan `deleted_uploads` — siap, lihat Stage 15
 - [ ] Comment tiada gambar buat masa ni — kalau ditambah, ia perlu gilir
       yang sama
+
+## Stage 15 — Polisi simpanan + UI jejak audit ✅
+
+### Simpanan (`internal/retention`, jalan sekali sehari)
+
+Tiga sapuan dengan tempoh BERBEZA, sebab data berlainan ada justifikasi
+simpanan berlainan. Semua boleh ubah via env tanpa deploy semula:
+
+| Sapuan | Env | Default |
+|---|---|---|
+| Redaksi `ip_address`/`user_agent` audit | `AUDIT_PII_RETENTION_DAYS` | 90 hari |
+| Padam catatan audit | `AUDIT_RECORD_RETENTION_DAYS` | 365 hari |
+| Prune batu nisan `deleted_uploads` | `UPLOAD_TOMBSTONE_RETENTION_DAYS` | 30 hari |
+
+`0` = matikan sapuan itu.
+
+**Keputusan penting**: redaksi ≠ padam. "Siapa naikkan pangkat siapa Mac
+lepas" berbaloi disimpan lama; "dari IP mana" tidak. Menggabungkan dua-dua
+memaksa pilihan palsu antara jejak audit berguna dan simpanan PII minimum.
+Jadi PII dibuang pada 90 hari, catatan kekal setahun.
+
+Ini memerlukan pelonggaran trigger append-only (migration
+`20260809180000`): trigger ditukar drpd peringkat-PENYATA ke
+peringkat-BARIS dan kini membenarkan TEPAT SATU bentuk UPDATE — setiap
+lajur lain `is not distinct from` nilai lama, dan ip/user_agent mesti pergi
+ke NULL (tak boleh ditulis ganti dengan nilai lain). Diuji: tukar action /
+new_values / actor / created_at, dan tulis ganti IP dengan alamat lain,
+SEMUA ditolak. DELETE kekal dibenarkan untuk pruning.
+
+Ujian lawan Postgres sebenar (trigger tak boleh diuji tanpa enjin sebenar):
+`RETENTION_TEST_DB="postgres://localhost:5432/<db>?sslmode=disable" go test ./internal/retention/ -v`
+
+### UI jejak audit (Flutter)
+
+`/audit-logs` — tile "Jejak Audit" dlm Profil, management sahaja (backend
+403 juga). Chip penapis entiti + tindakan, pagination keyset infinite
+scroll (`before_id`, bukan offset — jejak sentiasa tumbuh di hujung atas,
+offset akan ulang/langkau baris), setiap baris boleh dikembangkan untuk
+papar diff lama→baru berwarna.
 
 ## Belum putus / perlu bincang lagi
 - **R2 403 AccessDenied — DIDIAGNOSIS 2026-08-09: token R2 baca-sahaja.**

@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -26,6 +28,13 @@ type Config struct {
 	StripeSecretKey      string
 	StripePublishableKey string
 	StripeWebhookSecret  string
+
+	// Polisi simpanan. Boleh ubah tanpa deploy semula (env var), sebab ni
+	// keputusan POLISI dan bukan keputusan teknikal — lihat
+	// internal/retention.
+	AuditPIIRetention        time.Duration
+	AuditRecordRetention     time.Duration
+	UploadTombstoneRetention time.Duration
 }
 
 func Load() (Config, error) {
@@ -61,6 +70,13 @@ func Load() (Config, error) {
 		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
 		StripePublishableKey: os.Getenv("STRIPE_PUBLISHABLE_KEY"),
 		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
+
+		// Default: metadata permintaan (IP/user-agent) hidup 90 hari —
+		// cukup untuk menyiasat penyalahgunaan, tak lebih. Catatan audit
+		// itu sendiri hidup 12 bulan. Set kepada 0 untuk matikan sapuan.
+		AuditPIIRetention:        getEnvDays("AUDIT_PII_RETENTION_DAYS", 90),
+		AuditRecordRetention:     getEnvDays("AUDIT_RECORD_RETENTION_DAYS", 365),
+		UploadTombstoneRetention: getEnvDays("UPLOAD_TOMBSTONE_RETENTION_DAYS", 30),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -71,6 +87,22 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// getEnvDays baca tempoh dalam HARI. Nilai tak sah dilog dan default
+// digunakan — polisi simpanan yang salah taip tak patut menghalang app
+// daripada boot, tapi ia juga tak patut senyap.
+func getEnvDays(key string, fallbackDays int) time.Duration {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return time.Duration(fallbackDays) * 24 * time.Hour
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < 0 {
+		log.Printf("config: %s=%q tidak sah, guna default %d hari", key, raw, fallbackDays)
+		return time.Duration(fallbackDays) * 24 * time.Hour
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 func getEnv(key, fallback string) string {

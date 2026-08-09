@@ -27,6 +27,15 @@ order by id desc
 limit sqlc.arg('row_limit');
 
 -- name: DeleteAuditLogsBefore :execrows
--- Pruning polisi simpanan. Belum dipanggil dari mana-mana — sengaja,
--- supaya polisi diputuskan dulu sebelum data dibuang.
+-- Pruning polisi simpanan (lihat internal/retention).
 delete from audit_logs where created_at < $1;
+
+-- name: RedactAuditLogPIIBefore :execrows
+-- Buang metadata permintaan daripada catatan lama TANPA memusnahkan
+-- catatan itu sendiri. Dibenarkan oleh trigger append-only kerana ia
+-- hanya menetapkan kedua-dua lajur ini kepada NULL — lihat migration
+-- 20260809180000.
+update audit_logs
+set ip_address = null, user_agent = null
+where created_at < $1
+  and (ip_address is not null or user_agent is not null);
