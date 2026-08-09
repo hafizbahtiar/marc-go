@@ -8,6 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg" // daftar decoder untuk image.DecodeConfig
+	_ "image/png"
 	"io"
 	"time"
 
@@ -30,12 +33,29 @@ const (
 	// dihalang di peringkat presign macam yang dirancang asalnya.
 	MaxImageSizeBytes = 5 * 1024 * 1024
 
+	// MaxImageDimension — had piksel sisi panjang untuk gambar yang
+	// diterima masuk post.
+	//
+	// Client mengecilkan kepada 2048 sebelum naik, tapi had ni BUKAN
+	// pendua semakan tu: presigned URL membenarkan client menaikkan
+	// APA-APA sahaja terus ke R2 tanpa melalui server ni. Tanpa semakan
+	// sisi-server, sesiapa yang ada satu URL presign boleh menyimpan
+	// "bom nyahmampat" 20000x20000 — bait kecil, tapi berpuluh gigabait
+	// bila dinyahkod, dan setiap peranti ahli yang menatal feed akan cuba
+	// menyahkodnya.
+	//
+	// 4096 (bukan 2048) sengaja longgar: client sepatutnya dah kecilkan,
+	// jadi apa-apa antara 2048–4096 mungkin cuma perbezaan pembundaran
+	// atau client lama. Apa-apa di atas tu bukan lagi kecuaian.
+	MaxImageDimension = 4096
+
 	// MaxImagesPerPost — had bilangan gambar setiap post.
 	MaxImagesPerPost = 4
 )
 
 var ErrImageTooLarge = errors.New("gambar melebihi had saiz")
 var ErrImageInvalidFormat = errors.New("format gambar tidak sah")
+var ErrImageTooManyPixels = errors.New("dimensi gambar melebihi had")
 
 type R2Client struct {
 	client     *s3.Client
@@ -144,9 +164,13 @@ func (r *R2Client) VerifyImageFormat(ctx context.Context, key string) error {
 	}
 	defer out.Body.Close()
 
-	buf := make([]byte, 12)
-	n, _ := io.ReadFull(out.Body, buf)
-	buf = buf[:n]
+	// 64KB, bukan 12 bait macam dulu: cukup untuk magic number DAN untuk
+	// image.DecodeConfig membaca header dimensi. Masih cuma header —
+	// kita tak pernah muat turun atau menyahkod gambar penuh.
+	buf, err := io.ReadAll(io.LimitReader(out.Body, 64*1024))
+	if err != nil {
+		return fmt.Errorf("baca header: %w", err)
+	}
 
 	switch {
 	case bytes.HasPrefix(buf, []byte{0xFF, 0xD8, 0xFF}): // JPEG
@@ -156,6 +180,27 @@ func (r *R2Client) VerifyImageFormat(ctx context.Context, key string) error {
 		return ErrImageInvalidFormat
 	}
 
+	return verifyDimensions(buf)
+}
+
+// verifyDimensions baca SAHAJA header gambar (image.DecodeConfig) untuk
+// dapatkan lebar/tinggi tanpa menyahkod piksel — itu yang menjadikannya
+// murah dan selamat terhadap bom nyahmampat.
+//
+// WEBP sengaja dilepaskan: decoder webp bukan sebahagian pustaka standard,
+// dan menambah kebergantungan semata-mata untuk semakan ni tak berbaloi
+// sekarang. Had saiz bait (VerifyImageSize) masih terpakai padanya.
+func verifyDimensions(header []byte) error {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(header))
+	if err != nil {
+		// Header terpotong atau format tanpa decoder berdaftar (WEBP).
+		// Jangan tolak gambar semata-mata sebab tak dapat diukur — magic
+		// number dah lulus, dan had bait masih menjaga kes paling teruk.
+		return nil
+	}
+	if cfg.Width > MaxImageDimension || cfg.Height > MaxImageDimension {
+		return fmt.Errorf("%w: %dx%d", ErrImageTooManyPixels, cfg.Width, cfg.Height)
+	}
 	return nil
 }
 

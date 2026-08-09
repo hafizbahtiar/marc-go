@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -109,6 +110,16 @@ func (h *PostHandler) Create(c *gin.Context) {
 			log.Printf("verify gambar gagal (r2_key=%s, user=%s): %v", key, userID, err)
 			_ = h.r2.DeleteImage(ctx, key)
 			_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
+
+			// Dimensi berlebihan ialah kegagalan yang BOLEH ditindak
+			// pengguna — beritahu had sebenar, jangan campur dengan
+			// "fail rosak" yang tak beri petunjuk apa-apa.
+			if errors.Is(err, storage.ErrImageTooManyPixels) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("dimensi gambar melebihi %dpx", storage.MaxImageDimension),
+				})
+				return
+			}
 			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
 			return
 		}
