@@ -361,6 +361,26 @@ func (h *PostHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// Gilirkan gambar post untuk dipadam dari R2. Baris post_images
+	// sengaja DIKEKALKAN (rekod apa yang pernah dilekatkan, sepadan dengan
+	// soft delete post itu sendiri) — cuma bait dalam bucket yang dibuang,
+	// sebab itu yang makan storan. Dilakukan dalam transaksi yang sama:
+	// kalau padam post di-rollback, gilir pembersihan pun ikut.
+	imageKeys, err := q.ListPostImageKeys(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam post"})
+		return
+	}
+	for _, key := range imageKeys {
+		if err := q.EnqueueDeletedUpload(ctx, sqlc.EnqueueDeletedUploadParams{
+			R2Key:  key,
+			Reason: "post_deleted",
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam post"})
+			return
+		}
+	}
+
 	// Snapshot penuh — management boleh padam post orang lain, jadi ini
 	// satu-satunya rekod kekal tentang apa yang dibuang.
 	if err := audit.Record(ctx, q, audit.Entry{

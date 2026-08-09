@@ -117,6 +117,62 @@ func (q *Queries) GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow
 	return i, err
 }
 
+const listOrphanedPostImageKeys = `-- name: ListOrphanedPostImageKeys :many
+select pi.r2_key
+from post_images pi
+join posts p on p.id = pi.post_id
+where p.deleted_at is not null
+  and not exists (select 1 from deleted_uploads d where d.r2_key = pi.r2_key)
+limit $1
+`
+
+// Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk
+// dibuang. Menangkap dua perkara: post yang dipadam SEBELUM gilir
+// pembersihan wujud, dan mana-mana kunci yang terlepas sejak itu.
+func (q *Queries) ListOrphanedPostImageKeys(ctx context.Context, limit int32) ([]string, error) {
+	rows, err := q.db.Query(ctx, listOrphanedPostImageKeys, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var r2_key string
+		if err := rows.Scan(&r2_key); err != nil {
+			return nil, err
+		}
+		items = append(items, r2_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPostImageKeys = `-- name: ListPostImageKeys :many
+select r2_key from post_images where post_id = $1
+`
+
+func (q *Queries) ListPostImageKeys(ctx context.Context, postID uuid.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listPostImageKeys, postID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var r2_key string
+		if err := rows.Scan(&r2_key); err != nil {
+			return nil, err
+		}
+		items = append(items, r2_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPostImagesByPostIDs = `-- name: ListPostImagesByPostIDs :many
 select id, post_id, r2_key, position from post_images where post_id = any($1::uuid[]) order by post_id, "position"
 `

@@ -45,8 +45,13 @@ type Querier interface {
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
+	// Tanpa skop user — untuk penyapu latar, bukan permintaan pengguna.
+	DeletePendingUploadByKey(ctx context.Context, r2Key string) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
+	// on conflict do nothing: padam post yang sama dua kali (atau retry) tak
+	// patut gagal, dan objek tu memang dah dalam gilir.
+	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
 	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
 	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
@@ -75,14 +80,22 @@ type Querier interface {
 	// bina tree guna parent_comment_id.
 	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)
 	ListDeviceTokensByUser(ctx context.Context, userID uuid.UUID) ([]DeviceToken, error)
+	ListDueDeletedUploads(ctx context.Context, limit int32) ([]DeletedUpload, error)
 	ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
+	// Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk
+	// dibuang. Menangkap dua perkara: post yang dipadam SEBELUM gilir
+	// pembersihan wujud, dan mana-mana kunci yang terlepas sejak itu.
+	ListOrphanedPostImageKeys(ctx context.Context, limit int32) ([]string, error)
+	ListPostImageKeys(ctx context.Context, postID uuid.UUID) ([]string, error)
 	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
 	// Keyset pagination atas (created_at, id) — bukan created_at je, elak
 	// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
 	ListRoles(ctx context.Context) ([]Role, error)
+	// Pending upload yang tak pernah dilekatkan pada mana-mana post.
+	ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]PendingUpload, error)
 	// Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
 	// dibuat di peringkat SQL (bukan dalam Go) supaya baris yang viewer tak
 	// layak tengok tak pernah pun keluar dari DB:
@@ -95,6 +108,10 @@ type Querier interface {
 	//                          apa pun statusnya)
 	ListVisibleProfiles(ctx context.Context, arg ListVisibleProfilesParams) ([]ListVisibleProfilesRow, error)
 	MarkAllNotificationsRead(ctx context.Context, recipientID uuid.UUID) error
+	// Tandakan, jangan padam baris — lihat komen 'deleted_at' dlm migration.
+	MarkDeletedUploadDone(ctx context.Context, r2Key string) error
+	// Backoff eksponen ringkas, dihadkan pada 1 jam.
+	MarkDeletedUploadFailed(ctx context.Context, arg MarkDeletedUploadFailedParams) error
 	MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
 	NextSequence(ctx context.Context, key string) (int64, error)

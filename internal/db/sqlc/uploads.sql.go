@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createPendingUpload = `-- name: CreatePendingUpload :exec
@@ -39,6 +40,34 @@ func (q *Queries) DeletePendingUpload(ctx context.Context, arg DeletePendingUplo
 	return err
 }
 
+const deletePendingUploadByKey = `-- name: DeletePendingUploadByKey :exec
+delete from pending_uploads where r2_key = $1
+`
+
+// Tanpa skop user — untuk penyapu latar, bukan permintaan pengguna.
+func (q *Queries) DeletePendingUploadByKey(ctx context.Context, r2Key string) error {
+	_, err := q.db.Exec(ctx, deletePendingUploadByKey, r2Key)
+	return err
+}
+
+const enqueueDeletedUpload = `-- name: EnqueueDeletedUpload :exec
+insert into deleted_uploads (r2_key, reason)
+values ($1, $2)
+on conflict (r2_key) do nothing
+`
+
+type EnqueueDeletedUploadParams struct {
+	R2Key  string `json:"r2_key"`
+	Reason string `json:"reason"`
+}
+
+// on conflict do nothing: padam post yang sama dua kali (atau retry) tak
+// patut gagal, dan objek tu memang dah dalam gilir.
+func (q *Queries) EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error {
+	_, err := q.db.Exec(ctx, enqueueDeletedUpload, arg.R2Key, arg.Reason)
+	return err
+}
+
 const isPendingUploadOwnedByUser = `-- name: IsPendingUploadOwnedByUser :one
 select exists(select 1 from pending_uploads where r2_key = $1 and user_id = $2)
 `
@@ -53,4 +82,101 @@ func (q *Queries) IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingU
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listDueDeletedUploads = `-- name: ListDueDeletedUploads :many
+select r2_key, reason, attempts, last_error, deleted_at, next_attempt_at, created_at from deleted_uploads
+where deleted_at is null and next_attempt_at <= now()
+order by next_attempt_at
+limit $1
+`
+
+func (q *Queries) ListDueDeletedUploads(ctx context.Context, limit int32) ([]DeletedUpload, error) {
+	rows, err := q.db.Query(ctx, listDueDeletedUploads, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeletedUpload
+	for rows.Next() {
+		var i DeletedUpload
+		if err := rows.Scan(
+			&i.R2Key,
+			&i.Reason,
+			&i.Attempts,
+			&i.LastError,
+			&i.DeletedAt,
+			&i.NextAttemptAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStalePendingUploads = `-- name: ListStalePendingUploads :many
+select r2_key, user_id, created_at from pending_uploads
+where created_at < $1
+order by created_at
+limit $2
+`
+
+type ListStalePendingUploadsParams struct {
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Limit     int32              `json:"limit"`
+}
+
+// Pending upload yang tak pernah dilekatkan pada mana-mana post.
+func (q *Queries) ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]PendingUpload, error) {
+	rows, err := q.db.Query(ctx, listStalePendingUploads, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PendingUpload
+	for rows.Next() {
+		var i PendingUpload
+		if err := rows.Scan(&i.R2Key, &i.UserID, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markDeletedUploadDone = `-- name: MarkDeletedUploadDone :exec
+update deleted_uploads set deleted_at = now() where r2_key = $1
+`
+
+// Tandakan, jangan padam baris — lihat komen 'deleted_at' dlm migration.
+func (q *Queries) MarkDeletedUploadDone(ctx context.Context, r2Key string) error {
+	_, err := q.db.Exec(ctx, markDeletedUploadDone, r2Key)
+	return err
+}
+
+const markDeletedUploadFailed = `-- name: MarkDeletedUploadFailed :exec
+update deleted_uploads
+set attempts = attempts + 1,
+    last_error = $2,
+    next_attempt_at = now() + least(power(2, attempts)::int, 60) * interval '1 minute'
+where r2_key = $1
+`
+
+type MarkDeletedUploadFailedParams struct {
+	R2Key     string      `json:"r2_key"`
+	LastError pgtype.Text `json:"last_error"`
+}
+
+// Backoff eksponen ringkas, dihadkan pada 1 jam.
+func (q *Queries) MarkDeletedUploadFailed(ctx context.Context, arg MarkDeletedUploadFailedParams) error {
+	_, err := q.db.Exec(ctx, markDeletedUploadFailed, arg.R2Key, arg.LastError)
+	return err
 }

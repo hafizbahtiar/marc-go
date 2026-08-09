@@ -20,6 +20,7 @@ import (
 	"marc/internal/onesignal"
 	"marc/internal/payment"
 	"marc/internal/push"
+	"marc/internal/reaper"
 	"marc/internal/storage"
 )
 
@@ -49,6 +50,13 @@ func main() {
 	jwtSvc := auth.NewJWT(cfg.JWTSecret, cfg.AccessTokenTTL)
 	emailClient := email.NewClient(cfg.ResendAPIKey, cfg.EmailFrom)
 	r2Client := storage.NewR2Client(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket, cfg.R2PublicURL)
+	// Separuh-konfigur ialah keadaan paling mengelirukan yang mungkin:
+	// upload berjaya, jadi semuanya nampak elok, tapi setiap gambar
+	// dipaparkan sebagai kosong. Jerit masa boot dan bukan biarkan ia
+	// ditemui melalui post yang rosak.
+	if r2Client.Enabled() && !r2Client.HasPublicURL() {
+		log.Printf("AMARAN: R2 aktif tetapi R2_PUBLIC_URL kosong — gambar boleh diupload TAPI tak akan dipapar")
+	}
 	onesignalClient := onesignal.NewClient(cfg.OneSignalAppID, cfg.OneSignalAPIKey)
 	pushSvc := push.NewService(sqlc.New(pool), onesignalClient)
 
@@ -57,6 +65,10 @@ func main() {
 	paymentGateways := map[string]payment.Gateway{
 		"stripe": payment.NewStripeGateway(cfg.StripeSecretKey, cfg.StripeWebhookSecret),
 	}
+
+	// Pembersih storan (Stage 10 lanjutan) — gambar post yang dipadam dan
+	// karangan post yang ditinggalkan sebelum ni kekal dalam R2 selamanya.
+	reaper.New(sqlc.New(pool), r2Client, 15*time.Minute).Start(ctx)
 
 	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways)
 

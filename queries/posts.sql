@@ -53,3 +53,17 @@ returning *;
 
 -- name: ListPostImagesByPostIDs :many
 select * from post_images where post_id = any(sqlc.arg('post_ids')::uuid[]) order by post_id, "position";
+
+-- name: ListPostImageKeys :many
+select r2_key from post_images where post_id = $1;
+
+-- name: ListOrphanedPostImageKeys :many
+-- Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk
+-- dibuang. Menangkap dua perkara: post yang dipadam SEBELUM gilir
+-- pembersihan wujud, dan mana-mana kunci yang terlepas sejak itu.
+select pi.r2_key
+from post_images pi
+join posts p on p.id = pi.post_id
+where p.deleted_at is not null
+  and not exists (select 1 from deleted_uploads d where d.r2_key = pi.r2_key)
+limit $1;

@@ -217,6 +217,15 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 	imagesByPost := make(map[uuid.UUID][]string)
 	for _, img := range images {
 		url := h.r2.PublicURL(img.R2Key)
+		if url == "" {
+			// R2_PUBLIC_URL tak diset — gambar berjaya diupload tapi tiada
+			// domain untuk membacanya semula. Langkau, jangan hantar ""
+			// kepada client: string kosong cuma jadi kotak "broken image"
+			// dan menyembunyikan fakta bahawa ini salah KONFIGURASI, bukan
+			// gambar rosak.
+			log.Printf("R2_PUBLIC_URL tak diset — gambar %s tak dapat dipapar", img.R2Key)
+			continue
+		}
 		imagesByPost[img.PostID] = append(imagesByPost[img.PostID], url)
 	}
 

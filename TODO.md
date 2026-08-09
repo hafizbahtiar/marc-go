@@ -645,8 +645,60 @@ Belum:
 - [ ] Audit untuk `create` post/comment (volum tinggi, faedah rendah sebab
       entiti sendiri dah simpan author + created_at) — putuskan dulu
 
+## Stage 14 — Pembersih storan R2 (reaper) ✅
+
+Objek R2 dulu BOCOR selamanya. Dua punca berasingan:
+1. **Post dipadam** — soft delete, jadi `post_images` kekal dan gambar
+   dalam bucket tak pernah disentuh sesiapa.
+2. **Karangan post ditinggalkan** — gambar naik ke R2 sebaik dipilih, jadi
+   tekan "back" tinggalkan objek yatim + baris `pending_uploads` basi.
+
+Reka bentuk (`internal/reaper`, migration `20260809160000`):
+- Jadual gilir `deleted_uploads` dengan backoff + `last_error`. Padam R2
+  ialah panggilan rangkaian yang boleh gagal — kalau dibuat sebaris dalam
+  `DELETE /posts`, pilihannya cuma gagalkan permintaan pengguna atau
+  bocorkan objek senyap. Gilir = padam post sentiasa berjaya serta-merta,
+  pembersihan dicuba semula merentas restart.
+- `deleted_at` sebagai **batu nisan** (baris tak dibuang) supaya penyapu
+  yatim tak menggilir semula kunci yang sama selama-lamanya.
+- Goroutine setiap 15 minit + sekali masa boot. Tiada kunci antara
+  replika: `DeleteObject` idempotent.
+- `enqueueOrphanedPostImages` menuntut semula sampah yang WUJUD SEBELUM
+  gilir ni ada — post lama yang dipadam dibersihkan sendiri.
+- Sapuan `pending_uploads` pada umur 6 jam (lama sengaja — menyapu awal
+  akan memadam gambar pengguna yang masih mengarang).
+
+Disahkan lawan R2 + Postgres sebenar (4 ujian, `R2_LIVE_TEST=1`
+`REAPER_TEST_DB=...`): objek betul-betul hilang dari bucket, upload baharu
+TAK disentuh, dan kunci tak digilir semula selepas berjaya.
+
+Belum:
+- [ ] Prune batu nisan `deleted_uploads` yang dah lama (jadual membesar
+      perlahan-lahan; belum jadi masalah)
+- [ ] Comment tiada gambar buat masa ni — kalau ditambah, ia perlu gilir
+      yang sama
+
 ## Belum putus / perlu bincang lagi
-- R2 API token permission scope (403 AccessDenied bila upload sebenar,
-  walaupun presign + checksum dah betul) — perlu kau semak Cloudflare
-  dashboard, bukan sesuatu code boleh fix
-- `R2_PUBLIC_URL` belum diisi
+- **R2 403 AccessDenied — DIDIAGNOSIS 2026-08-09: token R2 baca-sahaja.**
+  Diuji terus terhadap bucket `marc-staging` dengan kredential yang sama
+  yang dipakai staging:
+  `ListObjectsV2` OK, `PutObject` (SDK, bukan presign) 403 AccessDenied,
+  `GetObject` 404 NoSuchKey (bukan 403). Baca lulus, tulis ditolak — jadi
+  presign, override checksum dan tandatangan SEMUANYA betul; puncanya
+  semata-mata skop token Cloudflare.
+  Betulkan: Cloudflare → R2 → Manage API Tokens → tukar token kepada
+  **Object Read & Write** pada bucket berkenaan (jana semula &
+  kemas kini `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` di Railway +
+  `.env` kalau token baharu dibuat).
+  Sahkan dengan: `R2_LIVE_TEST=1 go test ./internal/storage/ -run TestR2LivePermissions -v`
+- ~~`R2_PUBLIC_URL`~~ **SELESAI 2026-08-09** — guna R2 Public Development
+  URL `https://pub-15aba838613345a0b5ff6d3b18166f28.r2.dev` (custom domain
+  ditolak). Diset dlm `.env` + Railway staging; disahkan hujung-ke-hujung
+  oleh `TestR2LivePermissions` (upload → baca balik ikut URL awam, bait
+  sepadan).
+  **Dua perkara belum selesai untuk PRODUKSI:**
+  1. r2.dev dikadar-hadkan dan Cloudflare kata bukan untuk produksi.
+  2. Ia menjadikan SELURUH bucket boleh dibaca sesiapa yang ada URL —
+     kunci UUID tak diteka, tapi itu kekaburan, bukan kawalan akses.
+     Ganti dengan presigned GET sebelum produksi kalau gambar ahli
+     dianggap peribadi.

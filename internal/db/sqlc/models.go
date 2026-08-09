@@ -42,6 +42,16 @@ type CommentLike struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type DeletedUpload struct {
+	R2Key         string             `json:"r2_key"`
+	Reason        string             `json:"reason"`
+	Attempts      int32              `json:"attempts"`
+	LastError     pgtype.Text        `json:"last_error"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type DeviceToken struct {
 	ID          uuid.UUID          `json:"id"`
 	UserID      uuid.UUID          `json:"user_id"`

@@ -172,9 +172,19 @@ func (r *R2Client) DeleteImage(ctx context.Context, key string) error {
 	return err
 }
 
+// HasPublicURL — sama ada domain awam bucket dah dikonfigur. Tanpa ni
+// gambar boleh diupload tapi TAK BOLEH dipapar semula: PublicURL pulang
+// string kosong untuk setiap kunci.
+func (r *R2Client) HasPublicURL() bool {
+	return r.publicURL != ""
+}
+
 // PublicURL bina URL awam untuk baca semula gambar yang dah diupload
 // (r2_key disimpan dalam DB, URL dibina runtime — elak simpan URL penuh
 // yang boleh berubah kalau domain public R2 ditukar).
+//
+// Pulang "" kalau R2_PUBLIC_URL tak diset. Caller MESTI langkau nilai
+// kosong dan bukan hantar ia kepada client — lihat buildPostResponses.
 func (r *R2Client) PublicURL(key string) string {
 	if r.publicURL == "" {
 		return ""
