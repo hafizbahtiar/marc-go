@@ -15,6 +15,7 @@ import (
 	"marc/internal/authz"
 	"marc/internal/db/sqlc"
 	"marc/internal/push"
+	"marc/internal/storage"
 )
 
 const defaultPageLimit = 20
@@ -22,6 +23,10 @@ const defaultPageLimit = 20
 type authorResponse struct {
 	MemberID    string  `json:"member_id"`
 	DisplayName *string `json:"display_name"`
+
+	// Disertakan dalam SETIAP post/comment supaya feed tak perlu N+1
+	// lookup semata-mata untuk melukis avatar. null = tiada gambar.
+	AvatarURL *string `json:"avatar_url"`
 }
 
 type postResponse struct {
@@ -46,6 +51,19 @@ type commentResponse struct {
 	Author          authorResponse `json:"author"`
 	LikeCount       int64          `json:"like_count"`
 	LikedByMe       bool           `json:"liked_by_me"`
+}
+
+// avatarURLFor bina URL awam avatar penulis, atau nil. Dikongsi oleh
+// laluan post dan comment supaya ketiga-tiga tapak tak berbeza cara.
+func avatarURLFor(r2 *storage.R2Client, key pgtype.Text) *string {
+	if !key.Valid || key.String == "" {
+		return nil
+	}
+	url := r2.PublicURL(key.String)
+	if url == "" {
+		return nil
+	}
+	return &url
 }
 
 func formatTime(t pgtype.Timestamptz) string {
@@ -151,6 +169,7 @@ type postCore struct {
 	EditedAt          pgtype.Timestamptz
 	AuthorMemberID    string
 	AuthorDisplayName pgtype.Text
+	AuthorAvatarR2Key pgtype.Text
 }
 
 func coreFromGetPostByIDRow(r sqlc.GetPostByIDRow) postCore {
@@ -158,6 +177,7 @@ func coreFromGetPostByIDRow(r sqlc.GetPostByIDRow) postCore {
 		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
 		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
 		AuthorMemberID: r.AuthorMemberID, AuthorDisplayName: r.AuthorDisplayName,
+		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
 	}
 }
 
@@ -166,6 +186,7 @@ func coreFromListPostsRow(r sqlc.ListPostsRow) postCore {
 		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
 		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
 		AuthorMemberID: r.AuthorMemberID, AuthorDisplayName: r.AuthorDisplayName,
+		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
 	}
 }
 
@@ -249,6 +270,7 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 			Author: authorResponse{
 				MemberID:    c.AuthorMemberID,
 				DisplayName: displayName,
+				AvatarURL:   avatarURLFor(h.r2, c.AuthorAvatarR2Key),
 			},
 			Images:       images,
 			LikeCount:    likeCountByPost[c.ID],

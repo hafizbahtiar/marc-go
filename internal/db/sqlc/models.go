@@ -134,6 +134,7 @@ type Profile struct {
 	Status        string             `json:"status"`
 	ApprovedBy    pgtype.UUID        `json:"approved_by"`
 	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key   pgtype.Text        `json:"avatar_r2_key"`
 }
 
 type RefreshToken struct {

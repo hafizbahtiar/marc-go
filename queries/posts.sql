@@ -8,7 +8,8 @@ select
   p.*,
   u.email as author_email,
   pr.member_id as author_member_id,
-  pr.display_name as author_display_name
+  pr.display_name as author_display_name,
+  pr.avatar_r2_key as author_avatar_r2_key
 from posts p
 join users u on u.id = p.author_id
 join profiles pr on pr.user_id = p.author_id
@@ -22,7 +23,8 @@ select
   p.*,
   u.email as author_email,
   pr.member_id as author_member_id,
-  pr.display_name as author_display_name
+  pr.display_name as author_display_name,
+  pr.avatar_r2_key as author_avatar_r2_key
 from posts p
 join users u on u.id = p.author_id
 join profiles pr on pr.user_id = p.author_id

@@ -13,7 +13,8 @@ select
   c.*,
   u.email as author_email,
   pr.member_id as author_member_id,
-  pr.display_name as author_display_name
+  pr.display_name as author_display_name,
+  pr.avatar_r2_key as author_avatar_r2_key
 from comments c
 join users u on u.id = c.author_id
 join profiles pr on pr.user_id = c.author_id

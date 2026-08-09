@@ -92,3 +92,8 @@ select p.user_id
 from profiles p
 join roles r on r.id = p.role_id
 where r.category = $1;
+
+-- name: UpdateProfileAvatar :one
+update profiles set avatar_r2_key = sqlc.narg('avatar_r2_key')::text
+where user_id = $1
+returning *;

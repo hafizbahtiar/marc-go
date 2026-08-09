@@ -79,7 +79,8 @@ select
   p.id, p.author_id, p.type, p.content, p.created_at, p.edited_at, p.deleted_at,
   u.email as author_email,
   pr.member_id as author_member_id,
-  pr.display_name as author_display_name
+  pr.display_name as author_display_name,
+  pr.avatar_r2_key as author_avatar_r2_key
 from posts p
 join users u on u.id = p.author_id
 join profiles pr on pr.user_id = p.author_id
@@ -97,6 +98,7 @@ type GetPostByIDRow struct {
 	AuthorEmail       string             `json:"author_email"`
 	AuthorMemberID    string             `json:"author_member_id"`
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
+	AuthorAvatarR2Key pgtype.Text        `json:"author_avatar_r2_key"`
 }
 
 func (q *Queries) GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error) {
@@ -113,6 +115,7 @@ func (q *Queries) GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow
 		&i.AuthorEmail,
 		&i.AuthorMemberID,
 		&i.AuthorDisplayName,
+		&i.AuthorAvatarR2Key,
 	)
 	return i, err
 }
@@ -207,7 +210,8 @@ select
   p.id, p.author_id, p.type, p.content, p.created_at, p.edited_at, p.deleted_at,
   u.email as author_email,
   pr.member_id as author_member_id,
-  pr.display_name as author_display_name
+  pr.display_name as author_display_name,
+  pr.avatar_r2_key as author_avatar_r2_key
 from posts p
 join users u on u.id = p.author_id
 join profiles pr on pr.user_id = p.author_id
@@ -237,6 +241,7 @@ type ListPostsRow struct {
 	AuthorEmail       string             `json:"author_email"`
 	AuthorMemberID    string             `json:"author_member_id"`
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
+	AuthorAvatarR2Key pgtype.Text        `json:"author_avatar_r2_key"`
 }
 
 // Keyset pagination atas (created_at, id) — bukan created_at je, elak
@@ -262,6 +267,7 @@ func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPos
 			&i.AuthorEmail,
 			&i.AuthorMemberID,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarR2Key,
 		); err != nil {
 			return nil, err
 		}

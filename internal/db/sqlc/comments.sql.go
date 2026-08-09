@@ -114,7 +114,8 @@ select
   c.id, c.post_id, c.parent_comment_id, c.author_id, c.content, c.created_at, c.edited_at, c.deleted_at,
   u.email as author_email,
   pr.member_id as author_member_id,
-  pr.display_name as author_display_name
+  pr.display_name as author_display_name,
+  pr.avatar_r2_key as author_avatar_r2_key
 from comments c
 join users u on u.id = c.author_id
 join profiles pr on pr.user_id = c.author_id
@@ -134,6 +135,7 @@ type ListCommentsByPostIDRow struct {
 	AuthorEmail       string             `json:"author_email"`
 	AuthorMemberID    string             `json:"author_member_id"`
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
+	AuthorAvatarR2Key pgtype.Text        `json:"author_avatar_r2_key"`
 }
 
 // Flat list, semua comment (top-level + reply) untuk satu post. Client
@@ -159,6 +161,7 @@ func (q *Queries) ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([
 			&i.AuthorEmail,
 			&i.AuthorMemberID,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarR2Key,
 		); err != nil {
 			return nil, err
 		}

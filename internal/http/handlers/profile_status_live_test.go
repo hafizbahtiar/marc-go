@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +16,7 @@ import (
 	"marc/internal/db"
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
+	"marc/internal/storage"
 )
 
 // Ujian integrasi terhadap Postgres sebenar. Dilangkau melainkan
@@ -286,4 +288,96 @@ func TestManagementMasihNampakSemuaEmel(t *testing.T) {
 			t.Errorf("management patut nampak semua emel, %v disembunyikan", r["member_id"])
 		}
 	}
+}
+
+func callUpdateMe(t *testing.T, pool *pgxpool.Pool, r2 *storage.R2Client, userID uuid.UUID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	h := &ProfileHandler{
+		pool: pool, queries: sqlc.New(pool),
+		emailClient: email.NewClient("", ""), r2: r2,
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("userID", userID)
+	h.UpdateMe(c)
+	return rec
+}
+
+// Kunci avatar datang dari client. Tanpa semakan pemilikan, sesiapa boleh
+// menetapkan kunci orang lain (atau kunci yang diteka) sebagai avatar
+// mereka sendiri.
+func TestAvatarTolakKunciBukanMilikCaller(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	r2 := storage.NewR2Client("", "", "", "", "") // tak dikonfigur — tak dicapai
+	victim := seedMember(t, ctx, pool, "ahli", "approved")
+	attacker := seedMember(t, ctx, pool, "ahli", "approved")
+
+	key := "posts/" + uuid.NewString()
+	if err := sqlc.New(pool).CreatePendingUpload(ctx, sqlc.CreatePendingUploadParams{
+		R2Key: key, UserID: victim,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := callUpdateMe(t, pool, r2, attacker, `{"avatar_r2_key":"`+key+`"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, mahu 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var avatar *string
+	if err := pool.QueryRow(ctx,
+		`select avatar_r2_key from profiles where user_id = $1`, attacker).Scan(&avatar); err != nil {
+		t.Fatal(err)
+	}
+	if avatar != nil {
+		t.Errorf("avatar ditetapkan walaupun kunci bukan milik caller: %v", *avatar)
+	}
+}
+
+// Tukar avatar mesti menggilirkan yang LAMA untuk dipadam, kalau tidak
+// setiap pertukaran meninggalkan objek yatim dalam R2 selamanya.
+func TestAvatarLamaDigilirkanUntukDipadam(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	q := sqlc.New(pool)
+	user := seedMember(t, ctx, pool, "ahli", "approved")
+
+	oldKey := "posts/" + uuid.NewString()
+	if _, err := pool.Exec(ctx,
+		`update profiles set avatar_r2_key = $2 where user_id = $1`, user, oldKey); err != nil {
+		t.Fatal(err)
+	}
+
+	// Buang avatar (kunci kosong) — tak sentuh R2, jadi tak perlu kredential.
+	rec := callUpdateMe(t, pool, storage.NewR2Client("", "", "", "", ""), user, `{"avatar_r2_key":""}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var queued int
+	if err := pool.QueryRow(ctx,
+		`select count(*) from deleted_uploads where r2_key = $1 and reason = 'avatar_replaced'`,
+		oldKey).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued != 1 {
+		t.Fatalf("avatar lama tak digilirkan (%d baris) — ia akan bocor dalam R2", queued)
+	}
+
+	var avatar *string
+	if err := pool.QueryRow(ctx,
+		`select avatar_r2_key from profiles where user_id = $1`, user).Scan(&avatar); err != nil {
+		t.Fatal(err)
+	}
+	if avatar != nil && *avatar != "" {
+		t.Errorf("avatar patut dibuang, dapat %v", *avatar)
+	}
+
+	logs := auditRowsFor(t, ctx, pool, user)
+	if len(logs) == 0 {
+		t.Error("tukar avatar tak diaudit")
+	}
+	_ = q
 }

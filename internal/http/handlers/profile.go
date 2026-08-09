@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -17,16 +18,23 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	"marc/internal/http/middleware"
+	"marc/internal/storage"
 )
 
 type ProfileHandler struct {
 	pool        *pgxpool.Pool
 	queries     *sqlc.Queries
 	emailClient *email.Client
+	r2          *storage.R2Client
 }
 
-func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client) *ProfileHandler {
-	return &ProfileHandler{pool: pool, queries: sqlc.New(pool), emailClient: emailClient}
+func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client) *ProfileHandler {
+	return &ProfileHandler{
+		pool:        pool,
+		queries:     sqlc.New(pool),
+		emailClient: emailClient,
+		r2:          r2,
+	}
 }
 
 type profileResponse struct {
@@ -40,6 +48,7 @@ type profileResponse struct {
 	RoleName      string  `json:"role_name"`
 	Category      string  `json:"category"`
 	RoleRank      int32   `json:"role_rank"`
+	AvatarURL     *string `json:"avatar_url"`
 }
 
 // Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
@@ -64,12 +73,18 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		RoleName:      row.RoleName,
 		Category:      row.RoleCategory,
 		RoleRank:      row.RoleRank,
+		AvatarURL:     h.avatarURL(row.AvatarR2Key),
 	})
 }
 
 type updateMeRequest struct {
 	DisplayName *string `json:"display_name"`
 	Phone       *string `json:"phone"`
+
+	// AvatarR2Key — kunci daripada /uploads/presign. Pointer supaya tiga
+	// keadaan boleh dibezakan: tak dihantar (biar), string kosong (buang
+	// avatar), atau kunci baharu (ganti).
+	AvatarR2Key *string `json:"avatar_r2_key"`
 }
 
 // UpdateMe setara `ProfileRepository.update` di Flutter — field yang
@@ -82,7 +97,10 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 		return
 	}
 
-	params := sqlc.UpdateProfileParams{UserID: middleware.UserID(c)}
+	ctx := c.Request.Context()
+	userID := middleware.UserID(c)
+
+	params := sqlc.UpdateProfileParams{UserID: userID}
 	if req.DisplayName != nil {
 		params.DisplayName = pgtype.Text{String: strings.TrimSpace(*req.DisplayName), Valid: true}
 	}
@@ -90,17 +108,150 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 		params.Phone = pgtype.Text{String: strings.TrimSpace(*req.Phone), Valid: true}
 	}
 
-	updated, err := h.queries.UpdateProfile(c.Request.Context(), params)
+	updated, err := h.queries.UpdateProfile(ctx, params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
 		return
+	}
+
+	if req.AvatarR2Key != nil {
+		updated, err = h.applyAvatar(c, userID, strings.TrimSpace(*req.AvatarR2Key))
+		if err != nil {
+			return // applyAvatar dah tulis respons ralat
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"member_id":    updated.MemberID,
 		"display_name": textToPtr(updated.DisplayName),
 		"phone":        textToPtr(updated.Phone),
+		"avatar_url":   h.avatarURL(updated.AvatarR2Key),
 	})
+}
+
+// applyAvatar tukar (atau buang) gambar profil.
+//
+// Semua dalam SATU transaksi: tetapkan kunci baharu, gilirkan yang lama
+// untuk dipadam, dan tulis catatan audit. Kalau mana-mana gagal, tiada
+// satu pun berlaku — kalau tidak avatar lama bocor dalam bucket atau
+// perubahan berlaku tanpa jejak.
+//
+// `key` kosong = buang avatar.
+func (h *ProfileHandler) applyAvatar(c *gin.Context, userID uuid.UUID, key string) (sqlc.Profile, error) {
+	ctx := c.Request.Context()
+
+	before, err := h.queries.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
+		return sqlc.Profile{}, err
+	}
+
+	if key != "" {
+		// Kunci datang dari client, jadi ia MESTI disahkan milik caller —
+		// tanpa ni sesiapa boleh menetapkan kunci orang lain (atau kunci
+		// yang diteka) sebagai avatar mereka. Laluan sama macam gambar post.
+		owned, err := h.queries.IsPendingUploadOwnedByUser(ctx, sqlc.IsPendingUploadOwnedByUserParams{
+			R2Key: key, UserID: userID,
+		})
+		if err != nil || !owned {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
+			return sqlc.Profile{}, errAvatarRejected
+		}
+
+		if err := h.r2.VerifyAvatar(ctx, key); err != nil {
+			log.Printf("verify avatar gagal (r2_key=%s, user=%s): %v", key, userID, err)
+			_ = h.r2.DeleteImage(ctx, key)
+			_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
+			if errors.Is(err, storage.ErrImageTooManyPixels) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": fmt.Sprintf("dimensi gambar profil melebihi %dpx", storage.MaxAvatarDimension),
+				})
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
+			}
+			return sqlc.Profile{}, errAvatarRejected
+		}
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
+		return sqlc.Profile{}, err
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	updated, err := q.UpdateProfileAvatar(ctx, sqlc.UpdateProfileAvatarParams{
+		UserID:      userID,
+		AvatarR2Key: ptrToText(key),
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
+		return sqlc.Profile{}, err
+	}
+
+	// Avatar LAMA mesti digilirkan, kalau tidak setiap kali tukar gambar
+	// meninggalkan satu objek yatim dalam R2 selama-lamanya.
+	if before.AvatarR2Key.Valid && before.AvatarR2Key.String != key {
+		if err := q.EnqueueDeletedUpload(ctx, sqlc.EnqueueDeletedUploadParams{
+			R2Key:  before.AvatarR2Key.String,
+			Reason: "avatar_replaced",
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
+			return sqlc.Profile{}, err
+		}
+	}
+
+	if key != "" {
+		// Kunci dah jadi milik profil sekarang — buang daripada pending
+		// supaya penyapu "karangan ditinggalkan" tak memadamnya kemudian.
+		if err := q.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
+			return sqlc.Profile{}, err
+		}
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityProfile,
+		EntityID:   userID,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, h.queries),
+		Old:        map[string]any{"avatar_r2_key": textToAny(before.AvatarR2Key)},
+		New:        map[string]any{"avatar_r2_key": textToAny(updated.AvatarR2Key)},
+	}); err != nil {
+		log.Printf("audit avatar: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
+		return sqlc.Profile{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
+		return sqlc.Profile{}, err
+	}
+	return updated, nil
+}
+
+var errAvatarRejected = errors.New("avatar ditolak")
+
+// avatarURL bina URL awam, atau nil kalau ahli tiada avatar / R2 belum
+// dikonfigur. Nil (bukan "") supaya client boleh bezakan "tiada gambar"
+// daripada rentetan kosong yang mengelirukan.
+func (h *ProfileHandler) avatarURL(key pgtype.Text) *string {
+	if !key.Valid || key.String == "" {
+		return nil
+	}
+	url := h.r2.PublicURL(key.String)
+	if url == "" {
+		return nil
+	}
+	return &url
+}
+
+func textToAny(t pgtype.Text) any {
+	if !t.Valid {
+		return nil
+	}
+	return t.String
 }
 
 type memberResponse struct {
@@ -122,6 +273,10 @@ type memberResponse struct {
 	RoleRank int32   `json:"role_rank"`
 	Category string  `json:"category"`
 	Status   string  `json:"status"`
+
+	// null = tiada gambar profil (atau R2 belum dikonfigur). Client jatuh
+	// balik kepada huruf pertama nama.
+	AvatarURL *string `json:"avatar_url"`
 }
 
 // Members setara `membersProvider` di Flutter — gantian RLS
@@ -176,7 +331,12 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		if !isManagement && row.UserID != userID {
 			email = ""
 		}
-		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status)
+		members[i] = h.toMemberResponse(memberRow{
+			UserID: row.UserID, MemberID: row.MemberID, DisplayName: row.DisplayName,
+			Email: email, RoleKey: row.RoleKey, RoleName: row.RoleName,
+			RoleRank: row.RoleRank, Category: row.RoleCategory, Status: row.Status,
+			AvatarKey: row.AvatarR2Key,
+		})
 	}
 	c.JSON(http.StatusOK, members)
 }
@@ -217,21 +377,39 @@ func visibleRankCeiling(roles []sqlc.Role, viewerRank int32) int32 {
 }
 
 // toMemberResponse — `email` kosong bermakna sembunyikan medan itu.
-func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, email, roleKey, roleName string, roleRank int32, category, status string) memberResponse {
+// memberRow — input untuk toMemberResponse. Struct, bukan senarai
+// parameter: versi lama ada sembilan argumen positional bertype string
+// yang sama, jadi tertukar susunan (cth roleKey lawan roleName) akan
+// compile dengan senyap.
+type memberRow struct {
+	UserID      uuid.UUID
+	MemberID    string
+	DisplayName pgtype.Text
+	Email       string // kosong = sembunyikan medan
+	RoleKey     string
+	RoleName    string
+	RoleRank    int32
+	Category    string
+	Status      string
+	AvatarKey   pgtype.Text
+}
+
+func (h *ProfileHandler) toMemberResponse(m memberRow) memberResponse {
 	var emailPtr *string
-	if email != "" {
-		emailPtr = &email
+	if m.Email != "" {
+		emailPtr = &m.Email
 	}
 	return memberResponse{
-		UserID:      userID.String(),
-		MemberID:    memberID,
-		DisplayName: textToPtr(displayName),
+		UserID:      m.UserID.String(),
+		MemberID:    m.MemberID,
+		DisplayName: textToPtr(m.DisplayName),
 		Email:       emailPtr,
-		RoleKey:     roleKey,
-		RoleName:    roleName,
-		RoleRank:    roleRank,
-		Category:    category,
-		Status:      status,
+		RoleKey:     m.RoleKey,
+		RoleName:    m.RoleName,
+		RoleRank:    m.RoleRank,
+		Category:    m.Category,
+		Status:      m.Status,
+		AvatarURL:   h.avatarURL(m.AvatarKey),
 	}
 }
 
@@ -372,7 +550,12 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toMemberResponse(updated.UserID, updated.MemberID, updated.DisplayName, target.Email, newRole.Key, newRole.Name, newRole.Rank, newRole.Category, updated.Status))
+	c.JSON(http.StatusOK, h.toMemberResponse(memberRow{
+		UserID: updated.UserID, MemberID: updated.MemberID, DisplayName: updated.DisplayName,
+		Email: target.Email, RoleKey: newRole.Key, RoleName: newRole.Name,
+		RoleRank: newRole.Rank, Category: newRole.Category, Status: updated.Status,
+		AvatarKey: updated.AvatarR2Key,
+	}))
 }
 
 type memberActionResponse struct {

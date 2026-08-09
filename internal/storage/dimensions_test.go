@@ -28,7 +28,7 @@ func jpegHeader(t *testing.T, w, h int) []byte {
 }
 
 func TestDimensiDalamHadDiterima(t *testing.T) {
-	if err := verifyDimensions(jpegHeader(t, 2048, 1536)); err != nil {
+	if err := verifyDimensions(jpegHeader(t, 2048, 1536), MaxImageDimension); err != nil {
 		t.Fatalf("2048x1536 patut lulus: %v", err)
 	}
 }
@@ -36,19 +36,19 @@ func TestDimensiDalamHadDiterima(t *testing.T) {
 // Ini sebab semakan ni wujud: presigned URL membenarkan client menaikkan
 // apa-apa terus ke R2, jadi "client dah kecilkan" bukan jaminan.
 func TestDimensiTerlaluBesarDitolak(t *testing.T) {
-	err := verifyDimensions(jpegHeader(t, 5000, 100))
+	err := verifyDimensions(jpegHeader(t, 5000, 100), MaxImageDimension)
 	if !errors.Is(err, ErrImageTooManyPixels) {
 		t.Fatalf("5000px lebar patut ditolak, dapat %v", err)
 	}
 
-	err = verifyDimensions(jpegHeader(t, 100, 5000))
+	err = verifyDimensions(jpegHeader(t, 100, 5000), MaxImageDimension)
 	if !errors.Is(err, ErrImageTooManyPixels) {
 		t.Fatalf("5000px tinggi patut ditolak, dapat %v", err)
 	}
 }
 
 func TestTepatPadaHadDiterima(t *testing.T) {
-	if err := verifyDimensions(jpegHeader(t, MaxImageDimension, 10)); err != nil {
+	if err := verifyDimensions(jpegHeader(t, MaxImageDimension, 10), MaxImageDimension); err != nil {
 		t.Fatalf("tepat pada had patut lulus: %v", err)
 	}
 }
@@ -58,7 +58,7 @@ func TestPNGDiukurJuga(t *testing.T) {
 	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 6000, 10))); err != nil {
 		t.Fatal(err)
 	}
-	if !errors.Is(verifyDimensions(buf.Bytes()), ErrImageTooManyPixels) {
+	if !errors.Is(verifyDimensions(buf.Bytes(), MaxImageDimension), ErrImageTooManyPixels) {
 		t.Fatal("PNG besar patut ditolak")
 	}
 }
@@ -67,11 +67,11 @@ func TestPNGDiukurJuga(t *testing.T) {
 // boleh menolak gambar — magic number dah lulus dan had bait masih
 // terpakai. Gagal-terbuka di sini sengaja.
 func TestHeaderTakBolehDibacaTidakMenolak(t *testing.T) {
-	if err := verifyDimensions([]byte{0xFF, 0xD8, 0xFF}); err != nil {
+	if err := verifyDimensions([]byte{0xFF, 0xD8, 0xFF}, MaxImageDimension); err != nil {
 		t.Fatalf("header terpotong patut lulus senyap, dapat %v", err)
 	}
 	webp := append([]byte("RIFF0000WEBP"), make([]byte, 40)...)
-	if err := verifyDimensions(webp); err != nil {
+	if err := verifyDimensions(webp, MaxImageDimension); err != nil {
 		t.Fatalf("WEBP patut lulus (tiada decoder), dapat %v", err)
 	}
 }

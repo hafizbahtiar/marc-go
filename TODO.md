@@ -47,9 +47,21 @@ ganti. Belum start; skopnya lebih besar daripada nampak.
 
 Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
 
-- [ ] **FPX belum diuji end-to-end.** Kad disahkan dengan pembayaran
-      sebenar; FPX perlu diaktifkan dalam Stripe Dashboard (Settings →
-      Payment methods) dan pusingan redirect bank sebenar belum dicuba.
+- [ ] **FPX: daftar SSM → BRN → aktifkan semula Stripe.** FPX
+      `available: false` pada akaun (disahkan via API 2026-08-09) — bukan
+      toggle yang terlepas. Stripe memerlukan **BRN** untuk memproses caj
+      FPX dan menerima payout; akaun ni `business_type: individual` tanpa
+      BRN dan tiada keupayaan `fpx_payments`. Langkah penuh (SSM → BRN →
+      MY TIN → pengaktifan → kunci baharu → daftar semula webhook) ada
+      dalam `marc_flutter/PAYMENT-STRIPE.md`. Semuanya pentadbiran, bukan
+      kod. Sehingga itu: DuitNow QR + kad (+ GrabPay).
+      - [ ] Selepas berdaftar: semak semula framing "sumbangan peribadi
+            kepada pembangun" — duit akan masuk akaun PERNIAGAAN, jadi
+            empat tempat teks tu perlu dikemas kini
+      - [ ] Selepas berdaftar: semak mandat e-Invois LHDN
+- [ ] **Akaun Stripe belum aktif untuk live**: `charges_enabled: false`,
+      `card_payments: inactive`, tiada `currently_due` — Stripe masih
+      memproses. Mod test tak terjejas.
 - [ ] **Threshold RM500 belum wired** — `selectGateway` sentiasa pulang
       Stripe. SociaBuzz (<RM500) belum research: ada API/webhook rasmi untuk
       verify pembayaran, atau manual sahaja?
@@ -71,6 +83,39 @@ kecuaian.
 - [ ] WEBP tak diukur — decoder bukan dalam pustaka standard. Had bait
       (5MB) masih terpakai. Tambah `golang.org/x/image/webp` kalau WEBP
       jadi biasa.
+
+## Gambar profil — backend ✅ (Flutter belum)
+
+- `profiles.avatar_r2_key` (migration `20260809200000`), simpan KUNCI bukan
+  URL — domain awam bucket akan berubah sebelum produksi.
+- `PATCH /me` terima `avatar_r2_key`. Pointer bertiga keadaan: tak dihantar
+  = biar, `""` = buang, kunci = ganti.
+- Semakan pemilikan (`IsPendingUploadOwnedByUser`) sebelum menerima kunci —
+  tanpa ni sesiapa boleh tetapkan kunci orang lain sebagai avatar sendiri.
+- Had dimensi SENDIRI: `MaxAvatarDimension` 1024 (client hantar 512).
+  Tiada sebab simpan 2048px untuk bulatan 28–80dp.
+- Avatar lama digilirkan ke `deleted_uploads` dengan reason
+  `avatar_replaced`, dalam transaksi yang sama + catatan audit.
+- `avatar_url` dalam `profileResponse`, `memberResponse`, dan
+  `author` bagi post + comment (elak N+1 lookup dalam feed).
+
+Diuji lawan Postgres sebenar: kunci bukan milik caller ditolak dan tak
+mengubah apa-apa; avatar lama betul-betul digilirkan.
+
+- [ ] Reaper: belum ada ujian live khusus yang membuktikan avatar yatim
+      dituntut (laluan sama macam gambar post, jadi kemungkinan besar okay).
+
+## Pembetulan: memadam user pernah MUSTAHIL
+
+Ditemui oleh ujian semasa kerja avatar. `audit_logs.actor_id` ada
+`on delete set null` supaya jejak kekal bila akaun dipadam — tetapi "set
+null" itu satu UPDATE, dan trigger append-only menolak semua UPDATE
+kecuali bentuk redaksi PII. Jadi `delete from users` gagal terus.
+
+Migration `20260809210000` meluaskan peraturan: `actor_id`, `ip_address`
+dan `user_agent` boleh DIKOSONGKAN kepada NULL, tiada apa lagi boleh
+berubah, dan ketiga-tiganya tak boleh ditulis ganti dengan nilai lain.
+Sejarah kekal tak boleh ditulis semula. Ditutup dengan ujian.
 
 ## Jejak audit — jurang yang tinggal
 

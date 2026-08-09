@@ -49,6 +49,15 @@ const (
 	// atau client lama. Apa-apa di atas tu bukan lagi kecuaian.
 	MaxImageDimension = 4096
 
+	// MaxAvatarDimension — had khusus gambar profil.
+	//
+	// Jauh lebih ketat drpd gambar post sebab avatar dipapar dalam bulatan
+	// 28–80dp. Menyimpan 2048px untuk itu membazir storan dan memaksa
+	// setiap peranti menyahkod jauh lebih banyak piksel drpd yang dilukis.
+	// Client hadkan kepada 512; 1024 di sini beri kelonggaran yang sama
+	// (2x) macam pasangan 2048/4096 untuk gambar post.
+	MaxAvatarDimension = 1024
+
 	// MaxImagesPerPost — had bilangan gambar setiap post.
 	MaxImagesPerPost = 4
 )
@@ -150,6 +159,16 @@ func (r *R2Client) VerifyImageSize(ctx context.Context, key string) error {
 // Dipanggil sekali gus dengan VerifyImageSize sebelum r2_key diterima
 // masuk post.
 func (r *R2Client) VerifyImageFormat(ctx context.Context, key string) error {
+	return r.verifyImage(ctx, key, MaxImageDimension)
+}
+
+// VerifyAvatar sama macam VerifyImageFormat tapi dengan had dimensi
+// avatar yang lebih ketat.
+func (r *R2Client) VerifyAvatar(ctx context.Context, key string) error {
+	return r.verifyImage(ctx, key, MaxAvatarDimension)
+}
+
+func (r *R2Client) verifyImage(ctx context.Context, key string, maxDim int) error {
 	if !r.configured {
 		return fmt.Errorf("R2 belum configure")
 	}
@@ -180,7 +199,7 @@ func (r *R2Client) VerifyImageFormat(ctx context.Context, key string) error {
 		return ErrImageInvalidFormat
 	}
 
-	return verifyDimensions(buf)
+	return verifyDimensions(buf, maxDim)
 }
 
 // verifyDimensions baca SAHAJA header gambar (image.DecodeConfig) untuk
@@ -190,7 +209,7 @@ func (r *R2Client) VerifyImageFormat(ctx context.Context, key string) error {
 // WEBP sengaja dilepaskan: decoder webp bukan sebahagian pustaka standard,
 // dan menambah kebergantungan semata-mata untuk semakan ni tak berbaloi
 // sekarang. Had saiz bait (VerifyImageSize) masih terpakai padanya.
-func verifyDimensions(header []byte) error {
+func verifyDimensions(header []byte, maxDim int) error {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(header))
 	if err != nil {
 		// Header terpotong atau format tanpa decoder berdaftar (WEBP).
@@ -198,7 +217,7 @@ func verifyDimensions(header []byte) error {
 		// number dah lulus, dan had bait masih menjaga kes paling teruk.
 		return nil
 	}
-	if cfg.Width > MaxImageDimension || cfg.Height > MaxImageDimension {
+	if cfg.Width > maxDim || cfg.Height > maxDim {
 		return fmt.Errorf("%w: %dx%d", ErrImageTooManyPixels, cfg.Width, cfg.Height)
 	}
 	return nil

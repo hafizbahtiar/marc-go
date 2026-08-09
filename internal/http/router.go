@@ -74,7 +74,7 @@ func NewRouter(
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	protectedAuthGroup.POST("/verify-email/request", authRateLimiter, authHandler.RequestEmailVerification)
 
-	profileHandler := handlers.NewProfileHandler(pool, emailClient)
+	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
 
 	protected := r.Group("/", middleware.RequireAuth(jwtSvc))
@@ -102,7 +102,7 @@ func NewRouter(
 	// RequireAuth. Payment gate akan ditambah dalam middleware ni bila
 	// payment system siap (bukan sekarang).
 	postHandler := handlers.NewPostHandler(pool, r2Client, pushSvc)
-	commentHandler := handlers.NewCommentHandler(pool, pushSvc)
+	commentHandler := handlers.NewCommentHandler(pool, pushSvc, r2Client)
 	notificationHandler := handlers.NewNotificationHandler(pool)
 	uploadHandler := handlers.NewUploadHandler(pool, r2Client)
 

@@ -106,6 +106,35 @@ func TestTriggerMasihTolakPengubahanSejarah(t *testing.T) {
 		})
 	}
 
+	// Kes yang pernah membuntukan: memadam user mencetuskan
+	// `on delete set null` pada actor_id, iaitu satu UPDATE. Kalau trigger
+	// menolaknya, akaun tak boleh dipadam LANGSUNG.
+	t.Run("padam user boleh set actor_id NULL", func(t *testing.T) {
+		var uid string
+		if err := pool.QueryRow(ctx,
+			`insert into users (email, password_hash) values ($1,'x') returning id`,
+			"cascade-"+uuid.NewString()+"@test.local").Scan(&uid); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx,
+			`insert into audit_logs (entity_type, entity_id, action, actor_id)
+			 values ('profile', $1, 'update', $1)`, uid); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `delete from users where id = $1`, uid); err != nil {
+			t.Fatalf("padam user disekat oleh trigger append-only: %v", err)
+		}
+		var n int
+		if err := pool.QueryRow(ctx,
+			`select count(*) from audit_logs where entity_id = $1 and actor_id is null`,
+			uid).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("catatan audit patut kekal dgn actor_id NULL, dapat %d", n)
+		}
+	})
+
 	// DELETE kekal dibenarkan (perlu untuk pruning simpanan).
 	if _, err := pool.Exec(ctx, `delete from audit_logs where id = $1`, id); err != nil {
 		t.Fatalf("DELETE patut dibenarkan untuk pruning: %v", err)

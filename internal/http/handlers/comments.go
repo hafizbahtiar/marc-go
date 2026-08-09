@@ -15,16 +15,18 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
 	"marc/internal/push"
+	"marc/internal/storage"
 )
 
 type CommentHandler struct {
 	pool    *pgxpool.Pool
 	queries *sqlc.Queries
 	push    *push.Service
+	r2      *storage.R2Client
 }
 
-func NewCommentHandler(pool *pgxpool.Pool, pushSvc *push.Service) *CommentHandler {
-	return &CommentHandler{pool: pool, queries: sqlc.New(pool), push: pushSvc}
+func NewCommentHandler(pool *pgxpool.Pool, pushSvc *push.Service, r2 *storage.R2Client) *CommentHandler {
+	return &CommentHandler{pool: pool, queries: sqlc.New(pool), push: pushSvc, r2: r2}
 }
 
 type createCommentRequest struct {
@@ -107,6 +109,7 @@ func (h *CommentHandler) Create(c *gin.Context) {
 			s := profile.DisplayName.String
 			author.DisplayName = &s
 		}
+		author.AvatarURL = avatarURLFor(h.r2, profile.AvatarR2Key)
 	}
 
 	c.JSON(http.StatusCreated, commentResponse{
@@ -183,6 +186,7 @@ func (h *CommentHandler) List(c *gin.Context) {
 			Author: authorResponse{
 				MemberID:    r.AuthorMemberID,
 				DisplayName: displayName,
+				AvatarURL:   avatarURLFor(h.r2, r.AuthorAvatarR2Key),
 			},
 			LikeCount: likeCountByComment[r.ID],
 			LikedByMe: likedByMe[r.ID],
