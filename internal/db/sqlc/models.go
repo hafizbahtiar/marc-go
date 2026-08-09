@@ -9,6 +9,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuditLog struct {
+	ID            int64              `json:"id"`
+	EntityType    string             `json:"entity_type"`
+	EntityID      uuid.UUID          `json:"entity_id"`
+	Action        string             `json:"action"`
+	ActorID       pgtype.UUID        `json:"actor_id"`
+	ActorMemberID pgtype.Text        `json:"actor_member_id"`
+	ActorRoleKey  pgtype.Text        `json:"actor_role_key"`
+	ChangedFields []string           `json:"changed_fields"`
+	OldValues     []byte             `json:"old_values"`
+	NewValues     []byte             `json:"new_values"`
+	IpAddress     pgtype.Text        `json:"ip_address"`
+	UserAgent     pgtype.Text        `json:"user_agent"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type Comment struct {
 	ID              uuid.UUID          `json:"id"`
 	PostID          uuid.UUID          `json:"post_id"`

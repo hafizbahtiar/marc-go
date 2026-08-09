@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -10,18 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"marc/internal/audit"
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
 	"marc/internal/push"
 )
 
 type CommentHandler struct {
+	pool    *pgxpool.Pool
 	queries *sqlc.Queries
 	push    *push.Service
 }
 
 func NewCommentHandler(pool *pgxpool.Pool, pushSvc *push.Service) *CommentHandler {
-	return &CommentHandler{queries: sqlc.New(pool), push: pushSvc}
+	return &CommentHandler{pool: pool, queries: sqlc.New(pool), push: pushSvc}
 }
 
 type createCommentRequest struct {
@@ -208,18 +211,46 @@ func (h *CommentHandler) Update(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	authorID, err := h.queries.GetCommentAuthorID(ctx, id)
+	// GetCommentByID (bukan GetCommentAuthorID) — kandungan lama diperlukan
+	// untuk jejak audit, dan baris yang sama dah bawa author_id.
+	existing, err := h.queries.GetCommentByID(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "comment tidak dijumpai"})
 		return
 	}
-	if authorID != userID {
+	if existing.AuthorID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "cuma pemilik boleh edit comment"})
 		return
 	}
 
-	updated, err := h.queries.UpdateComment(ctx, sqlc.UpdateCommentParams{ID: id, Content: req.Content})
+	tx, err := h.pool.Begin(ctx)
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini comment"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	updated, err := q.UpdateComment(ctx, sqlc.UpdateCommentParams{ID: id, Content: req.Content})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini comment"})
+		return
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityComment,
+		EntityID:   id,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, h.queries),
+		Old:        map[string]any{"content": existing.Content},
+		New:        map[string]any{"content": updated.Content},
+	}); err != nil {
+		log.Printf("audit comment update: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini comment"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini comment"})
 		return
 	}
@@ -243,19 +274,51 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	authorID, err := h.queries.GetCommentAuthorID(ctx, id)
+	existing, err := h.queries.GetCommentByID(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "comment tidak dijumpai"})
 		return
 	}
 
-	allowed, err := canModify(ctx, h.queries, userID, authorID)
+	allowed, err := canModify(ctx, h.queries, userID, existing.AuthorID)
 	if err != nil || !allowed {
 		c.JSON(http.StatusForbidden, gin.H{"error": "tidak dibenarkan padam comment ini"})
 		return
 	}
 
-	if err := h.queries.SoftDeleteComment(ctx, id); err != nil {
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam comment"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	if err := q.SoftDeleteComment(ctx, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam comment"})
+		return
+	}
+
+	// Snapshot penuh pada padam — selepas ni kandungan tak dapat dibaca
+	// semula melalui API, jadi jejak audit satu-satunya rekod apa yang
+	// dibuang dan oleh siapa (management boleh padam comment orang lain).
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityComment,
+		EntityID:   id,
+		Action:     audit.ActionDelete,
+		Actor:      auditActor(c, h.queries),
+		Old: map[string]any{
+			"content":   existing.Content,
+			"author_id": existing.AuthorID.String(),
+			"post_id":   existing.PostID.String(),
+		},
+	}); err != nil {
+		log.Printf("audit comment delete: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam comment"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam comment"})
 		return
 	}

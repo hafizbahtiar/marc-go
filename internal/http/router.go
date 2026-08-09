@@ -90,6 +90,9 @@ func NewRouter(
 	approved.POST("/members/:id/approve", profileHandler.ApproveMember)
 	approved.POST("/members/:id/reject", profileHandler.RejectMember)
 	approved.PATCH("/members/:id/role", profileHandler.UpdateMemberRole)
+
+	// Jejak audit (management sahaja, dikuatkuasakan dalam handler).
+	approved.GET("/audit-logs", handlers.NewAuditHandler(pool).List)
 	approved.GET("/roles", profileHandler.ListRoles)
 	approved.POST("/device-tokens", deviceTokenHandler.Upsert)
 	approved.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)

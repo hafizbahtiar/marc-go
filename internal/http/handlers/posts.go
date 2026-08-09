@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"marc/internal/audit"
 	"marc/internal/authz"
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
@@ -99,6 +101,12 @@ func (h *PostHandler) Create(c *gin.Context) {
 		}
 
 		if err := h.r2.VerifyImageFormat(ctx, key); err != nil {
+			// Log ralat SEBENAR sebelum ditukar jadi 400 generik. Dua punca
+			// yang berbeza sama sekali runtuh jadi mesej yang sama di sini:
+			// gambar betul-betul rosak/tak diupload, ATAU R2 tolak GetObject
+			// kita dengan AccessDenied (skop token salah). Tanpa baris ni,
+			// masalah kredential nampak macam masalah fail pengguna.
+			log.Printf("verify gambar gagal (r2_key=%s, user=%s): %v", key, userID, err)
 			_ = h.r2.DeleteImage(ctx, key)
 			_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
 			c.JSON(http.StatusBadRequest, gin.H{"error": "gambar tidak sah atau belum diupload"})
@@ -261,17 +269,44 @@ func (h *PostHandler) Update(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	authorID, err := h.queries.GetPostAuthorID(ctx, id)
+	before, err := h.queries.GetPostByID(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "post tidak dijumpai"})
 		return
 	}
-	if authorID != userID {
+	if before.AuthorID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "cuma pemilik boleh edit post"})
 		return
 	}
 
-	if _, err := h.queries.UpdatePost(ctx, sqlc.UpdatePostParams{ID: id, Content: req.Content}); err != nil {
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini post"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	updated, err := q.UpdatePost(ctx, sqlc.UpdatePostParams{ID: id, Content: req.Content})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini post"})
+		return
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityPost,
+		EntityID:   id,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, h.queries),
+		Old:        map[string]any{"content": before.Content},
+		New:        map[string]any{"content": updated.Content},
+	}); err != nil {
+		log.Printf("audit post update: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini post"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini post"})
 		return
 	}
@@ -301,19 +336,50 @@ func (h *PostHandler) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	authorID, err := h.queries.GetPostAuthorID(ctx, id)
+	before, err := h.queries.GetPostByID(ctx, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "post tidak dijumpai"})
 		return
 	}
 
-	allowed, err := canModify(ctx, h.queries, userID, authorID)
+	allowed, err := canModify(ctx, h.queries, userID, before.AuthorID)
 	if err != nil || !allowed {
 		c.JSON(http.StatusForbidden, gin.H{"error": "tidak dibenarkan padam post ini"})
 		return
 	}
 
-	if err := h.queries.SoftDeletePost(ctx, id); err != nil {
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam post"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	if err := q.SoftDeletePost(ctx, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam post"})
+		return
+	}
+
+	// Snapshot penuh — management boleh padam post orang lain, jadi ini
+	// satu-satunya rekod kekal tentang apa yang dibuang.
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityPost,
+		EntityID:   id,
+		Action:     audit.ActionDelete,
+		Actor:      auditActor(c, h.queries),
+		Old: map[string]any{
+			"content":   before.Content,
+			"type":      before.Type,
+			"author_id": before.AuthorID.String(),
+		},
+	}); err != nil {
+		log.Printf("audit post delete: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam post"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam post"})
 		return
 	}

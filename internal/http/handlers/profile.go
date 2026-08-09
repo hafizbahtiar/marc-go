@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"marc/internal/audit"
 	"marc/internal/authz"
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
@@ -19,12 +20,13 @@ import (
 )
 
 type ProfileHandler struct {
+	pool        *pgxpool.Pool
 	queries     *sqlc.Queries
 	emailClient *email.Client
 }
 
 func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client) *ProfileHandler {
-	return &ProfileHandler{queries: sqlc.New(pool), emailClient: emailClient}
+	return &ProfileHandler{pool: pool, queries: sqlc.New(pool), emailClient: emailClient}
 }
 
 type profileResponse struct {
@@ -114,46 +116,44 @@ type memberResponse struct {
 }
 
 // Members setara `membersProvider` di Flutter — gantian RLS
-// `select_all_profiles_management`: ahli biasa nampak diri sendiri
-// sahaja, management nampak semua. Management boleh tapis
-// `?status=pending` untuk senarai ahli menunggu kelulusan (Stage 11).
+// `select_all_profiles_management`. Keterlihatan ikut hierarki
+// `roles.rank` (lihat visibleRankCeiling), BUKAN lagi "ahli nampak diri
+// sendiri sahaja". Dua kawalan tambahan:
+//
+//   - Ahli biasa cuma nampak ahli berstatus 'approved' (+ baris dia
+//     sendiri) — direktori ahli, bukan barisan kelulusan.
+//   - `?status=pending` (barisan kelulusan Stage 11) management sahaja.
+//
+// Semua tapisan dikuatkuasakan dalam SQL — lihat ListVisibleProfiles.
 func (h *ProfileHandler) Members(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	isManagement, err := authz.IsManagement(ctx, h.queries, userID)
+	caller, err := h.queries.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "profil tidak dijumpai"})
+		return
+	}
+	isManagement := caller.RoleCategory == authz.CategoryManagement
+
+	statusFilter := c.Query("status")
+	if statusFilter != "" && !isManagement {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma pengurusan boleh tapis ahli ikut status"})
+		return
+	}
+
+	roles, err := h.queries.ListRoles(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai ahli"})
 		return
 	}
 
-	if !isManagement {
-		row, err := h.queries.GetProfileByUserID(ctx, userID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "profil tidak dijumpai"})
-			return
-		}
-		c.JSON(http.StatusOK, []memberResponse{
-			toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status),
-		})
-		return
-	}
-
-	if statusFilter := c.Query("status"); statusFilter != "" {
-		rows, err := h.queries.ListProfilesByStatus(ctx, statusFilter)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai ahli"})
-			return
-		}
-		members := make([]memberResponse, len(rows))
-		for i, row := range rows {
-			members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status)
-		}
-		c.JSON(http.StatusOK, members)
-		return
-	}
-
-	rows, err := h.queries.ListProfiles(ctx)
+	rows, err := h.queries.ListVisibleProfiles(ctx, sqlc.ListVisibleProfilesParams{
+		MaxRank:            visibleRankCeiling(roles, caller.RoleRank),
+		Status:             ptrToText(statusFilter),
+		IncludeAllStatuses: isManagement,
+		ViewerID:           userID,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai ahli"})
 		return
@@ -164,6 +164,41 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		members[i] = toMemberResponse(row.UserID, row.MemberID, row.DisplayName, row.Email, row.RoleKey, row.RoleName, row.RoleRank, row.RoleCategory, row.Status)
 	}
 	c.JSON(http.StatusOK, members)
+}
+
+// visibleRankCeiling — rank TERTINGGI yang seorang viewer boleh nampak
+// dalam senarai ahli. Peraturan: nampak semua orang sehingga SATU
+// tingkat di atas rank sendiri, kecuali rank tertinggi (superadmin) yang
+// tak pernah didedahkan kepada sesiapa selain superadmin sendiri.
+//
+// Dengan seed semasa (ahli 10, supervisor 50, manager 60, superadmin 100):
+//
+//	ahli       -> 50  (ahli + supervisor)
+//	supervisor -> 60  (ahli + supervisor + manager)
+//	manager    -> 60  (manager ke bawah; superadmin tersembunyi)
+//	superadmin -> 100 (semua)
+//
+// Dikira daripada jadual `roles` dan bukan rank hardcoded supaya role
+// baharu yang disisip di tengah-tengah hierarki terus ikut peraturan ni.
+func visibleRankCeiling(roles []sqlc.Role, viewerRank int32) int32 {
+	var topRank int32
+	for _, r := range roles {
+		if r.Rank > topRank {
+			topRank = r.Rank
+		}
+	}
+	if viewerRank >= topRank {
+		return topRank
+	}
+
+	ceiling := viewerRank
+	for _, r := range roles {
+		// Rank tertinggi (topRank) sengaja dilangkau — itulah superadmin.
+		if r.Rank > viewerRank && r.Rank < topRank && (ceiling == viewerRank || r.Rank < ceiling) {
+			ceiling = r.Rank
+		}
+	}
+	return ceiling
 }
 
 func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text, email, roleKey, roleName string, roleRank int32, category, status string) memberResponse {
@@ -180,16 +215,20 @@ func toMemberResponse(userID uuid.UUID, memberID string, displayName pgtype.Text
 	}
 }
 
-// ListRoles (Stage 12) — management sahaja. Senarai role tersedia untuk
-// UI edit role (bottom sheet) tapis rank yang boleh diassign.
+// ListRoles (Stage 12) — management sahaja. Senarai role untuk UI edit
+// role (bottom sheet). Ditapis kepada role yang caller memang BOLEH
+// assign (rank lebih rendah drpd rank dia — syarat sama yang
+// dikuatkuasakan UpdateMemberRole), jadi 'superadmin' tak pernah muncul
+// kecuali kepada superadmin. Dulu senarai penuh dihantar dan client yang
+// kena tapis.
 func (h *ProfileHandler) ListRoles(c *gin.Context) {
 	ctx := c.Request.Context()
-	isManagement, err := authz.IsManagement(ctx, h.queries, middleware.UserID(c))
+	caller, err := h.queries.GetProfileByUserID(ctx, middleware.UserID(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai role"})
 		return
 	}
-	if !isManagement {
+	if caller.RoleCategory != authz.CategoryManagement {
 		c.JSON(http.StatusForbidden, gin.H{"error": "cuma pengurusan boleh lihat senarai role"})
 		return
 	}
@@ -205,9 +244,12 @@ func (h *ProfileHandler) ListRoles(c *gin.Context) {
 		Name string `json:"name"`
 		Rank int32  `json:"rank"`
 	}
-	res := make([]roleResponse, len(roles))
-	for i, r := range roles {
-		res[i] = roleResponse{Key: r.Key, Name: r.Name, Rank: r.Rank}
+	res := make([]roleResponse, 0, len(roles))
+	for _, r := range roles {
+		if r.Rank >= caller.RoleRank {
+			continue
+		}
+		res = append(res, roleResponse{Key: r.Key, Name: r.Name, Rank: r.Rank})
 	}
 	c.JSON(http.StatusOK, res)
 }
@@ -272,11 +314,40 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
-	updated, err := h.queries.UpdateProfileRole(ctx, sqlc.UpdateProfileRoleParams{
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini role ahli"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	updated, err := q.UpdateProfileRole(ctx, sqlc.UpdateProfileRoleParams{
 		UserID: targetID,
 		RoleID: newRole.ID,
 	})
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini role ahli"})
+		return
+	}
+
+	// Perubahan keistimewaan — catatan audit paling bernilai dalam sistem
+	// ni. Rank direkod sekali, bukan cuma kunci role, supaya "siapa naikkan
+	// siapa" boleh dibaca tanpa merujuk jadual roles versi masa itu.
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityProfile,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, h.queries),
+		Old:        map[string]any{"role_key": target.RoleKey, "role_rank": target.RoleRank},
+		New:        map[string]any{"role_key": newRole.Key, "role_rank": newRole.Rank},
+	}); err != nil {
+		log.Printf("audit tukar role: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini role ahli"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini role ahli"})
 		return
 	}

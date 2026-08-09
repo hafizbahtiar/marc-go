@@ -615,6 +615,36 @@ verified lawan Stripe sebenar (tunggu credential). ToyyibPay + SociaBuzz
 
 ---
 
+## Stage 13 — Jejak audit (audit_logs) ✅ backend siap
+
+Satu jadual generik `audit_logs` untuk semua entiti yang boleh diubah.
+Migration `20260809140000_create_audit_logs.sql`, package `internal/audit`.
+
+Prinsip:
+- **Delta sahaja** untuk `update` — cuma field yang berubah disimpan dalam
+  `old_values`/`new_values` (jsonb), `changed_fields` untuk tapisan murah.
+  `create` → old null; `delete` → snapshot penuh dalam old.
+- **Dalam transaksi yang sama** dengan mutasi (`queries.WithTx(tx)`).
+  Catatan gagal = keseluruhan permintaan gagal. Jejak best-effort yang
+  boleh hilang senyap bukan jejak.
+- **Append-only di peringkat DB** — trigger tolak UPDATE. DELETE dibenarkan
+  supaya pruning simpanan mungkin.
+- Actor snapshot `member_id` + `role_key` sebagai teks: role berubah, kita
+  nak tahu kuasa yang dia ADA masa tindakan itu.
+
+Sudah dipasang: post update/delete, comment update/delete, tukar role ahli.
+Baca: `GET /audit-logs` (management sahaja) — tapis ikut
+`entity_type`/`entity_id`/`action`/`actor_id`, pagination keyset `before_id`.
+
+Belum:
+- [ ] Polisi simpanan + jadual pruning (`DeleteAuditLogsBefore` dah ada tapi
+      tak dipanggil dari mana-mana — sengaja, tunggu polisi diputuskan).
+      `ip_address`/`user_agent` ialah data peribadi (PDPA).
+- [ ] UI Flutter untuk baca jejak (endpoint dah sedia)
+- [ ] Audit untuk approve/reject ahli — nilai tinggi, belum dipasang
+- [ ] Audit untuk `create` post/comment (volum tinggi, faedah rendah sebab
+      entiti sendiri dah simpan author + created_at) — putuskan dulu
+
 ## Belum putus / perlu bincang lagi
 - R2 API token permission scope (403 AccessDenied bila upload sebenar,
   walaupun presign + checksum dah betul) — perlu kau semak Cloudflare

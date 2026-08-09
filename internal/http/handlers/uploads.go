@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -51,6 +52,7 @@ func (h *UploadHandler) Presign(c *gin.Context) {
 
 	uploadURL, key, err := h.r2.PresignUpload(c.Request.Context(), req.ContentType)
 	if err != nil {
+		log.Printf("presign R2 gagal (content_type=%s): %v", req.ContentType, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana upload URL"})
 		return
 	}
@@ -59,9 +61,17 @@ func (h *UploadHandler) Presign(c *gin.Context) {
 		R2Key:  key,
 		UserID: middleware.UserID(c),
 	}); err != nil {
+		log.Printf("simpan pending upload gagal (r2_key=%s): %v", key, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana upload URL"})
 		return
 	}
+
+	// Peringkat seterusnya (PUT ke R2) berlaku TERUS dari peranti ke
+	// Cloudflare — ia tak melalui server ni langsung. Jadi baris ni ialah
+	// jejak sisi-server terakhir sebelum upload hilang dari pandangan kita:
+	// kalau ia ada tapi post tak pernah sampai, kegagalan itu antara
+	// peranti dan R2.
+	log.Printf("presign dikeluarkan (r2_key=%s, user=%s, content_type=%s)", key, middleware.UserID(c), req.ContentType)
 
 	c.JSON(http.StatusOK, gin.H{"upload_url": uploadURL, "r2_key": key})
 }

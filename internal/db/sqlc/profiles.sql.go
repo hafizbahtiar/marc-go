@@ -194,7 +194,7 @@ func (q *Queries) ListManagementUserIDs(ctx context.Context, category string) ([
 	return items, nil
 }
 
-const listProfiles = `-- name: ListProfiles :many
+const listVisibleProfiles = `-- name: ListVisibleProfiles :many
 select
   p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at,
   u.email as email,
@@ -205,10 +205,24 @@ select
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
+where r.rank <= $1::int
+  and ($2::text is null or p.status = $2::text)
+  and (
+    $3::boolean
+    or p.status = 'approved'
+    or p.user_id = $4
+  )
 order by p.member_id
 `
 
-type ListProfilesRow struct {
+type ListVisibleProfilesParams struct {
+	MaxRank            int32       `json:"max_rank"`
+	Status             pgtype.Text `json:"status"`
+	IncludeAllStatuses bool        `json:"include_all_statuses"`
+	ViewerID           uuid.UUID   `json:"viewer_id"`
+}
+
+type ListVisibleProfilesRow struct {
 	ID            uuid.UUID          `json:"id"`
 	UserID        uuid.UUID          `json:"user_id"`
 	MemberID      string             `json:"member_id"`
@@ -227,86 +241,31 @@ type ListProfilesRow struct {
 	RoleRank      int32              `json:"role_rank"`
 }
 
-func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
-	rows, err := q.db.Query(ctx, listProfiles)
+// Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
+// dibuat di peringkat SQL (bukan dalam Go) supaya baris yang viewer tak
+// layak tengok tak pernah pun keluar dari DB:
+//
+//	max_rank             — siling hierarki keterlihatan; lihat
+//	                       `visibleRankCeiling` di handlers/profile.go
+//	status               — penapis pilihan (cth 'pending' utk barisan
+//	                       kelulusan management)
+//	include_all_statuses — management sahaja. Ahli biasa cuma nampak ahli
+//	                       berstatus 'approved' (+ baris dia sendiri,
+//	                       apa pun statusnya)
+func (q *Queries) ListVisibleProfiles(ctx context.Context, arg ListVisibleProfilesParams) ([]ListVisibleProfilesRow, error) {
+	rows, err := q.db.Query(ctx, listVisibleProfiles,
+		arg.MaxRank,
+		arg.Status,
+		arg.IncludeAllStatuses,
+		arg.ViewerID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListProfilesRow
+	var items []ListVisibleProfilesRow
 	for rows.Next() {
-		var i ListProfilesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.MemberID,
-			&i.DisplayName,
-			&i.Phone,
-			&i.RoleID,
-			&i.EmailVerified,
-			&i.CreatedAt,
-			&i.Status,
-			&i.ApprovedBy,
-			&i.ApprovedAt,
-			&i.Email,
-			&i.RoleKey,
-			&i.RoleName,
-			&i.RoleCategory,
-			&i.RoleRank,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listProfilesByStatus = `-- name: ListProfilesByStatus :many
-select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at,
-  u.email as email,
-  r.key as role_key,
-  r.name as role_name,
-  r.category as role_category,
-  r.rank as role_rank
-from profiles p
-join users u on u.id = p.user_id
-join roles r on r.id = p.role_id
-where p.status = $1
-order by p.member_id
-`
-
-type ListProfilesByStatusRow struct {
-	ID            uuid.UUID          `json:"id"`
-	UserID        uuid.UUID          `json:"user_id"`
-	MemberID      string             `json:"member_id"`
-	DisplayName   pgtype.Text        `json:"display_name"`
-	Phone         pgtype.Text        `json:"phone"`
-	RoleID        int16              `json:"role_id"`
-	EmailVerified bool               `json:"email_verified"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Status        string             `json:"status"`
-	ApprovedBy    pgtype.UUID        `json:"approved_by"`
-	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
-	Email         string             `json:"email"`
-	RoleKey       string             `json:"role_key"`
-	RoleName      string             `json:"role_name"`
-	RoleCategory  string             `json:"role_category"`
-	RoleRank      int32              `json:"role_rank"`
-}
-
-func (q *Queries) ListProfilesByStatus(ctx context.Context, status string) ([]ListProfilesByStatusRow, error) {
-	rows, err := q.db.Query(ctx, listProfilesByStatus, status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListProfilesByStatusRow
-	for rows.Next() {
-		var i ListProfilesByStatusRow
+		var i ListVisibleProfilesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,

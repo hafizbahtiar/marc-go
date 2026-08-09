@@ -42,23 +42,20 @@ where p.user_id = $1;
 -- name: GetEmailVerifiedByUserID :one
 select email_verified from profiles where user_id = $1;
 
--- name: ListProfiles :many
-select
-  p.*,
-  u.email as email,
-  r.key as role_key,
-  r.name as role_name,
-  r.category as role_category,
-  r.rank as role_rank
-from profiles p
-join users u on u.id = p.user_id
-join roles r on r.id = p.role_id
-order by p.member_id;
-
 -- name: GetStatusByUserID :one
 select status from profiles where user_id = $1;
 
--- name: ListProfilesByStatus :many
+-- name: ListVisibleProfiles :many
+-- Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
+-- dibuat di peringkat SQL (bukan dalam Go) supaya baris yang viewer tak
+-- layak tengok tak pernah pun keluar dari DB:
+--   max_rank             — siling hierarki keterlihatan; lihat
+--                          `visibleRankCeiling` di handlers/profile.go
+--   status               — penapis pilihan (cth 'pending' utk barisan
+--                          kelulusan management)
+--   include_all_statuses — management sahaja. Ahli biasa cuma nampak ahli
+--                          berstatus 'approved' (+ baris dia sendiri,
+--                          apa pun statusnya)
 select
   p.*,
   u.email as email,
@@ -69,7 +66,13 @@ select
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
-where p.status = $1
+where r.rank <= sqlc.arg('max_rank')::int
+  and (sqlc.narg('status')::text is null or p.status = sqlc.narg('status')::text)
+  and (
+    sqlc.arg('include_all_statuses')::boolean
+    or p.status = 'approved'
+    or p.user_id = sqlc.arg('viewer_id')
+  )
 order by p.member_id;
 
 -- name: ApproveProfile :one

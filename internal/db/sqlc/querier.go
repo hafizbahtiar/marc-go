@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -25,6 +26,7 @@ type Querier interface {
 	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
 	CountPostLikes(ctx context.Context, postID uuid.UUID) (int64, error)
 	CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountPostLikesByPostIDsRow, error)
+	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) error
 	CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error)
 	CreateDonation(ctx context.Context, arg CreateDonationParams) (Donation, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
@@ -35,6 +37,9 @@ type Querier interface {
 	CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Pruning polisi simpanan. Belum dipanggil dari mana-mana — sengaja,
+	// supaya polisi diputuskan dulu sebelum data dibuang.
+	DeleteAuditLogsBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	DeleteDeviceToken(ctx context.Context, arg DeleteDeviceTokenParams) error
 	DeleteDeviceTokenByOnesignalID(ctx context.Context, arg DeleteDeviceTokenByOnesignalIDParams) error
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
@@ -60,6 +65,12 @@ type Querier interface {
 	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
 	LikeComment(ctx context.Context, arg LikeCommentParams) error
 	LikePost(ctx context.Context, arg LikePostParams) error
+	// Feed audit global dengan tapisan pilihan. Pagination keyset guna
+	// `before_id` (bukan OFFSET) — stabil walaupun baris baharu masuk
+	// semasa pengguna membelek.
+	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
+	// Timeline satu entiti (cth semua suntingan pada satu post).
+	ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsByEntityParams) ([]AuditLog, error)
 	// Flat list, semua comment (top-level + reply) untuk satu post. Client
 	// bina tree guna parent_comment_id.
 	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)
@@ -71,9 +82,18 @@ type Querier interface {
 	// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
-	ListProfiles(ctx context.Context) ([]ListProfilesRow, error)
-	ListProfilesByStatus(ctx context.Context, status string) ([]ListProfilesByStatusRow, error)
 	ListRoles(ctx context.Context) ([]Role, error)
+	// Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
+	// dibuat di peringkat SQL (bukan dalam Go) supaya baris yang viewer tak
+	// layak tengok tak pernah pun keluar dari DB:
+	//   max_rank             — siling hierarki keterlihatan; lihat
+	//                          `visibleRankCeiling` di handlers/profile.go
+	//   status               — penapis pilihan (cth 'pending' utk barisan
+	//                          kelulusan management)
+	//   include_all_statuses — management sahaja. Ahli biasa cuma nampak ahli
+	//                          berstatus 'approved' (+ baris dia sendiri,
+	//                          apa pun statusnya)
+	ListVisibleProfiles(ctx context.Context, arg ListVisibleProfilesParams) ([]ListVisibleProfilesRow, error)
 	MarkAllNotificationsRead(ctx context.Context, recipientID uuid.UUID) error
 	MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error

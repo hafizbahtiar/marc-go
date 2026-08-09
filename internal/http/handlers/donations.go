@@ -264,15 +264,15 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation)
 
 	displayName := donorName
 	if displayName == "" {
-		displayName = "Penderma"
+		displayName = "Penyumbang"
 	}
-	subject := "Resit Sumbangan MARC"
+	subject := "Terima kasih kerana menyokong MARC"
 	body := donationReceiptHTML(displayName, formatRinggit(int64(d.AmountCents), d.Currency), d.GatewayRef, paidAt)
 
 	var attachments []email.Attachment
 	if pdfBytes != nil {
 		attachments = append(attachments, email.Attachment{
-			Filename: fmt.Sprintf("Resit-MARC-%s.pdf", d.GatewayRef),
+			Filename: fmt.Sprintf("Resit-Sokongan-MARC-%s.pdf", d.GatewayRef),
 			Content:  pdfBytes,
 		})
 	}
@@ -307,16 +307,22 @@ func donationReceiptHTML(name, amount, ref string, paidAt time.Time) string {
       <table role="presentation" width="100%%" style="max-width:480px;background-color:#FFFFFF;border-radius:12px;overflow:hidden;">
         <tr><td style="background-color:#2F6B4F;padding:24px 32px;">
           <span style="font-size:20px;font-weight:700;color:#FFFFFF;letter-spacing:0.5px;">MARC</span>
+          <div style="margin-top:4px;font-size:12px;color:#D7E5DC;">Resit sokongan penyelenggaraan</div>
         </td></tr>
         <tr><td style="padding:32px;">
           <p style="margin:0 0 16px;font-size:15px;">Terima kasih, %s.</p>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.5;">
+            Sokongan anda untuk MARC dah selamat diterima. Duit ni pergi
+            terus kepada saya untuk menampung kos hosting, domain dan masa
+            penyelenggaraan supaya app ni kekal berjalan dan percuma untuk
+            semua ahli.
+          </p>
           <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">
-            Sumbangan anda kepada MARC telah berjaya diterima. Resit rasmi
-            (PDF) dilampirkan bersama emel ini.
+            Resit (PDF) dilampirkan bersama emel ini.
           </p>
           <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#FAF9F6;border-radius:10px;margin-bottom:24px;">
             <tr><td style="padding:20px 24px;">
-              <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;text-transform:uppercase;letter-spacing:0.5px;">Jumlah Sumbangan</p>
+              <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;text-transform:uppercase;letter-spacing:0.5px;">Jumlah Sokongan</p>
               <p style="margin:0;font-size:28px;font-weight:700;color:#1C1B19;">%s</p>
             </td></tr>
           </table>
@@ -326,9 +332,15 @@ func donationReceiptHTML(name, amount, ref string, paidAt time.Time) string {
           <p style="margin:0;font-size:14px;color:#1C1B19;">%s</p>
         </td></tr>
         <tr><td style="padding:20px 32px;border-top:1px solid #E4E1DA;">
+          <p style="margin:0 0 10px;font-size:12px;color:#6B6B6B;line-height:1.5;">
+            Sumbangan ini diberikan secara peribadi kepada pembangun MARC.
+            Ia <strong>bukan</strong> sumbangan kepada MAIWP atau mana-mana
+            badan amal, dan tidak layak untuk pelepasan cukai.
+          </p>
           <p style="margin:0;font-size:12px;color:#6B6B6B;line-height:1.5;">
             Emel ini dihantar automatik oleh sistem MARC. Sila simpan resit
-            PDF terlampir untuk rekod anda.
+            PDF terlampir untuk rekod anda.<br>
+            &mdash; Hafiz, pembangun MARC
           </p>
         </td></tr>
       </table>
