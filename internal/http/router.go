@@ -16,6 +16,7 @@ import (
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
 	"marc/internal/push"
+	"marc/internal/redisclient"
 	"marc/internal/storage"
 )
 
@@ -50,6 +51,7 @@ func NewRouter(
 	r2Client *storage.R2Client,
 	pushSvc *push.Service,
 	paymentGateways map[string]payment.Gateway,
+	redisCli *redisclient.Client,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
@@ -61,7 +63,10 @@ func NewRouter(
 
 	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL)
 
-	authRateLimiter := middleware.RateLimit(authRateLimit, authRateBurst)
+	// Satu factory, tiga had bernama. Nama MESTI unik — dalam Redis ia
+	// yang mengasingkan baldi; tanpa itu login dan upload berkongsi kuota.
+	rateLimiter := middleware.NewRateLimiter(redisCli)
+	authRateLimiter := rateLimiter.Limit("auth", authRateLimit, authRateBurst)
 
 	authGroup := r.Group("/auth")
 	authGroup.POST("/register", authRateLimiter, authHandler.Register)
@@ -122,7 +127,7 @@ func NewRouter(
 	verified.POST("/comments/:id/like", commentHandler.Like)
 	verified.DELETE("/comments/:id/like", commentHandler.Unlike)
 
-	uploadRateLimiter := middleware.RateLimit(rate.Every(6*time.Second), 5)
+	uploadRateLimiter := rateLimiter.Limit("upload", rate.Every(6*time.Second), 5)
 	verified.POST("/uploads/presign", uploadRateLimiter, uploadHandler.Presign)
 
 	verified.GET("/notifications", notificationHandler.List)
@@ -136,7 +141,7 @@ func NewRouter(
 	// Stripe terus — tambah gateway baru = daftar dlm paymentGateways
 	// (cmd/api/main.go), tiada perubahan di sini.
 	donationHandler := handlers.NewDonationHandler(pool, paymentGateways, emailClient)
-	donationRateLimiter := middleware.RateLimit(rate.Every(6*time.Second), 5)
+	donationRateLimiter := rateLimiter.Limit("donation", rate.Every(6*time.Second), 5)
 	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
 

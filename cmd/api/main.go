@@ -100,7 +100,7 @@ func main() {
 		UploadTombstone: cfg.UploadTombstoneRetention,
 	}, 24*time.Hour).Start(ctx)
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways)
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, redisCli)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

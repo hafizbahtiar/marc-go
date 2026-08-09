@@ -23,6 +23,10 @@ simpanan.
       gantinya ialah **presigned GET** (perubahan kod, belum dibuat).
 - [ ] **Rotate kunci test Stripe** yang sempat masuk git (commit `c170391`,
       dah di-amend sebelum push — tapi rotate tetap lebih selamat).
+- [ ] **Sambungkan Redis ke marc-go**: tambah pemboleh ubah rujukan
+      `REDIS_URL = ${{Redis.REDIS_URL}}` pada perkhidmatan marc-go.
+      Perkhidmatan Redis wujud tapi app tak nampak. Lihat bahagian Redis
+      di bawah untuk sama ada ia berbaloi buat masa ni.
 
 ## Stage 9 — Postgres RLS (defense-in-depth)
 
@@ -116,6 +120,67 @@ Migration `20260809210000` meluaskan peraturan: `actor_id`, `ip_address`
 dan `user_agent` boleh DIKOSONGKAN kepada NULL, tiada apa lagi boleh
 berubah, dan ketiga-tiganya tak boleh ditulis ganti dengan nilai lain.
 Sejarah kekal tak boleh ditulis semula. Ditutup dengan ujian.
+
+## Redis — modul mana yang patut guna, dan mana yang TIDAK
+
+Redis disambung (`internal/redisclient`, pilihan, no-op bila `REDIS_URL`
+kosong) dan **digunakan oleh had kadar** — satu-satunya modul yang
+mendapat faedah.
+
+**Blocker**: perkhidmatan Redis wujud di Railway tapi `marc-go` tiada
+pemboleh ubah rujukan. Tambah pada perkhidmatan marc-go:
+`REDIS_URL = ${{Redis.REDIS_URL}}`.
+
+Prinsip pemandu: **tiada apa dalam app ni yang menyimpan KEBENARAN dalam
+Redis.** Redis di sini pengganda skala, bukan simpanan. Kalau Redis
+hilang, kita hilang penyelarasan antara instance — bukan data.
+
+| Modul | Guna Redis? | Sebab |
+|---|---|---|
+| `http/middleware` rate limit | **YA — satu-satunya kes sebenar** | Token bucket dalam memori proses. Dgn N replika, had 5/min jadi 5×N/min |
+| `auth` refresh token | **TIDAK — lebih teruk** | `DELETE ... RETURNING` beri single-use atomik + tahan restart. Redis buang kedua-duanya |
+| `audit` | **TIDAK — memecahkan jaminan** | Catatan ditulis DALAM transaksi mutasi. Redis tak boleh sertai transaksi Postgres |
+| `reaper` gilir padam | **TIDAK** | Gilir ialah jadual Postgres: tahan restart, dan enqueue berlaku dlm transaksi yang sama dgn padam post. Gilir Redis hilang kerja bila proses mati |
+| `payment` idempotensi webhook | **TIDAK — dah diselesaikan lebih baik** | `UpdateDonationStatusByGatewayRef` ada `and status <> 'succeeded'`, jadi Postgres dah jamin tepat-sekali. `SETNX` Redis lebih lemah |
+| `retention` | **TIDAK** | Sapuan harian, DELETE/UPDATE SQL tulen |
+| `storage` (R2) | **TIDAK** | Presign stateless; `pending_uploads` dlm Postgres |
+| `email`, `receipt`, `push`, `onesignal` | **TIDAK** | Stateless, panggilan HTTP keluar |
+| `authz` cache role | **TIDAK — risiko keselamatan** | Satu query berindeks. Cache basi bermakna ahli yang DAH diturunkan pangkat masih bertindak sebagai management sehingga TTL tamat |
+| Cache feed / kiraan notifikasi | **BELUM** | Pagination cursor atas lajur berindeks. Pada ratusan ahli, Postgres tak berpeluh. Optimize bila ada nombor yang menunjukkan masalah |
+
+### Had kadar teragih ✅
+
+`middleware.RateLimiter` — token bucket dalam skrip **Lua** (bukan
+INCR/EXPIRE): baca-kira-tulis mesti atomik, dan Lua mengekalkan semantik
+isi-semula `rate.Limiter` yang sama. Kaunter tetingkap-tetap akan
+membenarkan 2x had di sempadan tetingkap.
+
+- Baldi **dinamakan** (`auth`, `upload`, `donation`). Tanpa nama,
+  ketiga-tiganya berkongsi kunci Redis yang sama dan saling menghabiskan
+  kuota. Versi setempat tak ada masalah ni sebab setiap panggilan cipta
+  map sendiri — jadi ia jenis pepijat yang muncul HANYA selepas Redis
+  dihidupkan.
+- **Gagal-terbuka**: Redis mati → jatuh balik kepada baldi setempat, bukan
+  tolak semua. Redis yang tumbang tak boleh mengunci ahli keluar daripada
+  log masuk. Timeout 200ms supaya Redis perlahan tak menahan permintaan.
+- Tanpa `REDIS_URL`, tingkah laku sama macam sebelum ni (per-instance).
+
+Diuji lawan Redis sebenar (`REDIS_TEST_URL=... go test
+./internal/http/middleware/`): burst dikuatkuasakan, **dua middleware
+berasingan berkongsi baldi yang sama** (inti sebenar), nama mengasingkan
+baldi, dan token diisi semula ikut masa. Plus laluan jatuh-balik diuji
+tanpa Redis dan dengan Redis yang tak dapat dicapai.
+
+Pasang Redis tempatan untuk ujian: `brew install redis`, kemudian
+`redis-server --port 6399 --daemonize yes`.
+
+### Sengaja TANPA kunci teragih
+
+`reaper` dan `retention` dua-dua berjalan pada SETIAP instance. Ia
+selamat tanpa kunci Redis sebab kedua-duanya idempoten: `DeleteObject`
+R2 idempoten, dan gilir padam guna batu nisan. Menambah kunci teragih
+akan menambah kebergantungan + mod kegagalan baharu untuk masalah yang
+reka bentuk ni memang dah elak. **Jangan "betulkan" ini dengan Redis.**
 
 ## Jejak audit — jurang yang tinggal
 
