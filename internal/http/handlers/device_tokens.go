@@ -20,7 +20,7 @@ func NewDeviceTokenHandler(pool *pgxpool.Pool) *DeviceTokenHandler {
 }
 
 type upsertDeviceTokenRequest struct {
-	OnesignalID string `json:"onesignal_id" binding:"required"`
+	OnesignalID string `json:"onesignal_id" binding:"required,max=200"`
 	Platform    string `json:"platform"`
 }
 

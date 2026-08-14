@@ -30,7 +30,7 @@ func NewCommentHandler(pool *pgxpool.Pool, pushSvc *push.Service, r2 *storage.R2
 }
 
 type createCommentRequest struct {
-	Content         string  `json:"content" binding:"required"`
+	Content         string  `json:"content" binding:"required,max=2000"`
 	ParentCommentID *string `json:"parent_comment_id"`
 }
 
@@ -197,7 +197,7 @@ func (h *CommentHandler) List(c *gin.Context) {
 }
 
 type updateCommentRequest struct {
-	Content string `json:"content" binding:"required"`
+	Content string `json:"content" binding:"required,max=2000"`
 }
 
 func (h *CommentHandler) Update(c *gin.Context) {

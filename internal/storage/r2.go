@@ -226,7 +226,7 @@ func (r *R2Client) verifyImage(ctx context.Context, key string, maxDim int) erro
 	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(r.bucket),
 		Key:    aws.String(key),
-		Range:  aws.String("bytes=0-11"),
+		Range:  aws.String("bytes=0-65535"),
 	})
 	if err != nil {
 		return fmt.Errorf("get object: %w", err)

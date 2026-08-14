@@ -38,7 +38,7 @@ func NewPostHandler(pool *pgxpool.Pool, r2 *storage.R2Client, pushSvc *push.Serv
 
 type createPostRequest struct {
 	Type    string   `json:"type"`
-	Content string   `json:"content" binding:"required"`
+	Content string   `json:"content" binding:"required,max=10000"`
 	R2Keys  []string `json:"r2_keys"`
 }
 
@@ -262,7 +262,7 @@ func (h *PostHandler) List(c *gin.Context) {
 }
 
 type updatePostRequest struct {
-	Content string `json:"content" binding:"required"`
+	Content string `json:"content" binding:"required,max=10000"`
 }
 
 func (h *PostHandler) Update(c *gin.Context) {
@@ -428,7 +428,8 @@ func (h *PostHandler) Like(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	if err := h.queries.LikePost(ctx, sqlc.LikePostParams{PostID: id, UserID: userID}); err != nil {
+	rows, err := h.queries.LikePost(ctx, sqlc.LikePostParams{PostID: id, UserID: userID})
+	if err != nil {
 		if isForeignKeyViolation(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "post tidak dijumpai"})
 			return
@@ -437,9 +438,11 @@ func (h *PostHandler) Like(c *gin.Context) {
 		return
 	}
 
-	authorID, err := h.queries.GetPostAuthorID(ctx, id)
-	if err == nil {
-		notifyOwner(ctx, h.queries, h.push, authorID, userID, "post_like", pgtype.UUID{Bytes: id, Valid: true}, pgtype.UUID{}, "Post anda disukai", "Seseorang menyukai post anda")
+	if rows > 0 {
+		authorID, err := h.queries.GetPostAuthorID(ctx, id)
+		if err == nil {
+			notifyOwner(ctx, h.queries, h.push, authorID, userID, "post_like", pgtype.UUID{Bytes: id, Valid: true}, pgtype.UUID{}, "Post anda disukai", "Seseorang menyukai post anda")
+		}
 	}
 
 	c.Status(http.StatusNoContent)

@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 )
 
 // ErrNotConfigured — gateway belum ada credential (env kosong). Handler
@@ -52,6 +53,10 @@ type CreateResult struct {
 type WebhookEvent struct {
 	GatewayRef string
 	Status     string // dinormalisasi ke "succeeded" | "failed"
+	// PaidAt — masa SEBENAR gateway proses bayaran (bukan masa webhook
+	// diproses server kita — webhook boleh lewat/retry, jadi guna ni
+	// untuk apa-apa yang tercatat kekal, cth tarikh pada resit PDF).
+	PaidAt time.Time
 }
 
 // Gateway kontrak sepunya semua payment provider.

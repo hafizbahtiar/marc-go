@@ -132,7 +132,7 @@ func (q *Queries) LikeComment(ctx context.Context, arg LikeCommentParams) error 
 	return err
 }
 
-const likePost = `-- name: LikePost :exec
+const likePost = `-- name: LikePost :execrows
 insert into post_likes (post_id, user_id)
 values ($1, $2)
 on conflict (post_id, user_id) do nothing
@@ -143,9 +143,12 @@ type LikePostParams struct {
 	UserID uuid.UUID `json:"user_id"`
 }
 
-func (q *Queries) LikePost(ctx context.Context, arg LikePostParams) error {
-	_, err := q.db.Exec(ctx, likePost, arg.PostID, arg.UserID)
-	return err
+func (q *Queries) LikePost(ctx context.Context, arg LikePostParams) (int64, error) {
+	result, err := q.db.Exec(ctx, likePost, arg.PostID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const postLikedByUser = `-- name: PostLikedByUser :one

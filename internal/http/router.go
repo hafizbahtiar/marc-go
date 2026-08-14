@@ -71,8 +71,8 @@ func NewRouter(
 	authGroup := r.Group("/auth")
 	authGroup.POST("/register", authRateLimiter, authHandler.Register)
 	authGroup.POST("/login", authRateLimiter, authHandler.Login)
-	authGroup.POST("/refresh", authHandler.Refresh)
-	authGroup.POST("/logout", authHandler.Logout)
+	authGroup.POST("/refresh", authRateLimiter, authHandler.Refresh)
+	authGroup.POST("/logout", authRateLimiter, authHandler.Logout)
 	authGroup.POST("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerification)
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
 

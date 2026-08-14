@@ -200,7 +200,7 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 	// selepas ni akan kena `pgx.ErrNoRows` (row dah 'succeeded', tak
 	// match WHERE lagi) dan skip terus cabang ni.
 	if event.Status == "succeeded" {
-		h.sendReceiptEmail(c.Request.Context(), updated)
+		h.sendReceiptEmail(c.Request.Context(), updated, event.PaidAt)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -209,7 +209,7 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 // sendReceiptEmail best-effort — kegagalan hantar emel TAK gagalkan
 // webhook (Stripe retry kalau bukan 200, dan donation dah pun berjaya
 // direkod, resit hilang bukan sebab kritikal untuk retry).
-func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation) {
+func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation, paidAt time.Time) {
 	to := textToPtr(d.DonorEmail)
 	memberID := ""
 
@@ -245,8 +245,6 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation)
 	} else {
 		donorEmail = *to
 	}
-	paidAt := time.Now()
-
 	pdfBytes, err := receipt.GeneratePDF(receipt.Donation{
 		MemberID:    memberID,
 		DonorName:   donorName,

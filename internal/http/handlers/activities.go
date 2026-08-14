@@ -168,7 +168,7 @@ func isSessionInputError(err error) bool {
 
 type sessionInput struct {
 	Seq      int       `json:"seq" binding:"required,min=1"`
-	Title    string    `json:"title"`
+	Title    string    `json:"title" binding:"max=200"`
 	StartsAt time.Time `json:"starts_at" binding:"required"`
 	EndsAt   time.Time `json:"ends_at" binding:"required"`
 }
@@ -522,9 +522,9 @@ func (h *ActivityHandler) buildActivityDetail(
 
 type activityRequest struct {
 	CategoryID             uuid.UUID `json:"category_id" binding:"required"`
-	Title                  string    `json:"title" binding:"required"`
+	Title                  string    `json:"title" binding:"required,max=200"`
 	Description            string    `json:"description"`
-	LocationName           string    `json:"location_name" binding:"required"`
+	LocationName           string    `json:"location_name" binding:"required,max=300"`
 	LocationAddress        string    `json:"location_address"`
 	RegistrationOpensAt    time.Time `json:"registration_opens_at"`
 	RegistrationClosesAt   time.Time `json:"registration_closes_at" binding:"required"`
@@ -909,6 +909,18 @@ func (h *ActivityHandler) Update(c *gin.Context) {
 	params, err := req.merge(before)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// optional[string] bypasses gin's `binding` validator entirely (custom
+	// UnmarshalJSON, no struct tags for the validator to act on), so the
+	// same length limits enforced on POST (activityRequest) are checked
+	// manually here on the merged output.
+	if len(params.Title) > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tajuk terlalu panjang (maksimum 200 aksara)"})
+		return
+	}
+	if len(params.LocationName) > 300 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nama lokasi terlalu panjang (maksimum 300 aksara)"})
 		return
 	}
 

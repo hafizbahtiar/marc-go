@@ -93,7 +93,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
 	LikeComment(ctx context.Context, arg LikeCommentParams) error
-	LikePost(ctx context.Context, arg LikePostParams) error
+	LikePost(ctx context.Context, arg LikePostParams) (int64, error)
 	// Keyset pagination atas (starts_at, id) — sama corak dengan ListPosts,
 	// elak baris terlepas bila dua aktiviti berkongsi timestamp tepat.
 	// upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir

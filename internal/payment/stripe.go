@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
@@ -113,5 +114,5 @@ func (s *StripeGateway) VerifyWebhook(payload []byte, headers http.Header) (Webh
 		return WebhookEvent{}, err
 	}
 
-	return WebhookEvent{GatewayRef: pi.ID, Status: status}, nil
+	return WebhookEvent{GatewayRef: pi.ID, Status: status, PaidAt: time.Unix(pi.Created, 0)}, nil
 }

@@ -456,6 +456,18 @@ jadi baca syarat kenaikan itu, bukan label sahaja.
 
 ### Risiko diterima — bukan kerja tertunggak
 
+- **L21 — Register bocor kewujudan akaun, lawan pertahanan timing
+  Login.** `auth.go:140` pulang `409 "email ini sudah berdaftar"` terus,
+  sedangkan Login sengaja guna bcrypt hash palsu tetap supaya tak boleh
+  bezakan akaun wujud/tak wujud (`auth.go:28-34`). **Keputusan
+  2026-08-15**: diterima sebagai risiko, bukan dibaiki. Mendedahkan
+  kewujudan akaun pada pendaftaran ialah UX standard industri (GitHub,
+  Google buat sama) — fix sebenar (respons generik tak kira wujud/tidak)
+  akan pecahkan kontrak yang `marc_flutter` bergantung (mesej ralat
+  spesifik pada skrin daftar) untuk manfaat keselamatan yang kecil,
+  memandangkan rate limit 5/min/IP sedia ada dah hadkan enumerasi kepada
+  perlahan, bukan block sepenuhnya. Semak semula kalau `authRateLimit`
+  pernah dilonggarkan.
 - **Halaman pengesahan sijil awam mendedahkan nama ahli.** Sengaja; lihat
   bahagian "Pendedahan privasi yang disedari" dalam spec reka bentuk.
   Perlindungan yang sudah ada dan **mesti kekal**: token legap 32 aksara
@@ -465,6 +477,80 @@ jadi baca syarat kenaikan itu, bukan label sahaja.
   serupa bait-demi-bait untuk token tidak dikenali dan token cacat supaya
   tiada oracle. Ujian unit tanpa DB menguatkuasakan set medan itu — kalau
   ia gagal, seseorang sedang menambah medan ke halaman awam.
+
+### Audit menyeluruh `internal/` (2026-08-15)
+
+Audit Opus berskop penuh atas semua subpackage `internal/`, bukan setakat
+modul aktiviti. Penemuan baharu sahaja — item yang bertindih dengan L10–L15
+di atas tidak diulang.
+
+- [x] **L16 — had dimensi imej tidak pernah berkuat kuasa (HIGH, DIBAIKI).**
+      `internal/storage/r2.go` minta `Range: "bytes=0-11"` (12 bait) tapi
+      `verifyDimensions` perlukan ~33+ bait untuk `image.DecodeConfig`
+      berjaya baca header PNG — jadi ia SENTIASA gagal, dan laluan ralat
+      sengaja `return nil` ("jangan tolak sebab tak dapat ukur"). Komen di
+      atas kod (`r2.go:236`) malah dah kata "64KB, bukan 12 bait macam
+      dulu" — fix separuh jalan, komen dikemaskini tapi `Range` string
+      terlepas. Kesan: `MaxImageDimension`/`MaxAvatarDimension` tidak
+      pernah dikuatkuasakan pada upload sebenar — ahli boleh PUT PNG
+      20000×20000px (bawah had 5MB bait), setiap peranti yang scroll feed
+      cuba nyahkod ~1.6GB piksel. Ujian `dimensions_test.go` hijau sebab ia
+      panggil `verifyDimensions` terus dengan header penuh, bukan
+      `verifyImage` laluan sebenar. **Dibaiki**: `Range` ditukar ke
+      `bytes=0-65535`.
+- [ ] **L17 — tiada had panjang pada medan teks bebas** (post/comment
+      content, `display_name`, `phone`, activity `title`/`location_name`,
+      `onesignal_id`) — hanya had body 1MB global. `display_name` 1MB
+      terbenam dalam setiap post/comment feed (`posts_common.go:263-278`)
+      **dan** disalin ke `activity_certificates.recipient_name`, dipaparkan
+      pada halaman verify sijil **awam tanpa auth**. `donations.go:48-56`
+      satu-satunya tempat yang ada had — sepatutnya jadi corak untuk yang
+      lain.
+- [ ] **L18 — spam notification/push tanpa had melalui like berulang.**
+      `LikePost` (`queries/likes.sql`) `on conflict do nothing`, tapi
+      handler post panggil `notifyOwner` tanpa syarat selepas SETIAP
+      panggilan (tak boleh bezakan insert baharu vs conflict). Tiada rate
+      limit pada `POST /posts/:id/like`. Gelung endpoint ni = harassment
+      bersasar (push OneSignal berulang) + pertumbuhan jadual
+      `notifications` tanpa had. `CommentHandler.Like` betul (tak
+      notify). Fix: `LikePost` jadi `:execrows`/`returning`, notify hanya
+      bila baris benar-benar masuk.
+- [ ] **L19 — draft activity boleh dibaca ahli biasa melalui ID.**
+      `ActivityHandler.List` gate `status=draft` di belakang
+      `requireManagement` (`activities.go:352-359`) tapi
+      `ActivityHandler.Get` (`activities.go:451`) tiada semakan status
+      langsung — `GetActivityByID` tapis `deleted_at is null` sahaja.
+      Ahli lulus dengan UUID aktiviti boleh baca draf penuh (tajuk,
+      kapasiti, yuran, sesi, bilangan pendaftaran). Terhad oleh
+      ketidaktekaan UUIDv4, tapi peraturan kebenaran yang `List`
+      kuatkuasakan langsung tak wujud pada laluan by-id.
+- [ ] **L20 — `/auth/refresh` dan `/auth/logout` tiada rate limit.**
+      Satu-satunya laluan auth tanpa auth yang tak kena `authRateLimiter`
+      (register/login/verify semua kena). Bukan risiko teka token (opaque
+      256-bit), tapi laluan miss `Refresh` buat SHA-256 + `UPDATE
+      ... RETURNING` + `GetRefreshTokenByHash` kedua + mungkin `DELETE
+      ... where family_id` (`auth.go:277-296`) — write-path amplifier
+      Postgres tanpa had kadar.
+- [ ] **L22 — resit donation PDF cetak tarikh salah.** `donations.go:248`
+      set `paidAt := time.Now()` semasa proses webhook, bukan baca
+      timestamp PaymentIntent Stripe sebenar. Stripe retry/kelewatan
+      penghantaran webhook = tarikh salah pada dokumen kewangan yang
+      dihantar email kepada penderma, tak boleh dibetulkan selepas fakta.
+
+**Informational (bukan kerja tertunggak, tapi corak sama L12):**
+`queries/comments.sql` dan `queries/posts.sql` select `u.email as
+author_email` ke setiap baris feed. Dibuang di response mapping sekarang
+(`memberResponse`/`posts_common.go`), tapi corak sama dengan L12 — sekali
+ada `c.JSON(rows)` mentah, direktori emel ahli bocor.
+
+**Disahkan bersih**: `internal/authz`, `internal/auth` (jwt/password/token),
+`internal/payment` (webhook verification, idempotency `status <>
+'succeeded'`), `internal/audit`, `internal/retention`, `internal/reaper`,
+`internal/redisclient`, `internal/email`, `internal/onesignal`,
+`internal/push`, `middleware/{bodylimit,logging,verified,auth}`, laluan
+sijil issue/revoke/verify/download (`Download` 404-bukan-403 pada
+kepemilikan betul), tiada SQL concatenation, tiada mass-assignment via
+`bind.go`, bucket rate-limit Lua (`middleware/ratelimit.go`) kukuh.
 
 ### Sudah ditutup dalam pusingan ini
 

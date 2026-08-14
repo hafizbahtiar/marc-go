@@ -80,6 +80,11 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 }
 
 type updateMeRequest struct {
+	// DisplayName/Phone ialah *string (bukan string) supaya "tak dihantar"
+	// dapat dibezakan daripada "buang nilai" — validator gin/go-playground
+	// TIDAK menguatkuasakan `max` pada medan pointer (ia senyap dilangkau
+	// untuk Kind() Ptr), jadi had panjang disemak secara manual dalam
+	// UpdateMe selepas bindJSON, bukan melalui tag `binding`.
 	DisplayName *string `json:"display_name"`
 	Phone       *string `json:"phone"`
 
@@ -96,6 +101,14 @@ type updateMeRequest struct {
 func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 	var req updateMeRequest
 	if !bindJSON(c, &req) {
+		return
+	}
+	if req.DisplayName != nil && len(*req.DisplayName) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nama paparan terlalu panjang (maksimum 100 aksara)"})
+		return
+	}
+	if req.Phone != nil && len(*req.Phone) > 30 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor telefon terlalu panjang (maksimum 30 aksara)"})
 		return
 	}
 

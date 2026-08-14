@@ -1,4 +1,4 @@
--- name: LikePost :exec
+-- name: LikePost :execrows
 insert into post_likes (post_id, user_id)
 values ($1, $2)
 on conflict (post_id, user_id) do nothing;
