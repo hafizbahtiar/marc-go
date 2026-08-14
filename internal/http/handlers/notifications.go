@@ -27,8 +27,13 @@ type notificationResponse struct {
 	Type      string  `json:"type"`
 	PostID    *string `json:"post_id"`
 	CommentID *string `json:"comment_id"`
-	Read      bool    `json:"read"`
-	CreatedAt string  `json:"created_at"`
+	// Deep-link notifikasi aktiviti (20260810100700). Tanpa kedua-dua medan
+	// ini pada respons, lajur yang diisi handler aktiviti tak pernah sampai
+	// kepada klien dan notifikasi aktiviti kekal tak boleh diketuk.
+	ActivityID    *string `json:"activity_id"`
+	CertificateID *string `json:"certificate_id"`
+	Read          bool    `json:"read"`
+	CreatedAt     string  `json:"created_at"`
 }
 
 func (h *NotificationHandler) List(c *gin.Context) {
@@ -65,13 +70,15 @@ func (h *NotificationHandler) List(c *gin.Context) {
 	resp := make([]notificationResponse, len(rows))
 	for i, r := range rows {
 		resp[i] = notificationResponse{
-			ID:        r.ID.String(),
-			ActorID:   r.ActorID.String(),
-			Type:      r.Type,
-			PostID:    nullableUUIDString(r.PostID),
-			CommentID: nullableUUIDString(r.CommentID),
-			Read:      r.ReadAt.Valid,
-			CreatedAt: formatTime(r.CreatedAt),
+			ID:            r.ID.String(),
+			ActorID:       r.ActorID.String(),
+			Type:          r.Type,
+			PostID:        nullableUUIDString(r.PostID),
+			CommentID:     nullableUUIDString(r.CommentID),
+			ActivityID:    nullableUUIDString(r.ActivityID),
+			CertificateID: nullableUUIDString(r.CertificateID),
+			Read:          r.ReadAt.Valid,
+			CreatedAt:     formatTime(r.CreatedAt),
 		}
 	}
 

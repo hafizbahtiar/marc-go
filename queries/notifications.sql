@@ -1,6 +1,6 @@
 -- name: CreateNotification :one
-insert into notifications (recipient_id, actor_id, type, post_id, comment_id)
-values ($1, $2, $3, $4, $5)
+insert into notifications (recipient_id, actor_id, type, post_id, comment_id, activity_id, certificate_id)
+values ($1, $2, $3, $4, $5, $6, $7)
 returning *;
 
 -- name: ListNotifications :many

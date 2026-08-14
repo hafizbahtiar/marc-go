@@ -171,6 +171,31 @@ func (q *Queries) GetStatusByUserID(ctx context.Context, userID uuid.UUID) (stri
 	return status, err
 }
 
+const listApprovedUserIDs = `-- name: ListApprovedUserIDs :many
+select user_id from profiles where status = 'approved'
+`
+
+// Penerima siaran seluruh kelab (cth aktiviti baharu diterbitkan).
+func (q *Queries) ListApprovedUserIDs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listApprovedUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listManagementUserIDs = `-- name: ListManagementUserIDs :many
 select p.user_id
 from profiles p

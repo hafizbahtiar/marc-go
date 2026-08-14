@@ -13,17 +13,19 @@ import (
 )
 
 const createNotification = `-- name: CreateNotification :one
-insert into notifications (recipient_id, actor_id, type, post_id, comment_id)
-values ($1, $2, $3, $4, $5)
-returning id, recipient_id, actor_id, type, post_id, comment_id, read_at, created_at
+insert into notifications (recipient_id, actor_id, type, post_id, comment_id, activity_id, certificate_id)
+values ($1, $2, $3, $4, $5, $6, $7)
+returning id, recipient_id, actor_id, type, post_id, comment_id, read_at, created_at, activity_id, certificate_id
 `
 
 type CreateNotificationParams struct {
-	RecipientID uuid.UUID   `json:"recipient_id"`
-	ActorID     uuid.UUID   `json:"actor_id"`
-	Type        string      `json:"type"`
-	PostID      pgtype.UUID `json:"post_id"`
-	CommentID   pgtype.UUID `json:"comment_id"`
+	RecipientID   uuid.UUID   `json:"recipient_id"`
+	ActorID       uuid.UUID   `json:"actor_id"`
+	Type          string      `json:"type"`
+	PostID        pgtype.UUID `json:"post_id"`
+	CommentID     pgtype.UUID `json:"comment_id"`
+	ActivityID    pgtype.UUID `json:"activity_id"`
+	CertificateID pgtype.UUID `json:"certificate_id"`
 }
 
 func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error) {
@@ -33,6 +35,8 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 		arg.Type,
 		arg.PostID,
 		arg.CommentID,
+		arg.ActivityID,
+		arg.CertificateID,
 	)
 	var i Notification
 	err := row.Scan(
@@ -44,12 +48,14 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 		&i.CommentID,
 		&i.ReadAt,
 		&i.CreatedAt,
+		&i.ActivityID,
+		&i.CertificateID,
 	)
 	return i, err
 }
 
 const listNotifications = `-- name: ListNotifications :many
-select id, recipient_id, actor_id, type, post_id, comment_id, read_at, created_at from notifications
+select id, recipient_id, actor_id, type, post_id, comment_id, read_at, created_at, activity_id, certificate_id from notifications
 where recipient_id = $1
   and (
     $2::timestamptz is null
@@ -89,6 +95,8 @@ func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsPa
 			&i.CommentID,
 			&i.ReadAt,
 			&i.CreatedAt,
+			&i.ActivityID,
+			&i.CertificateID,
 		); err != nil {
 			return nil, err
 		}

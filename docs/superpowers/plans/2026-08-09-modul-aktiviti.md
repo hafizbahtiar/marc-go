@@ -363,7 +363,7 @@ git commit -m "feat(activity): schema aktiviti, sesi, pendaftaran, kehadiran, si
 
 **Interfaces:**
 - Consumes: jadual dari Task 1.
-- Produces: kaedah `*sqlc.Queries` yang dipakai setiap handler selepas ini — `ListActivityCategories`, `CreateActivity`, `GetActivityByID`, `ListActivities`, `UpdateActivity`, `SetActivityStatus`, `RecomputeActivityWindow`, `DeleteActivitySessions`, `CreateActivitySession`, `ListActivitySessions`, `CountSessionsWithAttendance`, `LockActivityForRegistration`, `CountActiveRegistrations`, `CreateRegistration`, `CancelRegistration`, `GetRegistrationByActivityAndUser`, `GetRegistrationByCheckinToken`, `ListRegistrationsByActivity`, `ListMyRegistrations`, `MarkAttendance`, `DeleteAttendance`, `ListAttendanceByActivity`, `CountAttendanceByRegistration`, `GetSessionByID`, `ListEligibleForCertificate`, `CreateCertificate`, `SetCertificateR2Key`, `ListCertificatesPendingFile`, `ListMyCertificates`, `GetCertificateByID`, `GetCertificateByVerifyToken`, `RevokeCertificate`.
+- Produces: kaedah `*sqlc.Queries` yang dipakai setiap handler selepas ini — `ListActivityCategories`, `CreateActivity`, `GetActivityByID`, `ListActivities`, `UpdateActivity`, `SetActivityStatus`, `RecomputeActivityWindow`, `DeleteActivitySessions`, `CreateActivitySession`, `ListActivitySessions`, `CountSessionsWithAttendance`, `LockActivityForRegistration`, `CountActiveRegistrations`, `CreateRegistration`, `CancelRegistration`, `GetRegistrationByActivityAndUser`, `GetRegistrationByCheckinToken`, `ListRegistrationsByActivity`, `ListMyRegistrations`, `MarkAttendance`, `DeleteAttendance`, `ListAttendanceByActivity`, `CountAttendanceByRegistration`, `GetActivitySessionByID`, `ListEligibleForCertificate`, `CreateCertificate`, `SetCertificateR2Key`, `ListCertificatesPendingFile`, `ListMyCertificates`, `GetCertificateByID`, `GetCertificateByVerifyToken`, `RevokeCertificate`.
 
 - [ ] **Step 1: Tulis `queries/activities.sql`**
 
@@ -1152,7 +1152,7 @@ func TestR2PutObjectLive(t *testing.T) {
 		os.Getenv("R2_ACCOUNT_ID"),
 		os.Getenv("R2_ACCESS_KEY_ID"),
 		os.Getenv("R2_SECRET_ACCESS_KEY"),
-		os.Getenv("R2_BUCKET"),
+		os.Getenv("R2_BUCKET_NAME"),
 		os.Getenv("R2_PUBLIC_URL"),
 	)
 	if !r.Enabled() {
@@ -2454,7 +2454,7 @@ func TestVerifyTidakMendedahkanPII(t *testing.T) {
 	}
 }
 
-func TestVerifyTokenTakSahDanSijilDitarikTakBolehDibezakan(t *testing.T) {
+func TestVerifyTokenTidakDikenaliSentiasa404(t *testing.T) {
 	pool := activityTestPool(t)
 
 	// Token yang tidak wujud langsung.

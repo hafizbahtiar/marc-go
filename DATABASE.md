@@ -201,6 +201,45 @@ di-generate sebagai `github.com/google/uuid.UUID` (bukan default
 | `pending_uploads` | kunci R2 yang dah dipresign tapi belum dilekatkan pada post. Disapu pada 6 jam (karangan ditinggalkan) |
 | `deleted_uploads` | gilir padam R2 dengan backoff. `deleted_at` ialah **batu nisan**, bukan padam baris — tanpanya penyapu yatim menggilir semula kunci yang sama selamanya |
 
+### Aktiviti
+
+| Table | Tujuan |
+|---|---|
+| `activity_categories` | key/name/sort_order/is_active. Di-seed dalam migration (badminton, futsal, bola tampar, larian, ping pong, lain-lain) mengikut corak `seed_roles` |
+| `activities` | tajuk, lokasi, tetingkap pendaftaran, capacity, `fee_cents`+`currency`, `attendance_threshold_pct`, status (`draft`/`published`/`cancelled`/`completed`), `certificates_issued_at`, **deleted_at (soft delete)**. `category_id` ialah `on delete restrict` |
+| `activity_sessions` | satu baris per sesi; `seq` unik dalam aktiviti, `check (ends_at > starts_at)`. **Sumber kebenaran** bagi tetingkap masa aktiviti |
+| `activity_registrations` | status (`pending_payment`/`registered`/`cancelled`), `payment_status`+`payment_ref` (cangkuk payment, belum disambung), `checkin_token` unik. Indeks unik **separa** atas `(activity_id, user_id) where status <> 'cancelled'` — halang pendaftaran berganda tapi benarkan daftar semula selepas batal |
+| `activity_attendances` | `(registration_id, session_id)` unik. `method` ∈ `manual`/`scan`/`self_scan`/`code` — keempat-empatnya hasilkan baris yang SAMA, hanya `method` + `marked_by` berbeza, jadi menambah kaedah nanti tidak perlukan migration (hanya `manual` dan `scan` ada pelaksanaan). **Bukan bermakna ia murah**: `self_scan` perlukan `checkin_token` BERPUTAR di sisi pelayan — lihat `TODO.md`, bahagian Modul Aktiviti |
+| `activity_certificates` | `serial` unik + `verify_token` unik **berasingan** (serial berjujukan; kalau ia juga kunci pengesahan awam, sesiapa boleh tambah satu dan menuai nama semua ahli). `recipient_name`/`activity_title`/`activity_date` ialah **snapshot** — PDF tak berubah selepas dijana, jadi halaman pengesahan mesti menunjukkan apa yang TERCETAK. `activity_id` `on delete restrict`. Unik `(activity_id, user_id)` |
+
+Dua migration `notifications` datang bersama modul ni:
+
+| Migration | Kesan |
+|---|---|
+| `20260810100600_widen_notifications_activity` | luaskan `notifications_type_check` dengan `activity_published`, `activity_cancelled`, `certificate_ready`. Down akan **gagal** kalau baris jenis baharu sudah wujud — sama seperti `20260807120100`, dijangka untuk rollback dev |
+| `20260810100700_add_notifications_activity_links` | tambah `activity_id` + `certificate_id` (nullable, `on delete cascade`). Tanpanya notifikasi aktiviti ialah satu-satunya jenis yang tak boleh diketuk — setiap jenis lain deep-link melalui `post_id` |
+
+#### Invarian: `activities.starts_at`/`ends_at` DIDENORMALISASI
+
+**Sesi ialah sumber kebenaran.** Dua lajur itu ialah `min(starts_at)` dan
+`max(ends_at)` bagi `activity_sessions` aktiviti berkenaan, dikira semula
+oleh `RecomputeActivityWindow` **dalam transaksi yang sama** dengan
+sebarang perubahan set sesi (`ReplaceActivitySessions`, dan juga laluan
+cipta — ada DUA penulis kepada invarian ni). Sebab denormalisasi: senarai
+aktiviti perlu isih dan tapis ikut tarikh menggunakan indeks, dan `min()`
+atas join pada setiap senarai terlalu mahal.
+
+**Perangkap:** `RecomputeActivityWindow` ada guard `min_start is not null`,
+jadi set sesi **kosong** meninggalkan tetingkap lama sebagai nilai basi
+**tanpa ralat** — ia gagal senyap. Itulah sebabnya handler menolak senarai
+sesi kosong pada peringkat permintaan. Kalau kau menambah laluan tulis
+sesi yang baharu, laluan itu mesti menolak set kosong juga; DB tidak akan
+menangkapnya untuk kau.
+
+Nota berkaitan: tiada `check (ends_at >= starts_at)` pada `activities`
+(sengaja — lajurnya didenormalisasi dan dijaga app), walaupun
+`activity_sessions` ADA check itu. Tiada juga check `currency = 'MYR'`.
+
 ### Duit & jejak
 
 | Table | Tujuan |

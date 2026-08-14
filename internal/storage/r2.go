@@ -156,6 +156,28 @@ func (r *R2Client) PresignUpload(ctx context.Context, contentType string) (uploa
 	return req.URL, key, nil
 }
 
+// PutObject muat naik bait terus dari server ke R2.
+//
+// Berbeza daripada PresignUpload (klien memuat naik sendiri), ini untuk
+// kandungan yang DIJANA server dan tidak pernah menyentuh peranti — PDF
+// sijil. Tiada semakan dimensi imej di sini; pemanggil yang tahu apa yang
+// dihantarnya.
+func (r *R2Client) PutObject(ctx context.Context, key, contentType string, body []byte) error {
+	if !r.Enabled() {
+		return fmt.Errorf("R2 belum configure")
+	}
+	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(r.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(body),
+		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		return fmt.Errorf("muat naik %s: %w", key, err)
+	}
+	return nil
+}
+
 // VerifyImageSize semak saiz objek yang DAH diupload (HeadObject) tak
 // melebihi MaxImageSizeBytes. Dipanggil dari CreatePost sebelum r2_key
 // diterima masuk post — R2 tak support content-length-range di presign

@@ -19,6 +19,9 @@ internal/
   push/                      — device_tokens + onesignal (NotifyUser)
   payment/                   — interface Gateway + StripeGateway
   receipt/                   — jana PDF resit donation (go-pdf/fpdf)
+  certificate/               — kelayakan sijil + jana PDF sijil (go-pdf/fpdf
+                               + QR). TULEN: tiada DB, tiada rangkaian,
+                               tiada filesystem
   storage/                   — Cloudflare R2: presign, verify, delete
   reaper/                    — pembersih objek R2 yatim (background)
   retention/                 — polisi simpanan data (background)
@@ -146,6 +149,40 @@ selepas itu sahkan format fail melalui `GetObject` julat 12 bait.
 Gotcha: `RequestChecksumCalculation` mesti `WhenRequired`. Default
 aws-sdk-go-v2 menambah checksum CRC32 pada setiap request termasuk presigned
 URL, yang R2 tak serasi — tandatangan jadi tak sah dan PUT client dapat 403.
+
+## Sijil (`internal/certificate`)
+
+Modul **tulen**: tiada DB, tiada rangkaian, tiada filesystem — sama bentuk
+dengan `internal/receipt`. Ia terima nilai dan pulangkan `[]byte`
+(atau `bool` untuk kelayakan). Itulah sebabnya seluruh logik sijil
+— pengiraan kelayakan DAN penjanaan PDF — diuji tanpa Postgres, tanpa R2,
+dan tanpa env — ujiannya benar-benar berjalan dalam CI, tidak seperti
+ujian live handler dan storan yang langkau di sana (lihat `TODO.md`,
+bahagian Ujian).
+
+Dua bahagian:
+
+- `eligibility.go` — `IsEligible` (kehadiran vs `attendance_threshold_pct`)
+  dan `CheckinWindowPadding`. Perbandingan ambang dibuat dalam **integer**
+  (`attended*100 >= total*threshold`), bukan float, supaya kes sempadan
+  seperti 2/3 pada ambang 66 lwn 67 berkelakuan sama pada setiap platform.
+- `certificate.go` — susun atur A4 landskap (`go-pdf/fpdf`) + QR
+  pengesahan (`skip2/go-qrcode`).
+
+Gotcha `fpdf`: penterjemah cp1252 menggantikan rune yang tak dipeta dengan
+`.` **secara senyap** — nama ahli boleh dicetak rosak tanpa sebarang
+ralat. Jadi keempat-empat medan teks (serial, nama penerima, tajuk
+aktiviti, kategori) disemak dahulu terhadap penterjemah SEBENAR (round-trip,
+bukan cutoff `r > 0xFF`, yang akan menolak `’ – € •` yang sah), dan medan
+yang gagal menamakan dirinya dalam ralat. `VerifyURL` dikecualikan dengan
+sengaja: ia hanya masuk ke `qrcode.Encode`, tak pernah ke penterjemah.
+Teks lebar-berubah dipotong dengan `clip()` yang disalin daripada
+`receipt.go` — tanpanya teks panjang melimpah keluar bingkai.
+
+Penerbitan sijil sendiri (baca DB, jana, naik R2, tulis `r2_key`) hidup
+dalam `handlers/activity_certificates.go`, dua fasa dan boleh disambung
+semula. Sengaja BUKAN di sini — sebaik modul ni menyentuh DB, ia hilang
+sifat yang membuatnya berguna.
 
 ## Config / env
 

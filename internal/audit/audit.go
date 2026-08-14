@@ -28,9 +28,16 @@ import (
 
 // Jenis entiti. Tambah di sini bila entiti baharu mula diaudit.
 const (
-	EntityPost    = "post"
-	EntityComment = "comment"
-	EntityProfile = "profile"
+	EntityPost     = "post"
+	EntityComment  = "comment"
+	EntityProfile  = "profile"
+	EntityActivity = "activity"
+	// Kehadiran diaudit walaupun pendaftaran tidak: baris ini yang
+	// menentukan siapa layak menerima sijil.
+	EntityAttendance = "activity_attendance"
+	// Sijil diaudit pada penerbitan DAN penarikan balik: baris sijil kekal
+	// selepas ditarik balik, tetapi sebab dan pelakunya hanya ada di sini.
+	EntityCertificate = "activity_certificate"
 )
 
 const (

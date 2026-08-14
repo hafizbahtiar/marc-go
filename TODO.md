@@ -7,7 +7,7 @@ Schema & migration: [`DATABASE.md`](./DATABASE.md).
 
 Stage 0–15 siap: auth custom, RBAC, posts/comments/likes, kelulusan ahli,
 push, upload R2, donation Stripe, jejak audit, pembersih storan, polisi
-simpanan.
+simpanan. Modul aktiviti (backend penuh) siap — jurangnya direkod di bawah.
 
 ---
 
@@ -74,6 +74,140 @@ Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
       - Sekali bayar atau berulang (tahunan/bulanan)?
       - Bila gate yuran mula berkuat kuasa untuk ahli sedia ada?
       - Gate diletak dalam middleware mana (padanan `RequireVerifiedEmail`)?
+
+## Modul Aktiviti — jurang yang tinggal
+
+Backend modul aktiviti siap (6 jadual aktiviti + 2 migration `notifications`,
+`internal/certificate`, muat naik PDF ke R2 sisi pelayan, handler untuk
+aktiviti/sesi/pendaftaran/kehadiran/sijil/pengesahan awam/push). Yang di
+bawah ini **tidak** dibina, dan sebahagiannya sengaja.
+
+### Sengaja dikecualikan daripada skop (spec reka bentuk)
+
+- [ ] **Yuran aktiviti tidak berfungsi.** `activities.fee_cents` dan
+      `activity_registrations.payment_status`/`payment_ref` wujud dalam
+      schema sebagai cangkuk — **tiada gateway disambungkan langsung**.
+      `Register` sentiasa tulis `payment_status = 'not_required'` tanpa
+      syarat. Hanya aktiviti **percuma** yang berfungsi.
+      **Perangkap:** API *menerima* `fee_cents > 0` (borang Flutter tidak
+      mendedahkannya, tetapi `POST`/`PATCH /activities` mendedahkan). Bila
+      itu berlaku, pendaftaran tetap percuma dan senyap — DAN klausa
+      kelayakan sijil `(a.fee_cents = 0 or r.payment_status = 'paid')`
+      menjadi palsu untuk **semua** pendaftar, jadi tiada seorang pun layak
+      menerima sijil dan tiada ralat menjelaskan sebabnya. Sehingga gateway
+      mendarat, kekalkan `fee_cents = 0`. Bergantung pada keputusan gateway
+      yang sama dengan yuran ahli (lihat bahagian Payment).
+- [ ] **Check-in `self_scan` dan `code`.** Kekangan `method` dalam
+      `activity_attendances` menerima keempat-empat nilai, tetapi hanya
+      `manual` dan `scan` ada pelaksanaan (lihat komen
+      `activity_attendance.go:39`). `self_scan` memerlukan **token
+      berputar** — `checkin_token` sekarang statik, jadi satu tangkapan
+      skrin QR boleh diedarkan dan sesiapa boleh tanda dirinya hadir.
+      Jangan buka self-scan tanpa token berputar.
+- [ ] **Sijil pencapaian (johan/naib johan) dan sijil peranan** (jurulatih,
+      pengadil). `activity_certificates` **tiada lajur jenis** langsung —
+      menambahnya perlukan migration, bukan sekadar UI. Penyertaan sahaja
+      buat masa ini.
+
+### Perlukan kerja berjadual (scheduler yang belum wujud)
+
+- [ ] **Peringatan H-1 tidak dibina.** Spec menjanjikannya dalam senarai
+      push (diterbitkan / H-1 / sijil sedia / dibatalkan); tiga yang lain
+      ada, H-1 tiada. Ia perlukan pencetus berasaskan masa, dan codebase ni
+      tiada scheduler. Dua goroutine latar yang ada (`reaper` 15 minit,
+      `retention` harian) ialah sapuan idempoten yang berjalan pada SETIAP
+      instance — menggantungkan penghantaran push pada salah satu bermakna
+      N replika hantar N peringatan kepada orang yang sama. Perlu
+      penyahduaan (baris "reminder dihantar") sebelum sapuan boleh jadi
+      tuan rumah.
+- [ ] **Aktiviti tidak pernah beralih ke `completed` secara automatik.**
+      `statusCompleted` wujud dan diterima oleh penapis senarai, tetapi
+      tiada kod di mana-mana yang MENULIS nilai itu — cari
+      `statusCompleted` dalam `handlers/` dan tiga padanan semuanya ialah
+      pengisytiharan/senarai penapis. Aktiviti kekal `published` selamanya
+      selepas sesi terakhir tamat. Kesan: tab "Lepas" di Flutter bergantung
+      sepenuhnya pada perbandingan tarikh, dan pengurus tak ada cara
+      menandakan aktiviti sebagai selesai kecuali `PATCH` status manual.
+      Pilihan: sapuan berjadual, atau peralihan pada penerbitan sijil.
+
+### Keselamatan
+
+Item keselamatan modul ini disatukan dalam bahagian **Security** di bawah,
+supaya tiada dua versi yang boleh menyimpang. Ringkasan:
+
+- **L12** `checkin_token` dalam respons senarai peserta — Low sekarang,
+  **Medium sebaik `self_scan` dibina**; tutup sebelum itu.
+- **L13** `auditActor` memegang sambungan kolam kedua — seluruh repo.
+- **L14** ujian kebenaran langkau dalam CI — PR yang membuang semakan
+  `authz.IsManagement` lulus hijau.
+- **L15** ahli boleh memusnahkan bukti kehadirannya sendiri tanpa jejak.
+
+### Disahkan oleh mesin, belum oleh mata manusia
+
+- [ ] **`sample-sijil.pdf` belum pernah dilihat manusia.** Ujian
+      `internal/certificate` membuktikan PDF dijana, muat, dan setiap medan
+      boleh dienkod cp1252 — ia **tidak** membuktikan susun atur itu
+      kelihatan betul. Buka fail contoh dan lihat sebelum sijil pertama
+      dihantar kepada ahli sebenar.
+- [ ] **Larian menyeluruh manual belum dibuat**: cipta → terbit → daftar →
+      tanda hadir → terbit sijil → muat turun PDF → imbas QR pada PDF →
+      halaman pengesahan. Termasuk membuka halaman pengesahan dalam
+      pelayar penyamaran untuk membuktikan ia benar-benar awam tanpa sesi.
+
+### Minor yang sengaja ditangguhkan
+
+Tiada satu pun menyekat penggunaan; semuanya direkod supaya tidak
+"ditemui semula" sebagai pepijat baharu.
+
+- [ ] Ralat mesej pendaftaran terbalik: mendaftar SEBELUM
+      `registration_opens_at` memulangkan `errRegistrationClosed`
+      ("pendaftaran telah ditutup"), dan `errActivityNotOpen` ("aktiviti
+      belum dibuka") turut dipakai untuk `cancelled`/`completed`. Klien
+      Flutter mengklasifikasikan sendiri (enum `RegistrationBlocker`), jadi
+      teksnya lebih tepat daripada pelayan — pelayan yang perlu dibetulkan.
+- [ ] Semakan tetingkap pendaftaran guna `time.Now()` aplikasi, bukan
+      `now()` DB — terdedah kepada clock skew antara replika.
+- [ ] `method` tidak disilang-semak dengan pengenal yang dihantar:
+      `method="manual"` bersama `checkin_token` diterima. Rekod kaedah jadi
+      tidak boleh dipercayai untuk audit.
+- [ ] `PATCH /activities/:id` dengan `registration_closes_at` =
+      `"0001-01-01T00:00:00Z"` beri 500, bukan 400 (perangkap zero-time;
+      wujud juga pada `POST`).
+- [ ] Pendaftaran yang dibatalkan beri 404 melalui `checkin_token` tetapi
+      409 melalui `registration_id` — dan tiga keadaan 404 berbeza hanya
+      dibezakan oleh teks Melayu, jadi klien terpaksa string-match.
+- [ ] `reason` diterima dan **dibuang senyap** bila `amend=false`.
+      Pengesahan "sebab pindaan diperlukan" hanya berjalan dalam cabang
+      `if req.Amend`, jadi caller yang menghantar `reason` tanpa `amend`
+      mendapat 200 dan percaya sebabnya direkod — sedangkan tiada apa
+      ditulis. Sama ada tolak dengan 400, atau rekodkannya.
+- [ ] **`auditActor` dipanggil sambil memegang sambungan transaksi** —
+      dipindahkan ke **L13** dalam bahagian Security, sebab kesannya
+      ketersediaan (kehabisan pool) dan ia menyentuh `posts.go` serta
+      `profile.go`, bukan modul aktiviti sahaja.
+- [ ] `certificate.formatTarikh` tiada guard zero-time — `time.Time{}`
+      dicetak sebagai **"1 Januari 1"** pada PDF sijil. Ini output yang
+      DILIHAT ahli, bukan log dalaman. Tiada laluan sedia ada yang
+      menghasilkan zero-time (`activity_date` NOT NULL), tapi tiada apa
+      yang menghalangnya juga.
+- [ ] `SetActivityCertificatesIssuedAt` tulis `now()` walaupun 0 sijil
+      diterbitkan — lajur itu merekod cubaan terakhir, bukan penerbitan
+      sebenar.
+- [ ] Fasa 2 penerbitan sijil (jana PDF + naik R2) berjalan **inline pada
+      permintaan HTTP**. Boleh disambung semula (gilir dalam DB), jadi ia
+      selamat — tapi 200 ahli bermakna satu permintaan yang panjang.
+      `storage.PutObject` juga pegang badan penuh dalam memori dan tiada
+      timeout per-panggilan; jangan fan-out goroutine tanpa had bila ini
+      dipindahkan ke pekerja latar.
+- [ ] Laluan 429 had kadar pada endpoint pengesahan awam tidak diuji, dan
+      `doVerify` cipta enjin had kadar baharu setiap permintaan (bocor
+      goroutine `cleanupLoop` dalam ujian).
+- [ ] Baris `notifications` dan penghantaran push boleh menyimpang
+      (konsisten dengan `notifyOwner` sedia ada), dan bajet 2 minit untuk
+      pemberitahuan pukal meliputi SELURUH gelung, bukan per-penerima.
+- [ ] `activities.go` 999 baris. Penyemak putuskan JANGAN pecahkan buat
+      masa ni (`profile.go` sedia ada 748) — direkod supaya keputusan itu
+      jelas sengaja.
 
 ## Had gambar (siap 2026-08-09)
 
@@ -220,12 +354,132 @@ reka bentuk ni memang dah elak. **Jangan "betulkan" ini dengan Redis.**
 - [ ] Comment tiada gambar buat masa ni. Kalau ditambah, ia mesti masuk
       gilir `deleted_uploads` yang sama macam post.
 
-## Security — Low yang sengaja dibiar
+## Security
+
+### Low yang sengaja dibiar
 
 - [ ] **L10** trusted-proxy (`100.64.0.0/10` + RFC1918) betul untuk Railway,
       tapi kalau pindah platform lain kena semak semula.
 - [ ] **L11** tiada CORS config — okay sekarang (client mobile sahaja).
       Perlu bila ada web client.
+
+### Modul Aktiviti (disemak 2026-08-14)
+
+Keluar daripada semakan menyeluruh modul aktiviti. Severiti di bawah ialah
+severiti **hari ini** — L12 khususnya naik apabila satu ciri lain mendarat,
+jadi baca syarat kenaikan itu, bukan label sahaja.
+
+- [ ] **L12 — `checkin_token` dihantar dalam respons senarai peserta.**
+      **Low sekarang → Medium sebaik `self_scan` dibina. Tutup SEBELUM itu.**
+
+      `queries/activity_registrations.sql` (`ListRegistrationsByActivity`)
+      guna `select r.*`, jadi `ListRegistrationsByActivityRow` membawa
+      `CheckinToken string \`json:"checkin_token"\``
+      (`internal/db/sqlc/activity_registrations.sql.go:248`), dan handler
+      memulangkan baris itu mentah-mentah
+      (`internal/http/handlers/activity_registrations.go:240`).
+
+      Kenapa Low sekarang: endpoint ini management sahaja, dan management
+      memang sudah boleh menanda sesiapa hadir melalui `registration_id`.
+      Token itu tidak memberi mereka kuasa yang mereka tiada. Pendedahannya
+      bersifat sampingan — log, laporan ranap, cache proksi, tangkapan skrin
+      pada peranti pengurus.
+
+      Kenapa ia naik dengan `self_scan`: pada hari ahli boleh check-in
+      sendiri dengan mengimbas, token itu menjadi **kelayakan pembawa**.
+      Sesiapa yang pernah nampak senarai peserta boleh menanda ahli lain
+      hadir untuk sesi yang mereka tidak hadiri — dan kehadiran itulah yang
+      menentukan siapa dapat sijil.
+
+      Pembaikan: senaraikan lajur secara eksplisit dalam query (buang
+      `r.*`), atau petakan kepada struct respons seperti yang dibuat oleh
+      endpoint pengesahan awam. Jangan tunggu sampai `self_scan` bermula.
+
+- [ ] **L13 — `auditActor` mengambil sambungan kolam KEDUA sambil transaksi
+      memegang yang pertama.** Low–Medium, ketersediaan, **seluruh repo**.
+
+      `internal/http/handlers/audit_helpers.go` membaca profil melalui
+      `h.queries` (terikat kolam) sedangkan pemanggil sedang memegang
+      transaksi. `pgxpool` tanpa konfigurasi memberi
+      `MaxConns = max(4, NumCPU)`, jadi pada kotak 2-vCPU empat tulisan
+      pengurusan serentak boleh berbuntu.
+
+      Tapak: `activities.go`, `activity_attendance.go` — dan **sudah sedia
+      ada** dalam `posts.go` dan `profile.go` sebelum kerja ini. Baiki
+      sekali gus seluruh modul, bukan setakat laluan aktiviti.
+
+      Meringankan: endpoint ini pentadbiran sahaja dan berkonkurensi rendah,
+      dan timeout klien melepaskan sambungan. Pembaikan: nilai `auditActor`
+      **sebelum** `Begin` — kebanyakan tapak panggilan baharu sudah begitu.
+
+- [ ] **L14 — ujian kebenaran LANGKAU dalam CI.** Medium sebagai jurang
+      jaminan, bukan kelemahan hidup.
+
+      `.github/workflows/ci.yml` menjalankan `go test ./... -v` tanpa blok
+      `services:` dan tanpa Postgres, jadi setiap `*_live_test.go` dalam
+      repo melapor SKIP pada setiap pull request. Antaranya ialah penegasan
+      403-untuk-bukan-management pada **setiap** endpoint pengurusan modul
+      ini.
+
+      Maknanya: PR yang membuang satu semakan `authz.IsManagement` lulus
+      hijau. Tiada apa pada laluan CI yang membuktikan kebenaran masih
+      berkuat kuasa.
+
+      Penegasan set-medan PII bagi endpoint pengesahan awam sengaja
+      dipindahkan ke ujian unit tanpa DB (`activity_certificates_test.go`)
+      atas sebab yang sama persis — ujian kebenaran tidak.
+
+      Pembaikan: tambah perkhidmatan Postgres pada `ci.yml` (keputusan infra
+      kau), atau pindahkan penegasan authz bernilai tertinggi ke ujian yang
+      tidak perlukan DB.
+
+- [ ] **L15 — ahli boleh memusnahkan bukti kehadirannya sendiri, tanpa
+      jejak.** Low (mencederakan diri), tetapi tidak boleh dipulihkan.
+
+      `CancelRegistration` (`queries/activity_registrations.sql`) tiada
+      pengawal langsung atas status, tetingkap masa, atau kehadiran sedia
+      ada — ia menukar `status='cancelled'` tanpa syarat. Pembatalan
+      pendaftaran juga **sengaja tidak diaudit** (keputusan spec: volum
+      tinggi, baris itu sendiri simpan `cancelled_at`).
+
+      Kesan: ahli yang hadir setiap sesi menekan "Batal pendaftaran" pada
+      aktiviti yang sudah tamat. `ListEligibleForCertificate` menuntut
+      `r.status = 'registered'`, jadi dia hilang daripada kelayakan secara
+      senyap; tetingkap pendaftaran sudah tutup jadi tidak boleh daftar
+      semula; tiada catatan audit menjelaskan apa berlaku. Baris kehadiran
+      kekal tetapi menjadi yatim.
+
+      Pembaikan: tolak pembatalan (409) sebaik ada baris kehadiran, atau
+      sebaik `now() > activities.starts_at`. Klien juga sepatutnya
+      melumpuhkan butang itu untuk aktiviti `completed`/`cancelled` —
+      dicatat sebagai jurang dalam `marc_flutter/TODO.md`.
+
+### Risiko diterima — bukan kerja tertunggak
+
+- **Halaman pengesahan sijil awam mendedahkan nama ahli.** Sengaja; lihat
+  bahagian "Pendedahan privasi yang disedari" dalam spec reka bentuk.
+  Perlindungan yang sudah ada dan **mesti kekal**: token legap 32 aksara
+  (bukan nombor siri berjujukan, jadi tidak boleh dienumerasi), baldi had
+  kadar bernama `verify` yang berasingan daripada `auth`, respons ialah
+  struct enam medan yang dibina khas dan bukan baris DB, dan `404` yang
+  serupa bait-demi-bait untuk token tidak dikenali dan token cacat supaya
+  tiada oracle. Ujian unit tanpa DB menguatkuasakan set medan itu — kalau
+  ia gagal, seseorang sedang menambah medan ke halaman awam.
+
+### Sudah ditutup dalam pusingan ini
+
+Direkod supaya tidak diburu semula sebagai penemuan baharu:
+
+- Penerbitan sijil kini mengambil `LockActivityForRegistration` dan
+  menjalankan keempat-empat bacaannya di dalam transaksi. Sebelum ini dua
+  pengurus yang menekan Terbitkan serentak boleh membakar nombor siri, dan
+  sijil boleh diterbitkan kepada seseorang yang baru sahaja dijadikan tidak
+  layak — tidak boleh diterbitkan semula selepas ditarik, kerana unik
+  `(activity_id, user_id)` bukan separa.
+- `fee_cents != 0` kini ditolak `400` pada `POST` dan `PATCH /activities`.
+  Sebelum ini aktiviti berbayar didaftar percuma **dan** klausa kelayakan
+  `(a.fee_cents = 0 or r.payment_status = 'paid')` menjadi palsu untuk
+  setiap pendaftar — sifar orang layak, tiada ralat di mana-mana.
 
 ## Ujian
 
@@ -246,9 +500,32 @@ RETENTION_TEST_DB="postgres://localhost:5432/marc_retention?sslmode=disable" \
 # Handler (audit approve/reject, keterlihatan emel ahli)
 HANDLER_TEST_DB="postgres://localhost:5432/marc_handler?sslmode=disable" \
   go test ./internal/http/handlers/ -v
+
+# Modul aktiviti (jatuh balik ke HANDLER_TEST_DB kalau tak diset)
+ACTIVITY_TEST_DB="postgres://localhost:5432/marc_handler?sslmode=disable" \
+  go test ./internal/http/handlers/ -v -race
+
+# Muat naik R2 sisi pelayan (PDF sijil)
+R2_LIVE_TEST=1 go test ./internal/storage/ -run TestR2PutObjectLive -v
 ```
 
 Guna DB **buangan** untuk yang perlukan Postgres — bukan DB dev kau.
 
 - [ ] Handler test yang tinggal masih manual — belum ada suite integrasi
       penuh untuk posts/comments.
+- [ ] **Semua `*_live_test.go` LANGKAU dalam CI.** `.github/workflows/ci.yml`
+      jalankan `go test ./...` tanpa perkhidmatan Postgres dan tanpa env
+      ujian, jadi setiap ujian live dalam repo — bukan modul aktiviti
+      sahaja — lapor SKIP pada setiap pull request. Maknanya: **binaan
+      hijau tidak bermakna ujian live lulus.** Ini ditemui semasa kerja
+      sijil, di mana ujian privasi (`TestVerifyTidakMendedahkanPII`) ialah
+      satu-satunya tripwire yang menghalang medan PII baharu daripada
+      bocor melalui halaman pengesahan awam — ia langkau, jadi ia menjaga
+      apa-apa pun. Ubat separa: assertion set-medan itu dipecahkan menjadi
+      ujian unit TANPA DB (`activity_certificates_test.go`) supaya ia
+      berjalan pada setiap PR. Yang selebihnya masih langkau.
+      Keputusan sebenar (perkhidmatan Postgres dalam `ci.yml`) ialah
+      keputusan infra kau — `ci.yml` sengaja tidak disentuh.
+      **Sudut keselamatannya ada pada L14**: antara yang langkau itu ialah
+      penegasan 403-untuk-bukan-management pada setiap endpoint pengurusan,
+      jadi PR yang membuang satu semakan `authz.IsManagement` lulus hijau.

@@ -127,6 +127,61 @@ func NewRouter(
 	verified.POST("/comments/:id/like", commentHandler.Like)
 	verified.DELETE("/comments/:id/like", commentHandler.Unlike)
 
+	// Aktiviti — baca untuk sesiapa yang approved, tulis perlu email
+	// disahkan. Semakan "pengurusan sahaja" dibuat dalam handler
+	// (authz.IsManagement), sama seperti audit log dan profil.
+	activityHandler := handlers.NewActivityHandler(pool, pushSvc)
+
+	approved.GET("/activity-categories", activityHandler.ListCategories)
+	approved.GET("/activities", activityHandler.List)
+	approved.GET("/activities/:id", activityHandler.Get)
+
+	verified.POST("/activities", activityHandler.Create)
+	verified.PATCH("/activities/:id", activityHandler.Update)
+	verified.POST("/activities/:id/publish", activityHandler.Publish)
+	verified.POST("/activities/:id/cancel", activityHandler.Cancel)
+	verified.PUT("/activities/:id/sessions", activityHandler.ReplaceSessions)
+
+	// Pendaftaran ahli. Membaca senarai sendiri cukup dengan `approved`,
+	// tetapi MENDAFTAR duduk atas `verified` dengan sengaja: pendaftaran
+	// ialah komitmen yang meletakkan nama sebenar ahli pada sijil.
+	registrationHandler := handlers.NewRegistrationHandler(pool)
+
+	approved.GET("/me/activities", registrationHandler.ListMine)
+	verified.POST("/activities/:id/registration", registrationHandler.Register)
+	verified.DELETE("/activities/:id/registration", registrationHandler.Cancel)
+	verified.GET("/activities/:id/registrations", registrationHandler.ListForActivity)
+
+	// Kehadiran per-sesi. Kedua-dua route pengurusan sahaja (dikuatkuasakan
+	// dalam handler) — kehadiran ialah bukti yang menentukan siapa menerima
+	// sijil, jadi ia tidak boleh ditanda oleh penerimanya sendiri.
+	attendanceHandler := handlers.NewAttendanceHandler(pool)
+
+	verified.POST("/activities/:id/sessions/:sid/attendance", attendanceHandler.Mark)
+	verified.DELETE("/activities/:id/sessions/:sid/attendance/:rid", attendanceHandler.Unmark)
+
+	// Sijil. Terbit/tarik-balik ialah pengurusan (dikuatkuasakan dalam
+	// handler) dan duduk atas `verified`; membaca sijil SENDIRI cukup
+	// dengan `approved` — sama garisan seperti /me/activities.
+	certificateHandler := handlers.NewCertificateHandler(pool, r2Client, pushSvc, publicBaseURL)
+
+	verified.POST("/activities/:id/certificates", certificateHandler.Issue)
+	verified.POST("/certificates/:id/revoke", certificateHandler.Revoke)
+
+	approved.GET("/me/certificates", certificateHandler.ListMine)
+	approved.GET("/me/certificates/:id/file", certificateHandler.Download)
+
+	// Pengesahan sijil — AWAM, atas router akar dan bukan `approved`: kod QR
+	// pada sijil bercetak discan oleh majikan yang tiada akaun MARC.
+	//
+	// Baldi had kadar DINAMAKAN. Baldi tanpa nama berkongsi kunci Redis
+	// dengan 'auth' dan 'upload', jadi trafik pengesahan awam akan
+	// menghabiskan kuota log masuk ahli.
+	// Laluan dan nama baldi ialah pemalar dieksport dalam `handlers` supaya
+	// ia tak boleh terpesong daripada rujukan lain (lihat komennya di sana).
+	verifyRateLimiter := rateLimiter.Limit(handlers.VerifyRateLimitBucket, rate.Every(2*time.Second), 20)
+	r.GET(handlers.VerifyCertificateRoute, verifyRateLimiter, certificateHandler.Verify)
+
 	uploadRateLimiter := rateLimiter.Limit("upload", rate.Every(6*time.Second), 5)
 	verified.POST("/uploads/presign", uploadRateLimiter, uploadHandler.Presign)
 

@@ -13,6 +13,7 @@ import (
 
 type Querier interface {
 	ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error)
+	CancelRegistration(ctx context.Context, arg CancelRegistrationParams) (ActivityRegistration, error)
 	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
 	// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 	// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
@@ -22,11 +23,20 @@ type Querier interface {
 	// consumed_at dah bukan null, so 0 rows returned di sini -> caller
 	// boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
 	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
+	CountActiveRegistrations(ctx context.Context, activityID uuid.UUID) (int64, error)
+	CountActivitySessions(ctx context.Context, activityID uuid.UUID) (int64, error)
+	CountAttendanceByRegistration(ctx context.Context, registrationID uuid.UUID) (int64, error)
 	CountCommentLikesByCommentIDs(ctx context.Context, commentIds []uuid.UUID) ([]CountCommentLikesByCommentIDsRow, error)
 	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
 	CountPostLikes(ctx context.Context, postID uuid.UUID) (int64, error)
 	CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountPostLikesByPostIDsRow, error)
+	// Menghalang penggantian set sesi yang akan membuang kehadiran yang sudah
+	// direkod.
+	CountSessionsWithAttendance(ctx context.Context, activityID uuid.UUID) (int64, error)
+	CreateActivity(ctx context.Context, arg CreateActivityParams) (Activity, error)
+	CreateActivitySession(ctx context.Context, arg CreateActivitySessionParams) (ActivitySession, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) error
+	CreateCertificate(ctx context.Context, arg CreateCertificateParams) (ActivityCertificate, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error)
 	CreateDonation(ctx context.Context, arg CreateDonationParams) (Donation, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
@@ -36,7 +46,10 @@ type Querier interface {
 	CreatePostImage(ctx context.Context, arg CreatePostImageParams) (PostImage, error)
 	CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
+	CreateRegistration(ctx context.Context, arg CreateRegistrationParams) (ActivityRegistration, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteActivitySessions(ctx context.Context, activityID uuid.UUID) error
+	DeleteAttendance(ctx context.Context, arg DeleteAttendanceParams) (int64, error)
 	// Pruning polisi simpanan (lihat internal/retention).
 	DeleteAuditLogsBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	DeleteDeviceToken(ctx context.Context, arg DeleteDeviceTokenParams) error
@@ -55,6 +68,11 @@ type Querier interface {
 	// on conflict do nothing: padam post yang sama dua kali (atau retry) tak
 	// patut gagal, dan objek tu memang dah dalam gilir.
 	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
+	GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivityByIDRow, error)
+	GetActivitySessionByID(ctx context.Context, id uuid.UUID) (ActivitySession, error)
+	GetAttendance(ctx context.Context, arg GetAttendanceParams) (ActivityAttendance, error)
+	GetCertificateByID(ctx context.Context, id uuid.UUID) (ActivityCertificate, error)
+	GetCertificateByVerifyToken(ctx context.Context, verifyToken string) (ActivityCertificate, error)
 	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
 	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
@@ -64,6 +82,9 @@ type Querier interface {
 	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
+	GetRegistrationByActivityAndUser(ctx context.Context, arg GetRegistrationByActivityAndUserParams) (ActivityRegistration, error)
+	GetRegistrationByCheckinToken(ctx context.Context, checkinToken string) (ActivityRegistration, error)
+	GetRegistrationByID(ctx context.Context, id uuid.UUID) (ActivityRegistration, error)
 	GetRoleByID(ctx context.Context, id int16) (Role, error)
 	GetRoleByKey(ctx context.Context, key string) (Role, error)
 	GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID) (string, error)
@@ -73,18 +94,42 @@ type Querier interface {
 	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
 	LikeComment(ctx context.Context, arg LikeCommentParams) error
 	LikePost(ctx context.Context, arg LikePostParams) error
+	// Keyset pagination atas (starts_at, id) — sama corak dengan ListPosts,
+	// elak baris terlepas bila dua aktiviti berkongsi timestamp tepat.
+	// upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir
+	// dahulu). upcoming=false → yang dah tamat, isih menurun.
+	ListActivities(ctx context.Context, arg ListActivitiesParams) ([]ListActivitiesRow, error)
+	ListActivityCategories(ctx context.Context) ([]ActivityCategory, error)
+	ListActivitySessions(ctx context.Context, activityID uuid.UUID) ([]ActivitySession, error)
+	ListActivitySessionsByIDs(ctx context.Context, activityIds []uuid.UUID) ([]ActivitySession, error)
+	// Penerima siaran seluruh kelab (cth aktiviti baharu diterbitkan).
+	ListApprovedUserIDs(ctx context.Context) ([]uuid.UUID, error)
+	ListAttendanceByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityAttendance, error)
 	// Feed audit global dengan tapisan pilihan. Pagination keyset guna
 	// `before_id` (bukan OFFSET) — stabil walaupun baris baharu masuk
 	// semasa pengguna membelek.
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// Timeline satu entiti (cth semua suntingan pada satu post).
 	ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsByEntityParams) ([]AuditLog, error)
+	ListCertificatesByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error)
+	// Fasa 2 penerbitan menyambung dari sini. Baris tanpa r2_key ialah kerja
+	// yang belum siap, bukan ralat.
+	ListCertificatesPendingFile(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error)
 	// Flat list, semua comment (top-level + reply) untuk satu post. Client
 	// bina tree guna parent_comment_id.
 	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)
 	ListDeviceTokensByUser(ctx context.Context, userID uuid.UUID) ([]DeviceToken, error)
 	ListDueDeletedUploads(ctx context.Context, limit int32) ([]DeletedUpload, error)
+	// Server mengira sendiri siapa layak — management tidak menyenaraikan.
+	// Klausa payment_status kekal walaupun payment belum diintegrasikan:
+	// fee_cents sentiasa 0 buat masa ini, jadi ia sentiasa benar.
+	// display_name boleh null, tapi recipient_name pada sijil not null —
+	// jatuh balik ke member_id supaya ahli tanpa nama paparan tetap dapat
+	// nama yang boleh dicetak.
+	ListEligibleForCertificate(ctx context.Context, activityID uuid.UUID) ([]ListEligibleForCertificateRow, error)
 	ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error)
+	ListMyCertificates(ctx context.Context, userID uuid.UUID) ([]ListMyCertificatesRow, error)
+	ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyRegistrationsRow, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk
 	// dibuang. Menangkap dua perkara: post yang dipadam SEBELUM gilir
@@ -96,6 +141,18 @@ type Querier interface {
 	// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
+	// attended_session_ids menjawab "sesi mana pendaftaran ini sudah hadir?" —
+	// skrin kehadiran pengurusan menyemai suisnya daripada medan ini. Satu
+	// boolean per peserta tidak mencukupi: kehadiran ialah per-sesi.
+	//
+	// Agregat dikira SEKALI dalam subkueri berkumpulan, bukan satu kueri per
+	// pendaftaran; senarai ini dibaca dengan seluruh peserta sekali gus, jadi
+	// N+1 di sini bermakna satu perjalanan DB bagi setiap ahli.
+	//
+	// coalesce(..., '{}') penting: left join memberi NULL untuk pendaftaran
+	// tanpa kehadiran, dan NULL bersiri sebagai `null` dalam JSON. Klien yang
+	// memanggil .map atasnya terhempas — [] ialah kontrak.
+	ListRegistrationsByActivity(ctx context.Context, activityID uuid.UUID) ([]ListRegistrationsByActivityRow, error)
 	ListRoles(ctx context.Context) ([]Role, error)
 	// Pending upload yang tak pernah dilekatkan pada mana-mana post.
 	ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]PendingUpload, error)
@@ -110,7 +167,14 @@ type Querier interface {
 	//                          berstatus 'approved' (+ baris dia sendiri,
 	//                          apa pun statusnya)
 	ListVisibleProfiles(ctx context.Context, arg ListVisibleProfilesParams) ([]ListVisibleProfilesRow, error)
+	// `for update` atas baris aktiviti — ini yang menyerikan pendaftaran
+	// serentak supaya kiraan kapasiti tak boleh basi antara baca dan tulis.
+	LockActivityForRegistration(ctx context.Context, id uuid.UUID) (Activity, error)
 	MarkAllNotificationsRead(ctx context.Context, recipientID uuid.UUID) error
+	// on conflict do nothing + returning: imbas kedua QR yang sama bukan ralat,
+	// ia cuma tiada kerja. Handler membezakan "baharu" daripada "sudah ada"
+	// melalui sama ada baris dipulangkan.
+	MarkAttendance(ctx context.Context, arg MarkAttendanceParams) (ActivityAttendance, error)
 	// Tandakan, jangan padam baris — lihat komen 'deleted_at' dlm migration.
 	MarkDeletedUploadDone(ctx context.Context, r2Key string) error
 	// Backoff eksponen ringkas, dihadkan pada 1 jam.
@@ -122,17 +186,26 @@ type Querier interface {
 	// Untuk tandakan "liked_by_me" bila list post — pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
+	// Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
+	// selepas cipta — dipanggil dalam transaksi yang sama dengan setiap
+	// perubahan set sesi.
+	RecomputeActivityWindow(ctx context.Context, id uuid.UUID) error
 	// Buang metadata permintaan daripada catatan lama TANPA memusnahkan
 	// catatan itu sendiri. Dibenarkan oleh trigger append-only kerana ia
 	// hanya menetapkan kedua-dua lajur ini kepada NULL — lihat migration
 	// 20260809180000.
 	RedactAuditLogPIIBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error)
+	RevokeCertificate(ctx context.Context, arg RevokeCertificateParams) (ActivityCertificate, error)
 	RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error
+	SetActivityCertificatesIssuedAt(ctx context.Context, id uuid.UUID) error
+	SetActivityStatus(ctx context.Context, arg SetActivityStatusParams) (Activity, error)
+	SetCertificateR2Key(ctx context.Context, arg SetCertificateR2KeyParams) error
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
+	UpdateActivity(ctx context.Context, arg UpdateActivityParams) (Activity, error)
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
 	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
 	// retry/replay (atau event lewat sampai tak ikut turutan) tak boleh

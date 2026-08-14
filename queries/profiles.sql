@@ -97,3 +97,7 @@ where r.category = $1;
 update profiles set avatar_r2_key = sqlc.narg('avatar_r2_key')::text
 where user_id = $1
 returning *;
+
+-- name: ListApprovedUserIDs :many
+-- Penerima siaran seluruh kelab (cth aktiviti baharu diterbitkan).
+select user_id from profiles where status = 'approved';

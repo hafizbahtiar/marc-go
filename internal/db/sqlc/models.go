@@ -9,6 +9,84 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Activity struct {
+	ID                     uuid.UUID          `json:"id"`
+	CategoryID             uuid.UUID          `json:"category_id"`
+	Title                  string             `json:"title"`
+	Description            string             `json:"description"`
+	LocationName           string             `json:"location_name"`
+	LocationAddress        string             `json:"location_address"`
+	StartsAt               pgtype.Timestamptz `json:"starts_at"`
+	EndsAt                 pgtype.Timestamptz `json:"ends_at"`
+	RegistrationOpensAt    pgtype.Timestamptz `json:"registration_opens_at"`
+	RegistrationClosesAt   pgtype.Timestamptz `json:"registration_closes_at"`
+	Capacity               pgtype.Int4        `json:"capacity"`
+	FeeCents               int32              `json:"fee_cents"`
+	Currency               string             `json:"currency"`
+	AttendanceThresholdPct int16              `json:"attendance_threshold_pct"`
+	Status                 string             `json:"status"`
+	CancelledReason        pgtype.Text        `json:"cancelled_reason"`
+	CertificatesIssuedAt   pgtype.Timestamptz `json:"certificates_issued_at"`
+	CreatedBy              pgtype.UUID        `json:"created_by"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type ActivityAttendance struct {
+	ID             uuid.UUID          `json:"id"`
+	RegistrationID uuid.UUID          `json:"registration_id"`
+	SessionID      uuid.UUID          `json:"session_id"`
+	Method         string             `json:"method"`
+	MarkedBy       pgtype.UUID        `json:"marked_by"`
+	CheckedInAt    pgtype.Timestamptz `json:"checked_in_at"`
+}
+
+type ActivityCategory struct {
+	ID        uuid.UUID          `json:"id"`
+	Key       string             `json:"key"`
+	Name      string             `json:"name"`
+	SortOrder int32              `json:"sort_order"`
+	IsActive  bool               `json:"is_active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type ActivityCertificate struct {
+	ID            uuid.UUID          `json:"id"`
+	ActivityID    uuid.UUID          `json:"activity_id"`
+	UserID        uuid.UUID          `json:"user_id"`
+	Serial        string             `json:"serial"`
+	VerifyToken   string             `json:"verify_token"`
+	RecipientName string             `json:"recipient_name"`
+	ActivityTitle string             `json:"activity_title"`
+	ActivityDate  pgtype.Date        `json:"activity_date"`
+	IssuedAt      pgtype.Timestamptz `json:"issued_at"`
+	R2Key         pgtype.Text        `json:"r2_key"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason pgtype.Text        `json:"revoked_reason"`
+}
+
+type ActivityRegistration struct {
+	ID            uuid.UUID          `json:"id"`
+	ActivityID    uuid.UUID          `json:"activity_id"`
+	UserID        uuid.UUID          `json:"user_id"`
+	Status        string             `json:"status"`
+	PaymentStatus string             `json:"payment_status"`
+	PaymentRef    pgtype.Text        `json:"payment_ref"`
+	CheckinToken  string             `json:"checkin_token"`
+	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
+	CancelledAt   pgtype.Timestamptz `json:"cancelled_at"`
+}
+
+type ActivitySession struct {
+	ID         uuid.UUID          `json:"id"`
+	ActivityID uuid.UUID          `json:"activity_id"`
+	Seq        int32              `json:"seq"`
+	Title      string             `json:"title"`
+	StartsAt   pgtype.Timestamptz `json:"starts_at"`
+	EndsAt     pgtype.Timestamptz `json:"ends_at"`
+}
+
 type AuditLog struct {
 	ID            int64              `json:"id"`
 	EntityType    string             `json:"entity_type"`
@@ -83,14 +161,16 @@ type EmailVerificationToken struct {
 }
 
 type Notification struct {
-	ID          uuid.UUID          `json:"id"`
-	RecipientID uuid.UUID          `json:"recipient_id"`
-	ActorID     uuid.UUID          `json:"actor_id"`
-	Type        string             `json:"type"`
-	PostID      pgtype.UUID        `json:"post_id"`
-	CommentID   pgtype.UUID        `json:"comment_id"`
-	ReadAt      pgtype.Timestamptz `json:"read_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID            uuid.UUID          `json:"id"`
+	RecipientID   uuid.UUID          `json:"recipient_id"`
+	ActorID       uuid.UUID          `json:"actor_id"`
+	Type          string             `json:"type"`
+	PostID        pgtype.UUID        `json:"post_id"`
+	CommentID     pgtype.UUID        `json:"comment_id"`
+	ReadAt        pgtype.Timestamptz `json:"read_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ActivityID    pgtype.UUID        `json:"activity_id"`
+	CertificateID pgtype.UUID        `json:"certificate_id"`
 }
 
 type PendingUpload struct {
