@@ -330,6 +330,15 @@ type memberResponse struct {
 	// null = tiada gambar profil (atau R2 belum dikonfigur). Client jatuh
 	// balik kepada huruf pertama nama.
 	AvatarURL *string `json:"avatar_url"`
+
+	// RegistrationPaymentStatus — "pending"/"succeeded"/"failed", atau
+	// null. Ditambah 2026-08-15 supaya management nampak siapa dah bayar
+	// SEBELUM tekan Luluskan (gate `ApproveMember` sedia ada sejak awal,
+	// cuma tak kelihatan di senarai sebelum ni). Sama pola privasi
+	// dengan Email — cuma management yang dapat nilai sebenar, ahli
+	// biasa dapat null (bukan medan yang perlu didedahkan untuk lihat
+	// ahli lain).
+	RegistrationPaymentStatus *string `json:"registration_payment_status"`
 }
 
 // Members setara `membersProvider` di Flutter — gantian RLS
@@ -384,11 +393,17 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		if !isManagement && row.UserID != userID {
 			email = ""
 		}
+		// Padanan pola Email — status bayaran cuma berguna untuk
+		// management, ahli biasa dapat null (lihat komen memberResponse).
+		paymentStatus := row.RegistrationPaymentStatus
+		if !isManagement {
+			paymentStatus = ""
+		}
 		members[i] = h.toMemberResponse(ctx, memberRow{
 			UserID: row.UserID, MemberID: row.MemberID, DisplayName: row.DisplayName,
 			Email: email, RoleKey: row.RoleKey, RoleName: row.RoleName,
 			RoleRank: row.RoleRank, Category: row.RoleCategory, Status: row.Status,
-			AvatarKey: row.AvatarR2Key,
+			AvatarKey: row.AvatarR2Key, RegistrationPaymentStatus: paymentStatus,
 		})
 	}
 	c.JSON(http.StatusOK, members)
@@ -435,16 +450,17 @@ func visibleRankCeiling(roles []sqlc.Role, viewerRank int32) int32 {
 // yang sama, jadi tertukar susunan (cth roleKey lawan roleName) akan
 // compile dengan senyap.
 type memberRow struct {
-	UserID      uuid.UUID
-	MemberID    string
-	DisplayName pgtype.Text
-	Email       string // kosong = sembunyikan medan
-	RoleKey     string
-	RoleName    string
-	RoleRank    int32
-	Category    string
-	Status      string
-	AvatarKey   pgtype.Text
+	UserID                    uuid.UUID
+	MemberID                  string
+	DisplayName               pgtype.Text
+	Email                     string // kosong = sembunyikan medan
+	RoleKey                   string
+	RoleName                  string
+	RoleRank                  int32
+	Category                  string
+	Status                    string
+	AvatarKey                 pgtype.Text
+	RegistrationPaymentStatus string // kosong = sembunyikan medan (padanan Email)
 }
 
 func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memberResponse {
@@ -452,17 +468,22 @@ func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memb
 	if m.Email != "" {
 		emailPtr = &m.Email
 	}
+	var paymentStatusPtr *string
+	if m.RegistrationPaymentStatus != "" {
+		paymentStatusPtr = &m.RegistrationPaymentStatus
+	}
 	return memberResponse{
-		UserID:      m.UserID.String(),
-		MemberID:    m.MemberID,
-		DisplayName: textToPtr(m.DisplayName),
-		Email:       emailPtr,
-		RoleKey:     m.RoleKey,
-		RoleName:    m.RoleName,
-		RoleRank:    m.RoleRank,
-		Category:    m.Category,
-		Status:      m.Status,
-		AvatarURL:   h.avatarURL(ctx, m.AvatarKey),
+		UserID:                    m.UserID.String(),
+		MemberID:                  m.MemberID,
+		DisplayName:               textToPtr(m.DisplayName),
+		Email:                     emailPtr,
+		RoleKey:                   m.RoleKey,
+		RoleName:                  m.RoleName,
+		RoleRank:                  m.RoleRank,
+		Category:                  m.Category,
+		Status:                    m.Status,
+		AvatarURL:                 h.avatarURL(ctx, m.AvatarKey),
+		RegistrationPaymentStatus: paymentStatusPtr,
 	}
 }
 

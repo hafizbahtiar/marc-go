@@ -236,10 +236,27 @@ select
   r.key as role_key,
   r.name as role_name,
   r.category as role_category,
-  r.rank as role_rank
+  r.rank as role_rank,
+  -- Status bayaran yuran pendaftaran TERKINI (utamakan 'succeeded' —
+  -- padanan ` + "`" + `GetLatestRegistrationPaymentStatus` + "`" + `, sebab sama: checkout
+  -- berulang boleh cipta >1 baris). String KOSONG = ahli tak pernah
+  -- cuba bayar (coalesce, BUKAN NULL — sqlc infer tak konsisten
+  -- nullability keputusan LEFT JOIN LATERAL, string kosong lebih
+  -- selamat drpd risiko crash scan NULL->string). Ditambah 2026-08-15
+  -- supaya management NAMPAK siapa dah bayar SEBELUM tekan Luluskan,
+  -- bukan dapat ralat lepas fakta (gate ` + "`" + `ApproveMember` + "`" + ` sedia ada sejak
+  -- awal, cuma tak kelihatan di sini).
+  coalesce(latest_payment.status, '') as registration_payment_status
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
+left join lateral (
+  select rp.status
+  from registration_payments rp
+  where rp.user_id = p.user_id
+  order by (rp.status = 'succeeded') desc, rp.created_at desc
+  limit 1
+) latest_payment on true
 where r.rank <= $1::int
   and ($2::text is null or p.status = $2::text)
   and (
@@ -258,23 +275,24 @@ type ListVisibleProfilesParams struct {
 }
 
 type ListVisibleProfilesRow struct {
-	ID            uuid.UUID          `json:"id"`
-	UserID        uuid.UUID          `json:"user_id"`
-	MemberID      string             `json:"member_id"`
-	DisplayName   pgtype.Text        `json:"display_name"`
-	Phone         pgtype.Text        `json:"phone"`
-	RoleID        int16              `json:"role_id"`
-	EmailVerified bool               `json:"email_verified"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Status        string             `json:"status"`
-	ApprovedBy    pgtype.UUID        `json:"approved_by"`
-	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
-	AvatarR2Key   pgtype.Text        `json:"avatar_r2_key"`
-	Email         string             `json:"email"`
-	RoleKey       string             `json:"role_key"`
-	RoleName      string             `json:"role_name"`
-	RoleCategory  string             `json:"role_category"`
-	RoleRank      int32              `json:"role_rank"`
+	ID                        uuid.UUID          `json:"id"`
+	UserID                    uuid.UUID          `json:"user_id"`
+	MemberID                  string             `json:"member_id"`
+	DisplayName               pgtype.Text        `json:"display_name"`
+	Phone                     pgtype.Text        `json:"phone"`
+	RoleID                    int16              `json:"role_id"`
+	EmailVerified             bool               `json:"email_verified"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	Status                    string             `json:"status"`
+	ApprovedBy                pgtype.UUID        `json:"approved_by"`
+	ApprovedAt                pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key               pgtype.Text        `json:"avatar_r2_key"`
+	Email                     string             `json:"email"`
+	RoleKey                   string             `json:"role_key"`
+	RoleName                  string             `json:"role_name"`
+	RoleCategory              string             `json:"role_category"`
+	RoleRank                  int32              `json:"role_rank"`
+	RegistrationPaymentStatus string             `json:"registration_payment_status"`
 }
 
 // Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
@@ -320,6 +338,7 @@ func (q *Queries) ListVisibleProfiles(ctx context.Context, arg ListVisibleProfil
 			&i.RoleName,
 			&i.RoleCategory,
 			&i.RoleRank,
+			&i.RegistrationPaymentStatus,
 		); err != nil {
 			return nil, err
 		}
