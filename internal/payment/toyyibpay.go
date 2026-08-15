@@ -173,7 +173,20 @@ func (t *ToyyibPayGateway) VerifyWebhook(payload []byte, headers http.Header) (W
 		return WebhookEvent{}, ErrNotConfigured
 	}
 
-	values, err := url.ParseQuery(string(payload))
+	// Go 1.17+ `url.ParseQuery` TOLAK `;` mentah dalam query string terus
+	// (pengukuhan keselamatan — kekaburan lama sama ada `;` pemisah atau
+	// aksara literal dalam nilai, lihat golang.org/issue/25192). Disahkan
+	// LIVE di staging: callback ToyyibPay sebenar bawa `;` mentah dalam
+	// salah satu nilai (cth medan `msg`/`reason`), jadi parse GAGAL
+	// TERUS setiap kali — bukan kes tepi jarang, callback sentiasa gagal.
+	// Kod ni cuma perlukan `billcode` (status sebenar disahkan semula
+	// via poll, bukan daripada body — lihat komen fungsi), jadi selamat
+	// escape `;` literal ke `%3B` dulu: tak ubah struktur pasangan
+	// key=value yang dipisah `&`, cuma neutralkan `;` di mana-mana ia
+	// muncul supaya parser tak tolak keseluruhan body sebab satu aksara
+	// dalam satu medan yang kita tak guna pun.
+	sanitized := strings.ReplaceAll(string(payload), ";", "%3B")
+	values, err := url.ParseQuery(sanitized)
 	if err != nil {
 		return WebhookEvent{}, fmt.Errorf("toyyibpay callback: parse body: %w", err)
 	}
