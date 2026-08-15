@@ -171,6 +171,8 @@ func NewRouter(
 	activityHandler := handlers.NewActivityHandler(pool, pushSvc)
 
 	approved.GET("/activity-categories", activityHandler.ListCategories)
+	verified.POST("/activity-categories", activityHandler.CreateCategory)
+	verified.PATCH("/activity-categories/:id", activityHandler.UpdateCategory)
 	approved.GET("/activities", activityHandler.List)
 	approved.GET("/activities/:id", activityHandler.Get)
 

@@ -31,3 +31,20 @@ func IsManagement(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (bool,
 	}
 	return category == CategoryManagement, nil
 }
+
+// IsAtLeastRole semak sama ada rank role caller >= rank role `roleKey`.
+// Lebih halus drpd IsManagement (cth "manager ke atas sahaja", exclude
+// supervisor) — guna bila tindakan dikawal lebih ketat drpd management
+// umum, cth kategori aktiviti (infrastruktur dikongsi semua aktiviti,
+// bukan tindakan pengurusan harian biasa).
+func IsAtLeastRole(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, roleKey string) (bool, error) {
+	profile, err := q.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	role, err := q.GetRoleByKey(ctx, roleKey)
+	if err != nil {
+		return false, err
+	}
+	return profile.RoleRank >= role.Rank, nil
+}

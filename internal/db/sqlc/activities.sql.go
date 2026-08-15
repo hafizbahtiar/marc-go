@@ -106,6 +106,32 @@ func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) 
 	return i, err
 }
 
+const createActivityCategory = `-- name: CreateActivityCategory :one
+insert into activity_categories (key, name, sort_order)
+values ($1, $2, $3)
+returning id, key, name, sort_order, is_active, created_at
+`
+
+type CreateActivityCategoryParams struct {
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	SortOrder int32  `json:"sort_order"`
+}
+
+func (q *Queries) CreateActivityCategory(ctx context.Context, arg CreateActivityCategoryParams) (ActivityCategory, error) {
+	row := q.db.QueryRow(ctx, createActivityCategory, arg.Key, arg.Name, arg.SortOrder)
+	var i ActivityCategory
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Name,
+		&i.SortOrder,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createActivitySession = `-- name: CreateActivitySession :one
 insert into activity_sessions (activity_id, seq, title, starts_at, ends_at)
 values ($1, $2, $3, $4, $5)
@@ -209,6 +235,24 @@ func (q *Queries) GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivit
 		&i.DeletedAt,
 		&i.CategoryKey,
 		&i.CategoryName,
+	)
+	return i, err
+}
+
+const getActivityCategoryByID = `-- name: GetActivityCategoryByID :one
+select id, key, name, sort_order, is_active, created_at from activity_categories where id = $1
+`
+
+func (q *Queries) GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error) {
+	row := q.db.QueryRow(ctx, getActivityCategoryByID, id)
+	var i ActivityCategory
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Name,
+		&i.SortOrder,
+		&i.IsActive,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -450,6 +494,41 @@ func (q *Queries) ListActivitySessionsByIDs(ctx context.Context, activityIds []u
 	return items, nil
 }
 
+const listAllActivityCategories = `-- name: ListAllActivityCategories :many
+select id, key, name, sort_order, is_active, created_at from activity_categories
+order by sort_order, name
+`
+
+// Untuk skrin pengurusan CRUD kategori (manager ke atas) — TERMASUK yang
+// tidak aktif, supaya boleh diaktifkan semula. Borang cipta aktiviti guna
+// ListActivityCategories (aktif sahaja) di atas.
+func (q *Queries) ListAllActivityCategories(ctx context.Context) ([]ActivityCategory, error) {
+	rows, err := q.db.Query(ctx, listAllActivityCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityCategory
+	for rows.Next() {
+		var i ActivityCategory
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.Name,
+			&i.SortOrder,
+			&i.IsActive,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recomputeActivityWindow = `-- name: RecomputeActivityWindow :exec
 update activities a set
   starts_at = s.min_start,
@@ -583,6 +662,44 @@ func (q *Queries) UpdateActivity(ctx context.Context, arg UpdateActivityParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateActivityCategory = `-- name: UpdateActivityCategory :one
+update activity_categories
+set
+  name = coalesce($2::text, name),
+  sort_order = coalesce($3::int, sort_order),
+  is_active = coalesce($4::boolean, is_active)
+where id = $1
+returning id, key, name, sort_order, is_active, created_at
+`
+
+type UpdateActivityCategoryParams struct {
+	ID        uuid.UUID   `json:"id"`
+	Name      pgtype.Text `json:"name"`
+	SortOrder pgtype.Int4 `json:"sort_order"`
+	IsActive  pgtype.Bool `json:"is_active"`
+}
+
+// `key` sengaja tidak boleh diubah selepas cipta — padanan corak role.key,
+// ia pengecam stabil (bukan medan paparan macam `name`).
+func (q *Queries) UpdateActivityCategory(ctx context.Context, arg UpdateActivityCategoryParams) (ActivityCategory, error) {
+	row := q.db.QueryRow(ctx, updateActivityCategory,
+		arg.ID,
+		arg.Name,
+		arg.SortOrder,
+		arg.IsActive,
+	)
+	var i ActivityCategory
+	err := row.Scan(
+		&i.ID,
+		&i.Key,
+		&i.Name,
+		&i.SortOrder,
+		&i.IsActive,
+		&i.CreatedAt,
 	)
 	return i, err
 }

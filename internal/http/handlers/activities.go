@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -326,10 +327,46 @@ func (h *ActivityHandler) requireManagement(c *gin.Context) bool {
 	return true
 }
 
+// managerRoleKey — siling "manager ke atas" utk kawalan lebih ketat drpd
+// IsManagement (yang termasuk supervisor). Kategori aktiviti ialah
+// infrastruktur dikongsi semua aktiviti, bukan tindakan pengurusan harian.
+const managerRoleKey = "manager"
+
+func (h *ActivityHandler) requireManagerOrAbove(c *gin.Context) bool {
+	ok, err := authz.IsAtLeastRole(c.Request.Context(), h.queries, middleware.UserID(c), managerRoleKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak kebenaran"})
+		return false
+	}
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tindakan ini untuk manager ke atas sahaja"})
+		return false
+	}
+	return true
+}
+
 // ---- Baca ----
 
+// ListCategories — lalai cuma pulangkan kategori AKTIF (utk borang cipta
+// aktiviti, semua ahli approved). `?all=true` pulangkan semua termasuk
+// tidak aktif, utk skrin pengurusan CRUD — dikawal manager ke atas sahaja,
+// sama corak dengan status=draft dalam List() di bawah.
 func (h *ActivityHandler) ListCategories(c *gin.Context) {
-	categories, err := h.queries.ListActivityCategories(c.Request.Context())
+	ctx := c.Request.Context()
+	includeInactive := c.Query("all") == "true"
+	if includeInactive && !h.requireManagerOrAbove(c) {
+		return
+	}
+
+	var (
+		categories []sqlc.ActivityCategory
+		err        error
+	)
+	if includeInactive {
+		categories, err = h.queries.ListAllActivityCategories(ctx)
+	} else {
+		categories, err = h.queries.ListActivityCategories(ctx)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat kategori"})
 		return
@@ -338,6 +375,179 @@ func (h *ActivityHandler) ListCategories(c *gin.Context) {
 		categories = []sqlc.ActivityCategory{}
 	}
 	c.JSON(http.StatusOK, gin.H{"categories": categories})
+}
+
+// categoryKeyPattern — huruf kecil, nombor, garis bawah sahaja, mesti
+// bermula huruf. Padanan gaya `key` role/kategori sedia ada (cth
+// 'badminton', 'bola_tampar').
+var categoryKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{1,49}$`)
+
+type createCategoryRequest struct {
+	Key       string `json:"key" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+	SortOrder int32  `json:"sort_order"`
+}
+
+func categorySnapshot(cat sqlc.ActivityCategory) map[string]any {
+	return map[string]any{
+		"key":        cat.Key,
+		"name":       cat.Name,
+		"sort_order": cat.SortOrder,
+		"is_active":  cat.IsActive,
+	}
+}
+
+func (h *ActivityHandler) CreateCategory(c *gin.Context) {
+	if !h.requireManagerOrAbove(c) {
+		return
+	}
+
+	var req createCategoryRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	req.Key = strings.TrimSpace(req.Key)
+	req.Name = strings.TrimSpace(req.Name)
+	if !categoryKeyPattern.MatchString(req.Key) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "kunci kategori mesti huruf kecil, nombor dan garis bawah sahaja"})
+		return
+	}
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nama kategori diperlukan"})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal cipta kategori"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	category, err := q.CreateActivityCategory(ctx, sqlc.CreateActivityCategoryParams{
+		Key:       req.Key,
+		Name:      req.Name,
+		SortOrder: req.SortOrder,
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "kunci kategori sudah wujud"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal cipta kategori"})
+		return
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityActivityCategory,
+		EntityID:   category.ID,
+		Action:     audit.ActionCreate,
+		Actor:      auditActor(c, h.queries),
+		New:        categorySnapshot(category),
+	}); err != nil {
+		log.Printf("audit cipta kategori aktiviti: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal cipta kategori"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal cipta kategori"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, category)
+}
+
+type updateCategoryRequest struct {
+	Name      *string `json:"name"`
+	SortOrder *int32  `json:"sort_order"`
+	IsActive  *bool   `json:"is_active"`
+}
+
+func (h *ActivityHandler) UpdateCategory(c *gin.Context) {
+	if !h.requireManagerOrAbove(c) {
+		return
+	}
+	id, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req updateCategoryRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "nama kategori tidak boleh kosong"})
+			return
+		}
+		req.Name = &trimmed
+	}
+
+	ctx := c.Request.Context()
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini kategori"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	before, err := q.GetActivityCategoryByID(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "kategori tidak dijumpai"})
+		return
+	}
+
+	name := pgtype.Text{}
+	if req.Name != nil {
+		name = pgtype.Text{String: *req.Name, Valid: true}
+	}
+	sortOrder := pgtype.Int4{}
+	if req.SortOrder != nil {
+		sortOrder = pgtype.Int4{Int32: *req.SortOrder, Valid: true}
+	}
+	isActive := pgtype.Bool{}
+	if req.IsActive != nil {
+		isActive = pgtype.Bool{Bool: *req.IsActive, Valid: true}
+	}
+
+	updated, err := q.UpdateActivityCategory(ctx, sqlc.UpdateActivityCategoryParams{
+		ID:        id,
+		Name:      name,
+		SortOrder: sortOrder,
+		IsActive:  isActive,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini kategori"})
+		return
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityActivityCategory,
+		EntityID:   id,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, h.queries),
+		Old:        categorySnapshot(before),
+		New:        categorySnapshot(updated),
+	}); err != nil {
+		log.Printf("audit kemas kini kategori aktiviti: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini kategori"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini kategori"})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
 }
 
 func (h *ActivityHandler) List(c *gin.Context) {

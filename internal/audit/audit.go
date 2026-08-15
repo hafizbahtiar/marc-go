@@ -38,6 +38,9 @@ const (
 	// Sijil diaudit pada penerbitan DAN penarikan balik: baris sijil kekal
 	// selepas ditarik balik, tetapi sebab dan pelakunya hanya ada di sini.
 	EntityCertificate = "activity_certificate"
+	// Kategori aktiviti — infrastruktur dikongsi semua aktiviti (bukan
+	// tindakan pengurusan harian), jadi diaudit sama macam role.
+	EntityActivityCategory = "activity_category"
 )
 
 const (

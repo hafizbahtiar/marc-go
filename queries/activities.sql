@@ -3,6 +3,32 @@ select * from activity_categories
 where is_active = true
 order by sort_order, name;
 
+-- name: ListAllActivityCategories :many
+-- Untuk skrin pengurusan CRUD kategori (manager ke atas) — TERMASUK yang
+-- tidak aktif, supaya boleh diaktifkan semula. Borang cipta aktiviti guna
+-- ListActivityCategories (aktif sahaja) di atas.
+select * from activity_categories
+order by sort_order, name;
+
+-- name: GetActivityCategoryByID :one
+select * from activity_categories where id = $1;
+
+-- name: CreateActivityCategory :one
+insert into activity_categories (key, name, sort_order)
+values ($1, $2, $3)
+returning *;
+
+-- name: UpdateActivityCategory :one
+-- `key` sengaja tidak boleh diubah selepas cipta — padanan corak role.key,
+-- ia pengecam stabil (bukan medan paparan macam `name`).
+update activity_categories
+set
+  name = coalesce(sqlc.narg('name')::text, name),
+  sort_order = coalesce(sqlc.narg('sort_order')::int, sort_order),
+  is_active = coalesce(sqlc.narg('is_active')::boolean, is_active)
+where id = $1
+returning *;
+
 -- name: CreateActivity :one
 insert into activities (
   category_id, title, description, location_name, location_address,

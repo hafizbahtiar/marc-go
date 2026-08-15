@@ -64,6 +64,7 @@ type Querier interface {
 	// direkod.
 	CountSessionsWithAttendance(ctx context.Context, activityID uuid.UUID) (int64, error)
 	CreateActivity(ctx context.Context, arg CreateActivityParams) (Activity, error)
+	CreateActivityCategory(ctx context.Context, arg CreateActivityCategoryParams) (ActivityCategory, error)
 	CreateActivitySession(ctx context.Context, arg CreateActivitySessionParams) (ActivitySession, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) error
 	CreateCertificate(ctx context.Context, arg CreateCertificateParams) (ActivityCertificate, error)
@@ -104,6 +105,7 @@ type Querier interface {
 	// patut gagal, dan objek tu memang dah dalam gilir.
 	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
 	GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivityByIDRow, error)
+	GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error)
 	GetActivitySessionByID(ctx context.Context, id uuid.UUID) (ActivitySession, error)
 	GetAttendance(ctx context.Context, arg GetAttendanceParams) (ActivityAttendance, error)
 	GetCertificateByID(ctx context.Context, id uuid.UUID) (ActivityCertificate, error)
@@ -154,6 +156,10 @@ type Querier interface {
 	ListActivityCategories(ctx context.Context) ([]ActivityCategory, error)
 	ListActivitySessions(ctx context.Context, activityID uuid.UUID) ([]ActivitySession, error)
 	ListActivitySessionsByIDs(ctx context.Context, activityIds []uuid.UUID) ([]ActivitySession, error)
+	// Untuk skrin pengurusan CRUD kategori (manager ke atas) — TERMASUK yang
+	// tidak aktif, supaya boleh diaktifkan semula. Borang cipta aktiviti guna
+	// ListActivityCategories (aktif sahaja) di atas.
+	ListAllActivityCategories(ctx context.Context) ([]ActivityCategory, error)
 	// Penerima siaran seluruh kelab (cth aktiviti baharu diterbitkan).
 	ListApprovedUserIDs(ctx context.Context) ([]uuid.UUID, error)
 	ListAttendanceByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityAttendance, error)
@@ -288,6 +294,9 @@ type Querier interface {
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	UpdateActivity(ctx context.Context, arg UpdateActivityParams) (Activity, error)
+	// `key` sengaja tidak boleh diubah selepas cipta — padanan corak role.key,
+	// ia pengecam stabil (bukan medan paparan macam `name`).
+	UpdateActivityCategory(ctx context.Context, arg UpdateActivityCategoryParams) (ActivityCategory, error)
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
 	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
 	// retry/replay (atau event lewat sampai tak ikut turutan) tak boleh
