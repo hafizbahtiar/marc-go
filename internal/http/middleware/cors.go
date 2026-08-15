@@ -21,7 +21,11 @@ import (
 // wildcard bersama respons JSON sensitif ialah tabiat buruk walau
 // endpoint ni sendiri tak bawa kredential; senarai eksplisit juga
 // buat niat jelas dibaca drpd config, bukan diteka.
-func CORS(allowedOrigins []string) gin.HandlerFunc {
+// allowedMethods — nilai literal header Access-Control-Allow-Methods
+// (cth "GET, OPTIONS" atau "POST, OPTIONS"). Diserah per-panggilan
+// supaya ia sepadan dgn kaedah SEBENAR laluan yang dipasang, bukan
+// dibakar tetap dalam middleware untuk semua laluan.
+func CORS(allowedOrigins []string, allowedMethods string) gin.HandlerFunc {
 	allowed := make(map[string]bool, len(allowedOrigins))
 	for _, o := range allowedOrigins {
 		if o != "" {
@@ -37,7 +41,7 @@ func CORS(allowedOrigins []string) gin.HandlerFunc {
 			// cache perantara (CDN/proksi) tak boleh kongsi salinan antara
 			// origin berbeza.
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Methods", "POST, OPTIONS")
+			c.Header("Access-Control-Allow-Methods", allowedMethods)
 			c.Header("Access-Control-Allow-Headers", "Content-Type")
 			c.Header("Access-Control-Max-Age", "3600")
 		}

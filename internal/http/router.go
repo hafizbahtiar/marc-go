@@ -96,9 +96,9 @@ func NewRouter(
 	// CORS dipasang khusus di sini — satu-satunya laluan awam dipanggil
 	// via fetch() dari laman web (marc.hafizbahtiar.com), bukan navigasi
 	// pelayar penuh. Lihat internal/http/middleware/cors.go.
-	corsMW := middleware.CORS(corsAllowedOrigins)
-	authGroup.POST("/verify-email/confirm", corsMW, authRateLimiter, authHandler.ConfirmEmailVerification)
-	authGroup.OPTIONS("/verify-email/confirm", corsMW)
+	verifyEmailCORS := middleware.CORS(corsAllowedOrigins, "POST, OPTIONS")
+	authGroup.POST("/verify-email/confirm", verifyEmailCORS, authRateLimiter, authHandler.ConfirmEmailVerification)
+	authGroup.OPTIONS("/verify-email/confirm", verifyEmailCORS)
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
 
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
@@ -267,7 +267,8 @@ func NewRouter(
 	// diisi), Astro fetch() laluan JSON ni cross-origin. GET simple
 	// request tak trigger preflight OPTIONS, tapi respons masih perlu
 	// header Access-Control-Allow-Origin untuk JS baca. Lihat cors.go.
-	r.GET(handlers.VerifyCertificateRoute, corsMW, verifyRateLimiter, certificateHandler.Verify)
+	certVerifyCORS := middleware.CORS(corsAllowedOrigins, "GET, OPTIONS")
+	r.GET(handlers.VerifyCertificateRoute, certVerifyCORS, verifyRateLimiter, certificateHandler.Verify)
 
 	uploadRateLimiter := rateLimiter.Limit("upload", rate.Every(6*time.Second), 5)
 	verified.POST("/uploads/presign", uploadRateLimiter, uploadHandler.Presign)

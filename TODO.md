@@ -840,8 +840,12 @@ reka bentuk ni memang dah elak. **Jangan "betulkan" ini dengan Redis.**
 
 - [ ] **L10** trusted-proxy (`100.64.0.0/10` + RFC1918) betul untuk Railway,
       tapi kalau pindah platform lain kena semak semula.
-- [ ] **L11** tiada CORS config — okay sekarang (client mobile sahaja).
-      Perlu bila ada web client.
+- [x] **L11** tiada CORS config — okay sekarang (client mobile sahaja).
+      Perlu bila ada web client. RESOLVED 2026-08-16: web client (marc_astro)
+      wujud sekarang. `internal/http/middleware/cors.go` — dipasang per-route
+      (bukan global), origin eksplisit via `CORS_ALLOWED_ORIGINS`. Lihat
+      `/auth/verify-email/confirm` (POST) dan `/verify/certificates/:token`
+      (GET) di router.go.
 
 ### Modul Aktiviti (disemak 2026-08-14)
 
