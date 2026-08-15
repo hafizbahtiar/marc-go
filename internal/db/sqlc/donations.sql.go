@@ -8,6 +8,7 @@ package sqlc
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -64,6 +65,37 @@ type GetDonationByGatewayRefParams struct {
 
 func (q *Queries) GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error) {
 	row := q.db.QueryRow(ctx, getDonationByGatewayRef, arg.Gateway, arg.GatewayRef)
+	var i Donation
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.DonorName,
+		&i.DonorEmail,
+		&i.AmountCents,
+		&i.Currency,
+		&i.Gateway,
+		&i.GatewayRef,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getMyDonationByID = `-- name: GetMyDonationByID :one
+select id, user_id, donor_name, donor_email, amount_cents, currency, gateway, gateway_ref, status, created_at from donations where id = $1 and user_id = $2
+`
+
+type GetMyDonationByIDParams struct {
+	ID     uuid.UUID   `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Resit — hanya donation SENDIRI (ahli log masuk, user_id = caller).
+// Donation anonymous (user_id null) TIADA laluan muat turun resit sini —
+// emel resit yang dihantar semasa webhook satu-satunya jejak mereka ada,
+// tiada akaun untuk log masuk dan tuntut baris ni.
+func (q *Queries) GetMyDonationByID(ctx context.Context, arg GetMyDonationByIDParams) (Donation, error) {
+	row := q.db.QueryRow(ctx, getMyDonationByID, arg.ID, arg.UserID)
 	var i Donation
 	err := row.Scan(
 		&i.ID,

@@ -832,6 +832,17 @@ func textToPtr(t pgtype.Text) *string {
 	return &t.String
 }
 
+// textOrEmpty — padanan textToPtr, tapi pulangkan "" (bukan nil) bila
+// tak sah. Utk tapak panggilan yang perlukan string terus (cth
+// receipt.Donation/FeePayment, yang dah ada fallback() sendiri utk rentetan
+// kosong).
+func textOrEmpty(t pgtype.Text) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.String
+}
+
 func ptrToText(s string) pgtype.Text {
 	s = strings.TrimSpace(s)
 	if s == "" {

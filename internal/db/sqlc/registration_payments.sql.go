@@ -77,6 +77,53 @@ func (q *Queries) GetLatestRegistrationPaymentStatus(ctx context.Context, userID
 	return status, err
 }
 
+const getMyRegistrationPaymentByID = `-- name: GetMyRegistrationPaymentByID :one
+select rp.id, rp.amount_cents, rp.currency, rp.gateway, rp.gateway_ref, rp.status, rp.created_at,
+  p.member_id, p.display_name, u.email
+from registration_payments rp
+join profiles p on p.user_id = rp.user_id
+join users u on u.id = rp.user_id
+where rp.id = $1 and rp.user_id = $2
+`
+
+type GetMyRegistrationPaymentByIDParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+type GetMyRegistrationPaymentByIDRow struct {
+	ID          uuid.UUID          `json:"id"`
+	AmountCents int32              `json:"amount_cents"`
+	Currency    string             `json:"currency"`
+	Gateway     string             `json:"gateway"`
+	GatewayRef  string             `json:"gateway_ref"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	MemberID    string             `json:"member_id"`
+	DisplayName pgtype.Text        `json:"display_name"`
+	Email       string             `json:"email"`
+}
+
+// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
+// (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
+func (q *Queries) GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error) {
+	row := q.db.QueryRow(ctx, getMyRegistrationPaymentByID, arg.ID, arg.UserID)
+	var i GetMyRegistrationPaymentByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.AmountCents,
+		&i.Currency,
+		&i.Gateway,
+		&i.GatewayRef,
+		&i.Status,
+		&i.CreatedAt,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Email,
+	)
+	return i, err
+}
+
 const hasSucceededRegistrationPayment = `-- name: HasSucceededRegistrationPayment :one
 select exists(
   select 1 from registration_payments where user_id = $1 and status = 'succeeded'

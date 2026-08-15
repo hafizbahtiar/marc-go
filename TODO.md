@@ -28,6 +28,25 @@ simpanan. Modul aktiviti (backend penuh) siap — jurangnya direkod di bawah.
       `REDIS_URL = ${{Redis.REDIS_URL}}` pada perkhidmatan marc-go.
       Perkhidmatan Redis wujud tapi app tak nampak. Lihat bahagian Redis
       di bawah untuk sama ada ia berbaloi buat masa ni.
+- [ ] **Cipta 3 akaun prod utama** (keputusan produk 2026-08-15) —
+      DAFTAR macam biasa (`/auth/register` menerusi app, atau Flutter),
+      sahkan email, lepas tu SATU superadmin sedia ada (atau kau sendiri
+      terus dlm psql sebelum ada superadmin lain) tukar role menerusi
+      skrin "Tukar role" management (`members_page.dart` → profile
+      `Ahli Pending`/senarai Ahli, cari akaun, tukar role). **JANGAN**
+      daftar terus dgn migration/SQL seed — password perlu dipilih
+      pemilik akaun sebenar, dan bcrypt hash tak patut dijana manual.
+      - [ ] `hafizbahtiar98@gmail.com` → role `superadmin`
+      - [ ] `google@yopmail.com` → role `tester` (akaun review Google Play)
+      - [ ] `apple@yopmail.com` → role `tester` (akaun review App Store)
+
+      **PERHATIAN keselamatan**: dua akaun tester guna domain
+      `yopmail.com` — domain emel PELUPUSAN (disposable), yang item
+      **"Sekat pendaftaran emel pelupusan"** di bawah akan block kalau
+      diimplement SEBELUM 3 akaun ni dicipta. Cipta akaun ni DAHULU
+      (atau tambah pengecualian eksplisit utk dua alamat ni) sebelum
+      sekatan disposable-email diaktifkan — jangan kunci diri sendiri
+      keluar drpd akaun tester yang kau perlukan utk app store review.
 
 ## Stage 9 — Postgres RLS (defense-in-depth)
 
@@ -202,6 +221,231 @@ Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
       - **Yuran aktiviti** (guna kes 2) — **DIBINA DAN DISAHKAN 2026-08-15**,
         lihat entri "Yuran aktiviti tidak berfungsi" di bawah (bahagian
         Modul Aktiviti) untuk butiran penuh.
+
+## Skrin bayaran (2026-08-15) — sejarah + penapisan derma superadmin
+
+- [x] **`GET /me/payments` + `GET /admin/payments` DIBINA 2026-08-15.**
+      Dahulu status bayaran cuma terselit dalam respons lain (`/me`,
+      `/me/activities`) — tiada satu page pun untuk lihat sejarah.
+      `/me/payments` (route `protected`, BUKAN `approved` — ahli `pending`
+      yang dah bayar yuran pendaftaran mesti boleh tengok sejarah sendiri
+      sebelum diluluskan, sama rasional dengan checkout sendiri) pulangkan
+      `registration_fee[]` + `activity_fees[]` (dua query baharu
+      `ListMyRegistrationPayments`/`ListMyActivityPayments`).
+      `/admin/payments` (management sahaja, `authz.IsManagement`) papar
+      `payment_logs` (jadual sedia ada sejak Stage bayaran, sebelum ni
+      TAK PERNAH diwiring ke endpoint) dengan pagination keyset
+      `before_id` + tapisan `module`. `paymentLogItem` sengaja TIADA
+      `raw_payload` — medan tu simpan payload gateway MENTAH (boleh bawa
+      PII pembayar), tak didedahkan menerusi API. Flutter:
+      `lib/features/payments/` (dua page baharu + provider), pautan dari
+      Profile page (dikumpul semula ke kad "Kewangan"/"Pengurusan").
+
+      **Opus verify 2026-08-15**: tiada bug auth/IDOR. 3 isu kecil
+      dibaiki: (1) `/me/payments` asalnya `approved` — pindah ke
+      `protected`; (2) kes currency tak konsisten (`"myr"` vs `"MYR"`
+      antara modul) — Flutter `.toUpperCase()`; (3) admin page hardcode
+      "RM" untuk semua modul (`payment_logs` tiada lajur currency) —
+      diterima sengaja, seluruh app MYR sahaja.
+
+- [x] **Modul `donation` disekat kepada superadmin sahaja dalam
+      `/admin/payments` (keputusan produk 2026-08-15).** Management biasa
+      (supervisor/manager/admin) TAK nampak baris donation walau tapisan
+      "Semua" dipilih — dikuatkuasakan di Go (`payments.go` `ListAll`,
+      `authz.IsAtLeastRole(..., "superadmin")`), bukan sekadar sembunyi cip
+      Flutter: `?module=donation` terus oleh bukan-superadmin tetap 403.
+      `ListRecentPaymentLogs` diubah drpd `sqlc.narg('module')` tunggal ke
+      `sqlc.arg('modules')::text[]` (`= any(...)`) — handler kira senarai
+      modul dibenarkan, SQL buta pada sebab kebenaran.
+
+- [x] **Resit PDF muat turun (dalam app) — DIBINA 2026-08-15.** Sebelum
+      ni, yuran pendaftaran/aktiviti TAK PERNAH hantar resit langsung
+      (cuma donation ada, via emel semasa webhook) — ahli tiada cara
+      dapatkan bukti bayaran selain tangkap skrin. Keputusan produk: ahli
+      boleh tengok + muat turun resit BILA-BILA (bukan cuma sekali via
+      emel), walau resit dah dihantar emel sebelum tu.
+
+      **Reka bentuk**: PDF dijana SEMULA setiap panggilan (bukan
+      disimpan/ditanda "sudah dijana" dalam DB) — resit deterministik
+      drpd data yang dah tersimpan dlm `registration_payments`/
+      `activity_registrations`/`donations`, jadi tiada keadaan tambahan
+      utk diselaraskan. Muat naik R2 ke kunci STABIL
+      (`receipts/{registration,activity,donation}/{id}.pdf`, tulis ganti
+      setiap kali — idempoten), pulang URL bertandatangan (padanan corak
+      `CertificateHandler.Download` — R2 sampaikan fail, backend bukan
+      bottleneck lebar jalur, Flutter buka terus dgn `url_launcher`,
+      tiada pakej muat turun/storan baharu diperlukan).
+
+      **Fail**: `internal/receipt/receipt.go` (`FeePayment` struct +
+      `GenerateFeePDF` — DIASINGKAN drpd `Donation`/`GeneratePDF` sengaja,
+      label/nota berbeza — yuran ialah bayaran RASMI kelab, bukan
+      sumbangan peribadi kpd pembangun; laluan donation lama tak
+      disentuh); `internal/http/handlers/payments.go`
+      (`RegistrationReceipt`/`ActivityReceipt`/`DonationReceipt`, hanya
+      baris SENDIRI + status berjaya/dibayar sahaja — 409 kalau
+      pending/gagal); query baharu `GetMyRegistrationPaymentByID`/
+      `GetMyActivityFeeByID`/`GetMyDonationByID` (kesemuanya skop
+      `user_id = caller`); route `GET /me/payments/{registration,
+      activity,donation}/:id/receipt` (`protected`, padanan
+      `/me/payments`); `lib/features/payments/` (butang muat turun per
+      baris di `payment_history_page.dart`, `PaymentReceiptRepository`).
+
+      **Had kadar**: `payment-receipt` (6s/5, padanan `uploadRateLimiter`
+      — setiap panggilan PutObject R2, bukan sekadar bacaan DB).
+
+      **Ketidaktepatan tarikh DITERIMA sengaja (bukan bug baharu)**:
+      `registration_payments`/`activity_registrations` tiada lajur
+      `paid_at` khusus (cuma `created_at`/`registered_at`, waktu baris
+      DICIPTA semasa pending — bukan waktu bayaran DISAHKAN), dan resit
+      donation guna `created_at` sebagai anggaran (`paid_at` Stripe
+      sebenar cuma transient dalam webhook, tak pernah disimpan —
+      TODO.md L22/L27 dah rekod ni). Resit yuran ikut anggaran yang sama
+      — konsisten dgn gelagat sedia ada, bukan regresi baharu. Kalau
+      ketepatan jadi penting kelak, tambah lajur `paid_at` pada
+      ketiga-tiga jadual.
+
+      **Belum dibuat**:
+      - [ ] Tiada UI senarai "Sejarah Derma Saya" langsung — endpoint
+            `DonationReceipt` DIBINA + diuji (`go test` lulus) tapi
+            TAK BOLEH dicapai dari Flutter (tiada id sumber). Donation
+            ahli log masuk pun tak muncul dalam `/me/payments` —
+            keputusan sengaja sesi ni (skop asal 2 modul kelab sahaja,
+            donation dah ada laluan emel). Kalau nak lengkapkan: perlu
+            `ListMyDonations` query + tambah ke respons `/me/payments`
+            + seksyen baharu `payment_history_page.dart`.
+      - [ ] Opus verify belum dijalankan utk ciri resit ni khusus
+            (dijadualkan lepas ni).
+
+## RBAC — role `admin` & `tester` (2026-08-15)
+
+Dua role baharu (migration `20260815070000_seed_admin_tester_roles.sql`),
+keputusan produk:
+
+- **`admin`** — tier baharu **antara manager(60) dan superadmin(100)**,
+  rank **80**, category `management`. Lebih kuasa drpd manager tapi TAK
+  automatik dapat semua kuasa superadmin — semakan yang secara eksplisit
+  menuntut rank superadmin (cth modul donation di atas) kekal luar capaian
+  admin. Semua gate `authz.IsManagement`/`authz.IsAtLeastRole("manager")`
+  sedia ada terus terpakai tanpa ubah kod (rank 80 >= 60).
+- **`tester`** — akaun review Google Play/App Store, rank **5** (bawah
+  ahli=10, SENGAJA bukan sama — elak perlanggaran dlm perbandingan rank
+  cth pemberian role), category `ahli`. Berkelakuan macam ahli biasa untuk
+  SEMUA capaian (daftar, post, like, daftar aktiviti, lihat skrin) —
+  reviewer perlu uji aliran app sebenar utk lulus review. **Sekatan
+  tunggal**: `middleware.BlockTesterWrites` (query baharu
+  `GetRoleKeyByUserID`) dipasang pada tiga route checkout bayaran
+  (`/registration-payments/checkout`, `/activities/:id/registration/
+  checkout`, `/donations/checkout`) — tolak 403 kalau role="tester", gagal
+  TERTUTUP (500) kalau query role gagal. Tindakan pengurusan (luluskan
+  ahli, tukar role, urus kategori, terbit/batal aktiviti) TAK perlu
+  disekat berasingan — category `ahli` dah cukup, semua gate
+  `authz.IsManagement` sedia ada tolak tester terus.
+
+  **Kesan sampingan rank=5 (bukan bug, sengaja diterima)**:
+  `visibleRankCeiling` (`profile.go`) beri tester ceiling nampak ahli
+  (rank<=10) sahaja — LEBIH ketat drpd ahli sebenar (yang nampak sampai
+  supervisor, rank<=50). Lebih restriktif, bukan kurang — tiada risiko
+  keselamatan.
+
+  **Belum dibuat**:
+  - [ ] Cipta akaun `tester`/`admin` SEBENAR (migration cuma tambah row
+        `roles`, bukan profil/user) — kena daftar user biasa lepas tu
+        tukar role menerusi skrin "Tukar role" management (`members_page
+        .dart`, pemilihan role dinamik guna `/roles` sedia ada, tiada kod
+        tambahan perlu).
+  - [ ] `marc_flutter`: tiada UI khas untuk role `admin`/`tester` — kedua-
+        duanya guna skrin sedia ada (admin dapat semua akses management
+        biasa secara automatik via `isManagement`; tester dapat akses
+        ahli biasa). Kalau `admin` perlu skrin/kuasa BEZA drpd manager
+        kelak (cth akses CRUD kategori yang skrg "manager ke atas"), semak
+        `isManagerOrAboveProvider`/`requireManagerOrAbove` — rank 80 >= 60
+        dah lulus secara automatik, tiada kerja tambahan.
+  **Opus verify 2026-08-15**: backend selamat — tiada laluan tester
+  boleh selesaikan bayaran sebenar (`BlockTesterWrites` disahkan didaftar
+  SEBELUM handler pada ketiga-tiga route; cuma 3 titik `gw.CreatePayment`
+  wujud seluruh repo, padan 3 route yang dikawal), rank `admin`(80) lulus
+  tepat setiap `IsAtLeastRole("manager")` dan gagal tepat setiap
+  `IsAtLeastRole("superadmin")`, `modules` array sekatan donation tiada
+  laluan kosong/nil.
+
+  **1 bug SEBENAR dijumpai dan DIBAIKI (Flutter, bukan keselamatan)**:
+  `isSuperAdminProvider`/`isManagerOrAboveProvider` cari role SENDIRI
+  dalam `rolesProvider` (`GET /roles`) — tapi backend `ListRoles`
+  (`profile.go:521`) SENGAJA tolak keluar mana-mana role dengan
+  `rank >= caller.RoleRank` (skop endpoint tu: pemilih "tukar role",
+  cuma boleh assign ke BAWAH). Kesan: superadmin tulen TAK PERNAH jumpa
+  dirinya dalam senarai sendiri (topRank sentiasa ditolak, utk SESIAPA),
+  jadi cip "Derma" tak pernah muncul walau utk superadmin sebenar; sama
+  utk manager tulen (rank sendiri == rank dicari, ditapis keluar).
+  Dibaiki: jalan pintas `profile.roleKey == 'manager'`/`'superadmin'`
+  SEBELUM cuba carian dinamik (`manage_providers.dart`,
+  `payment_providers.dart`) — carian dinamik kekal untuk kes ATAS
+  ambang (admin semak "manager ke atas", superadmin semak diri sendiri
+  dah short-circuit).
+
+## Sekat pendaftaran emel pelupusan (disposable email) — DIBINA 2026-08-15
+
+Ditemui semasa sediakan akaun tester (`google@yopmail.com`/
+`apple@yopmail.com`) — istilah industri: **"disposable email"** /
+"temporary email" / "throwaway email" (BM: emel pelupusan/sekali-guna).
+Sebelum ni `/auth/register` terima MANA-MANA alamat berformat sah,
+termasuk domain yang sengaja wujud untuk pendaftaran sekali-guna/spam.
+
+**Kenapa penting**: `email_verified` (Stage 8) cuma buktikan "seseorang
+boleh terima SATU emel", bukan "identiti sebenar/kekal" — alamat
+pelupusan lulus proses tu dengan sempurna. Akaun guna emel pelupusan =
+tiada cara hubungi ahli tu lagi selepas domain tamat/reset (kebanyakan
+mati dlm beberapa jam-hari).
+
+**Dibina** (dua lapisan, keputusan produk 2026-08-15):
+
+1. **Senarai statik terbenam** — `internal/disposableemail/domains.txt`
+   (`//go:embed`, ~8,200 domain drpd
+   `github.com/disposable-email-domains/disposable-email-domains`,
+   `map[string]bool` O(1)). PERTAHANAN UTAMA.
+2. **Jadual DB `blocked_email_domains`** (migration
+   `20260815090000_create_blocked_email_domains.sql`) — tambahan MANUAL
+   management, endpoint CRUD `GET/POST /admin/blocked-email-domains`,
+   `DELETE /admin/blocked-email-domains/:domain` (management sahaja,
+   `internal/http/handlers/blocked_email_domains.go`).
+3. Semakan di `POST /auth/register` (`auth.go`, sebelum sebarang kerja
+   DB) — tolak 400 "sila guna alamat emel kekal, bukan emel pelupusan/
+   sekali-guna" kalau domain wujud dlm senarai statik ATAU jadual DB.
+4. **Pengecualian dua akaun tester** — allowlist ALAMAT PENUH (bukan
+   domain) dlm `internal/disposableemail/disposableemail.go`
+   (`allowedEmails`), keputusan eksplisit (bukan "cipta akaun dulu"):
+   sekatan boleh aktif bila-bila tanpa bergantung turutan deploy.
+   `randomperson@yopmail.com` masih disekat — cuma dua alamat tepat tu
+   yang dipintas.
+
+**Diuji**: `internal/disposableemail/disposableemail_test.go` (unit,
+tiada DB — allowlist menang atas domain pelupusan, domain lain pada
+yopmail tetap disekat, senarai statik berjaya embed >1000 domain). Flutter
+tak perlu ubah apa-apa — `extractErrorMessage` (auth_service.dart) dah
+hantar terus mesej ralat backend ke `MySnackBar.error`.
+
+**Opus verify 2026-08-15**: 2 bug SEBENAR dijumpai dan DIBAIKI.
+- **Medium** — `Create` (`blocked_email_domains.go`) salah anggap
+  tingkah laku `on conflict do nothing` + `:one`: pgx pulang
+  `pgx.ErrNoRows` (BUKAN struct sifar nilai + nil error) bila
+  `RETURNING` kosong, jadi tambah domain yang dah wujud sentiasa 500,
+  bukan 201 idempoten macam disangka. Dibaiki: `errors.Is(err,
+  pgx.ErrNoRows)` (padanan `ApproveProfile`, profile.go).
+- **Sama penting** — laluan jadual DB (`IsEmailDomainBlocked`, auth.go)
+  TAK PERNAH runding dgn allowlist tester: management tambah
+  "yopmail.com" ke `blocked_email_domains` akan senyap kunci keluar
+  `google@yopmail.com`/`apple@yopmail.com` walau `allowedEmails` kata
+  sepatutnya dibenarkan — TEPAT senario "kunci diri sendiri keluar drpd
+  akaun review app store" yang keputusan produk asal cuba elak. Dibaiki:
+  export `disposableemail.IsAllowed`, auth.go semak semula sebelum
+  panggil DB. Ujian baharu (`TestIsAllowed`) tutup gap ni.
+
+**Belum dibuat**:
+- [ ] Flutter: tiada skrin management utk urus `blocked_email_domains`
+      (endpoint backend sedia, tiada UI panggil — kalau perlu, CRUD
+      ringkas boleh cepat, padanan skrin kategori aktiviti).
+- [ ] Semakan cuma pada `/auth/register` — kalau ada laluan cipta akaun
+      lain kelak (cth import pukal), kena panggil semakan yg sama.
 
 ## Modul Aktiviti — jurang yang tinggal
 

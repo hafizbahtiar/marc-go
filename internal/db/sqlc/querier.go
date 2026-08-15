@@ -12,6 +12,9 @@ import (
 )
 
 type Querier interface {
+	// `on conflict do nothing` — idempoten, tambah domain yang dah wujud
+	// bukan ralat (padanan pola ApproveProfile `status <> 'approved'`).
+	AddBlockedEmailDomain(ctx context.Context, arg AddBlockedEmailDomainParams) (BlockedEmailDomain, error)
 	ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error)
 	CancelRegistration(ctx context.Context, arg CancelRegistrationParams) (ActivityRegistration, error)
 	// Batal pendaftaran yang DAH cuba checkout (payment_ref wujud, bil
@@ -131,6 +134,26 @@ type Querier interface {
 	// baris succeeded MANA-MANA PUN di atas dulu; `created_at desc` cuma
 	// pemisah antara baris tak-succeeded (paparkan percubaan TERKINI).
 	GetLatestRegistrationPaymentStatus(ctx context.Context, userID uuid.UUID) (string, error)
+	// Resit — hanya pendaftaran SENDIRI (user_id caller), sertakan medan
+	// papar (tajuk aktiviti/yuran/no. ahli/nama/emel). `fee_cents` guna
+	// `coalesce(r.fee_cents_paid, a.fee_cents)` — SENGAJA bukan
+	// `a.fee_cents` hidup terus: yuran aktiviti boleh ditukar SELEPAS ahli
+	// bayar (`PATCH /activities/:id`), dan resit dijana SEMULA setiap muat
+	// turun (tulis ganti kunci R2 stabil) — tanpa snapshot ni, resit sedia
+	// wujud akan senyap papar jumlah yang ahli tak pernah bayar (Opus
+	// verify 2026-08-15). Fallback ke `a.fee_cents` cuma utk baris lama
+	// sebelum lajur `fee_cents_paid` wujud. `title` SENGAJA kekal hidup
+	// (bukan snapshot) — nama aktiviti bukan tuntutan kewangan, papar nama
+	// TERKINI lebih berguna drpd bekukan typo asal.
+	GetMyActivityFeeByID(ctx context.Context, arg GetMyActivityFeeByIDParams) (GetMyActivityFeeByIDRow, error)
+	// Resit — hanya donation SENDIRI (ahli log masuk, user_id = caller).
+	// Donation anonymous (user_id null) TIADA laluan muat turun resit sini —
+	// emel resit yang dihantar semasa webhook satu-satunya jejak mereka ada,
+	// tiada akaun untuk log masuk dan tuntut baris ni.
+	GetMyDonationByID(ctx context.Context, arg GetMyDonationByIDParams) (Donation, error)
+	// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
+	// (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
+	GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error)
 	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error)
@@ -141,10 +164,18 @@ type Querier interface {
 	GetRoleByID(ctx context.Context, id int16) (Role, error)
 	GetRoleByKey(ctx context.Context, key string) (Role, error)
 	GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID) (string, error)
+	// Utk semakan berasaskan role SPESIFIK (bukan kategori umum) — cth
+	// middleware.BlockTesterWrites, yang perlu tahu role 'tester' tepat
+	// (category 'ahli' sengaja sama dengan ahli biasa, jadi
+	// GetRoleCategoryByUserID tak boleh bezakan dua-dua).
+	GetRoleKeyByUserID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetStatusByUserID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
+	// Semakan pendaftaran (/auth/register) — pelengkap kpd senarai statik
+	// terbenam (internal/disposableemail), utk domain tambahan management.
+	IsEmailDomainBlocked(ctx context.Context, domain string) (bool, error)
 	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
 	LikeComment(ctx context.Context, arg LikeCommentParams) error
 	LikePost(ctx context.Context, arg LikePostParams) (int64, error)
@@ -169,6 +200,8 @@ type Querier interface {
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// Timeline satu entiti (cth semua suntingan pada satu post).
 	ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsByEntityParams) ([]AuditLog, error)
+	// Skrin pengurusan CRUD domain disekat.
+	ListBlockedEmailDomains(ctx context.Context) ([]BlockedEmailDomain, error)
 	ListCertificatesByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error)
 	// Fasa 2 penerbitan menyambung dari sini. Baris tanpa r2_key ialah kerja
 	// yang belum siap, bukan ralat.
@@ -190,7 +223,8 @@ type Querier interface {
 	// dibatalkan (beza sengaja drpd ListMyRegistrations di atas, yang tolak
 	// baris 'cancelled' sebab tab "Aktiviti Saya" tu untuk pendaftaran AKTIF
 	// sahaja): sejarah bayaran patut tetap tunjuk percubaan yang gagal/tak
-	// sempat dibayar sebelum disapu, bukan senyap hilang.
+	// sempat dibayar sebelum disapu, bukan senyap hilang. `fee_cents` —
+	// lihat komen `coalesce` di GetMyActivityFeeByID di atas, sebab sama.
 	ListMyActivityPayments(ctx context.Context, userID uuid.UUID) ([]ListMyActivityPaymentsRow, error)
 	ListMyCertificates(ctx context.Context, userID uuid.UUID) ([]ListMyCertificatesRow, error)
 	// Sejarah PENUH percubaan yuran pendaftaran seorang ahli (bukan cuma
@@ -235,6 +269,13 @@ type Querier interface {
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
 	// Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
+	// `modules` — SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
+	// yang KIRA senarai modul dibenarkan (bukan SQL) — donation cuma untuk
+	// superadmin (keputusan produk 2026-08-15), jadi handler hantar
+	// {registration_fee, activity_fee} untuk management biasa, atau ketiga-
+	// tiga (termasuk donation) untuk superadmin, atau satu modul tunggal
+	// kalau caller tapis eksplisit. Query ni buta pada perbezaan tu — ia
+	// cuma tapis `= any(modules)`, kawalan kebenaran 100% di Go.
 	// `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
 	// id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
 	// semasa pengurus menatal.
@@ -294,13 +335,18 @@ type Querier interface {
 	// 20260809180000.
 	RedactAuditLogPIIBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error)
+	RemoveBlockedEmailDomain(ctx context.Context, domain string) (int64, error)
 	RevokeCertificate(ctx context.Context, arg RevokeCertificateParams) (ActivityCertificate, error)
 	RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error
 	SetActivityCertificatesIssuedAt(ctx context.Context, id uuid.UUID) error
 	SetActivityStatus(ctx context.Context, arg SetActivityStatusParams) (Activity, error)
 	SetCertificateR2Key(ctx context.Context, arg SetCertificateR2KeyParams) error
 	// Simpan bill code ToyyibPay pada pendaftaran sedia ada, dipanggil sebaik
-	// createBill berjaya semasa checkout yuran aktiviti.
+	// createBill berjaya semasa checkout yuran aktiviti. `fee_cents_paid`
+	// snapshot amaun SEBENAR dihantar ke gateway pada saat checkout ni —
+	// resit (payments.go) baca lajur ni dan bukan `activities.fee_cents`
+	// hidup, supaya yuran yang ditukar SELEPAS bayar tak senyap ubah resit
+	// yang sedia wujud (Opus verify 2026-08-15).
 	SetRegistrationPaymentRef(ctx context.Context, arg SetRegistrationPaymentRefParams) (ActivityRegistration, error)
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error

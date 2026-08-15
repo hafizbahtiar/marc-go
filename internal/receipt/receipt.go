@@ -263,6 +263,201 @@ func clip(pdf *fpdf.Fpdf, s string, maxW float64) string {
 	return s
 }
 
+// FeePayment — subset field untuk resit yuran (pendaftaran ahli ATAU
+// aktiviti) — DIASINGKAN drpd Donation dengan sengaja: yuran ialah
+// bayaran RASMI kepada kelab (bukan sumbangan peribadi kepada
+// pembangun), jadi label dokumen dan nota footer berbeza (tiada
+// disclaimer "bukan sumbangan rasmi"). `Purpose` — "Yuran Pendaftaran
+// Ahli" untuk yuran pendaftaran, atau tajuk aktiviti untuk yuran
+// aktiviti.
+type FeePayment struct {
+	MemberID    string
+	PayerName   string
+	PayerEmail  string
+	AmountCents int64
+	Currency    string
+	GatewayRef  string
+	PaidAt      time.Time
+	Purpose     string
+}
+
+const feeFooterNote = "Resit ini dijana secara automatik dan sah tanpa " +
+	"tandatangan — sila simpan untuk rekod peribadi anda."
+
+// GenerateFeePDF bina resit yuran satu muka surat. Struktur sama dgn
+// GeneratePDF (donation) — jalur header, blok pembayar, panel jumlah,
+// jadual butiran, footer — tapi laluan lukis DIASINGKAN (bukan
+// parameterkan draw* sedia ada): label/nota berbeza cukup banyak
+// (rasmi vs peribadi) sehingga kongsi struct akan buat draw* Donation
+// bercabang syarat merata-rata. Kos: sedikit kod berulang; faedah:
+// laluan donation yang dah diuji/wujud dalam produksi TAK disentuh
+// langsung.
+func GenerateFeePDF(p FeePayment) ([]byte, error) {
+	pdf := fpdf.New("P", "mm", "A4", "")
+	pdf.SetMargins(marginX, marginX, marginX)
+	pdf.SetAutoPageBreak(true, 20)
+	pdf.SetTitle("Resit Yuran MARC "+p.GatewayRef, true)
+	pdf.SetAuthor("MARC", true)
+
+	tr := pdf.UnicodeTranslatorFromDescriptor("")
+
+	pdf.AddPage()
+	drawFeeHeader(pdf, tr, p)
+	drawFeePayerBlock(pdf, tr, p)
+	drawFeeAmountPanel(pdf, tr, p)
+	drawFeeDetailsTable(pdf, tr, p)
+	drawFeeFooter(pdf, tr)
+
+	var buf bytes.Buffer
+	if err := pdf.Output(&buf); err != nil {
+		return nil, fmt.Errorf("render pdf: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func drawFeeHeader(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
+	pdf.SetFillColor(brandColor[0], brandColor[1], brandColor[2])
+	pdf.Rect(0, 0, pageW, headerH, "F")
+	pdf.SetFillColor(brandDark[0], brandDark[1], brandDark[2])
+	pdf.Rect(0, headerH, pageW, 1.6, "F")
+
+	pdf.SetTextColor(255, 255, 255)
+	pdf.SetXY(marginX, 11)
+	pdf.SetFont("Helvetica", "B", 24)
+	pdf.CellFormat(contentW/2, 10, "MARC", "", 2, "L", false, 0, "")
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.CellFormat(contentW/2, 5, tr("Bukti pembayaran yuran kelab"), "", 0, "L", false, 0, "")
+
+	pdf.SetXY(pageW/2, 12)
+	pdf.SetFont("Helvetica", "B", 13)
+	pdf.CellFormat(pageW/2-marginX, 7, "RESIT YURAN", "", 2, "R", false, 0, "")
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.CellFormat(pageW/2-marginX, 5, tr("No. Rujukan  "+fallback(p.GatewayRef, "-")), "", 0, "R", false, 0, "")
+
+	pdf.SetY(headerH + 12)
+}
+
+func drawFeePayerBlock(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
+	top := pdf.GetY()
+	colW := contentW / 2
+
+	label(pdf, "DIBAYAR OLEH", colW)
+	pdf.SetFont("Helvetica", "B", 13)
+	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
+	pdf.CellFormat(colW, 7, tr(clip(pdf, fallback(p.PayerName, "Ahli MARC"), colW)), "", 2, "L", false, 0, "")
+	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+	pdf.CellFormat(colW, 5.5, tr(clip(pdf, fallback(p.PayerEmail, "-"), colW)), "", 2, "L", false, 0, "")
+	bottom := pdf.GetY()
+
+	pdf.SetXY(marginX+colW, top)
+	label(pdf, "TARIKH", colW)
+	pdf.SetX(marginX + colW)
+	pdf.SetFont("Helvetica", "B", 11)
+	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
+	pdf.CellFormat(colW, 7, tr(formatDateTime(p.PaidAt)), "", 2, "L", false, 0, "")
+
+	// Lencana status — resit hanya dijana selepas 'succeeded'/'paid', jadi
+	// ia sentiasa BERJAYA di sini (padanan drawDonorBlock).
+	pdf.SetX(marginX + colW)
+	pdf.SetFont("Helvetica", "B", 8)
+	pdf.SetFillColor(brandColor[0], brandColor[1], brandColor[2])
+	pdf.SetTextColor(255, 255, 255)
+	pdf.CellFormat(28, 6, "BERJAYA", "", 1, "C", true, 0, "")
+
+	if pdf.GetY() > bottom {
+		bottom = pdf.GetY()
+	}
+	pdf.SetY(bottom + 8)
+}
+
+func drawFeeAmountPanel(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
+	words := amountInWords(p.AmountCents, p.Currency)
+	panelH := 24.0
+	if words != "" {
+		panelH = 32
+	}
+
+	top := pdf.GetY()
+	pdf.SetFillColor(tintColor[0], tintColor[1], tintColor[2])
+	pdf.Rect(marginX, top, contentW, panelH, "F")
+	pdf.SetFillColor(brandColor[0], brandColor[1], brandColor[2])
+	pdf.Rect(marginX, top, 2, panelH, "F")
+
+	pdf.SetXY(marginX+8, top+5)
+	label(pdf, "JUMLAH DIBAYAR", contentW-16)
+	pdf.SetX(marginX + 8)
+	pdf.SetFont("Helvetica", "B", 24)
+	pdf.SetTextColor(brandColor[0], brandColor[1], brandColor[2])
+	pdf.CellFormat(contentW-16, 11, formatAmount(p.AmountCents, p.Currency), "", 2, "L", false, 0, "")
+
+	if words != "" {
+		pdf.SetX(marginX + 8)
+		pdf.SetFont("Helvetica", "I", 9)
+		pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+		pdf.MultiCell(contentW-16, 4.5, tr(words), "", "L", false)
+	}
+
+	pdf.SetY(top + panelH + 10)
+}
+
+func drawFeeDetailsTable(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
+	rows := [][2]string{
+		{"No. Rujukan Transaksi", fallback(p.GatewayRef, "-")},
+		{"No. Ahli MARC", fallback(p.MemberID, "-")},
+		{"Jenis Yuran", fallback(p.Purpose, "Yuran")},
+		{"Penerima", "MARC (Kelab)"},
+		{"Kaedah Pembayaran", "Dalam talian"},
+		{"Mata Wang", strings.ToUpper(fallback(p.Currency, "MYR"))},
+		{"Status Pembayaran", "Berjaya"},
+	}
+
+	label(pdf, "BUTIRAN TRANSAKSI", contentW)
+	pdf.Ln(1)
+
+	const rowH = 8.5
+	pdf.SetDrawColor(lineColor[0], lineColor[1], lineColor[2])
+	pdf.SetLineWidth(0.2)
+
+	for i, row := range rows {
+		if i%2 == 1 {
+			pdf.SetFillColor(zebraColor[0], zebraColor[1], zebraColor[2])
+			pdf.Rect(marginX, pdf.GetY(), contentW, rowH, "F")
+		}
+		pdf.SetX(marginX)
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+		pdf.CellFormat(labelColW, rowH, tr(row[0]), "", 0, "L", false, 0, "")
+		pdf.SetFont("Helvetica", "B", 10)
+		pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
+		valueW := contentW - labelColW
+		pdf.CellFormat(valueW, rowH, tr(clip(pdf, row[1], valueW)), "", 1, "L", false, 0, "")
+
+		y := pdf.GetY()
+		pdf.Line(marginX, y, marginX+contentW, y)
+	}
+
+	pdf.Ln(10)
+}
+
+func drawFeeFooter(pdf *fpdf.Fpdf, tr func(string) string) {
+	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetTextColor(brandColor[0], brandColor[1], brandColor[2])
+	pdf.CellFormat(contentW, 6, tr("Terima kasih."), "", 1, "L", false, 0, "")
+
+	pdf.SetFont("Helvetica", "", 8.5)
+	pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+	pdf.MultiCell(contentW, 4.5, tr(feeFooterNote), "", "L", false)
+
+	pdf.Ln(4)
+	y := pdf.GetY()
+	pdf.SetDrawColor(lineColor[0], lineColor[1], lineColor[2])
+	pdf.Line(marginX, y, marginX+contentW, y)
+	pdf.Ln(3)
+	pdf.SetFont("Helvetica", "", 8)
+	pdf.CellFormat(contentW, 4, tr("Dijana pada "+formatDateTime(time.Now())+" | MARC"), "", 1, "L", false, 0, "")
+}
+
 // FormatDateTime papar `t` dalam waktu Malaysia (MYT) — diexport supaya
 // emel resit (internal/http/handlers/donations.go) boleh guna penukaran
 // zon masa yang SAMA macam PDF ni, elak emel dan lampiran PDF-nya

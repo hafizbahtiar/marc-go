@@ -197,9 +197,15 @@ func (h *ActivityRegistrationPaymentHandler) Checkout(c *gin.Context) {
 		return
 	}
 
+	// FeeCentsPaid — snapshot amaun SEBENAR dihantar ke gateway di atas
+	// (payment.CreateParams.AmountCents), bukan rujukan hidup kepada
+	// activities.fee_cents — resit (payments.go) baca lajur ni supaya
+	// yuran yang ditukar SELEPAS bayar tak senyap ubah resit sedia wujud
+	// (Opus verify 2026-08-15).
 	if _, err := h.queries.SetRegistrationPaymentRef(ctx, sqlc.SetRegistrationPaymentRefParams{
-		ID:         reg.ID,
-		PaymentRef: pgtype.Text{String: result.GatewayRef, Valid: true},
+		ID:           reg.ID,
+		PaymentRef:   pgtype.Text{String: result.GatewayRef, Valid: true},
+		FeeCentsPaid: pgtype.Int4{Int32: activity.FeeCents, Valid: true},
 	}); err != nil {
 		log.Printf("simpan payment_ref pendaftaran aktiviti %s: %v", reg.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})

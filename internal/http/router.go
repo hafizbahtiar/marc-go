@@ -122,6 +122,17 @@ func NewRouter(
 	// Jejak audit (management sahaja, dikuatkuasakan dalam handler).
 	approved.GET("/audit-logs", handlers.NewAuditHandler(pool).List)
 
+	// Domain emel pelupusan disekat (pelengkap senarai statik terbenam
+	// internal/disposableemail — SUPERADMIN sahaja, dikuatkuasakan dalam
+	// handler, bukan management umum: jadual ni kawal siapa boleh
+	// DAFTAR langsung, root-level config). Diletak `approved` konsisten
+	// dengan corak /audit-logs (route group longgar, handler yg
+	// kuatkuasakan siling sebenar).
+	blockedEmailDomainsHandler := handlers.NewBlockedEmailDomainsHandler(pool)
+	approved.GET("/admin/blocked-email-domains", blockedEmailDomainsHandler.List)
+	approved.POST("/admin/blocked-email-domains", blockedEmailDomainsHandler.Create)
+	approved.DELETE("/admin/blocked-email-domains/:domain", blockedEmailDomainsHandler.Delete)
+
 	// Pencetus manual internal/paymentreconcile (management sahaja,
 	// dikuatkuasakan dalam handler) — padanan pola /audit-logs di atas.
 	// Sama logik dengan sapuan latar berkala (cmd/api/main.go), cuma
@@ -129,7 +140,7 @@ func NewRouter(
 	approved.POST("/admin/payments/reconcile", handlers.NewPaymentReconcileHandler(paymentReconciler, sqlc.New(pool)).Run)
 
 	// Sejarah bayaran (bacaan sahaja) — lihat internal/http/handlers/payments.go.
-	paymentsHandler := handlers.NewPaymentsHandler(pool)
+	paymentsHandler := handlers.NewPaymentsHandler(pool, r2Client)
 	// `protected` (bukan `approved`) SENGAJA — checkout yuran pendaftaran
 	// sendiri duduk atas `protected` (baris /registration-payments/checkout
 	// di bawah), jadi ahli `pending` yang DAH bayar mesti boleh tengok
@@ -137,6 +148,15 @@ func NewRouter(
 	// (Opus verify 2026-08-15 tangkap gap ni).
 	protected.GET("/me/payments", paymentsHandler.Mine)
 	approved.GET("/admin/payments", paymentsHandler.ListAll)
+
+	// Resit PDF — sama gate `protected` dgn /me/payments di atas (ahli
+	// pending yang dah bayar mesti boleh muat turun resit sendiri). Had
+	// kadar padan `uploadRateLimiter` (PutObject R2 setiap panggilan,
+	// bukan sekadar bacaan DB) — elak abuse jana+muat naik berulang.
+	receiptRateLimiter := rateLimiter.Limit("payment-receipt", rate.Every(6*time.Second), 5)
+	protected.GET("/me/payments/registration/:id/receipt", receiptRateLimiter, paymentsHandler.RegistrationReceipt)
+	protected.GET("/me/payments/activity/:id/receipt", receiptRateLimiter, paymentsHandler.ActivityReceipt)
+	protected.GET("/me/payments/donation/:id/receipt", receiptRateLimiter, paymentsHandler.DonationReceipt)
 
 	approved.GET("/roles", profileHandler.ListRoles)
 	approved.POST("/device-tokens", deviceTokenHandler.Upsert)
@@ -248,7 +268,7 @@ func NewRouter(
 	// (cmd/api/main.go), tiada perubahan di sini.
 	donationHandler := handlers.NewDonationHandler(pool, paymentGateways, emailClient)
 	donationRateLimiter := rateLimiter.Limit("donation", rate.Every(6*time.Second), 5)
-	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), donationHandler.Checkout)
+	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), middleware.BlockTesterWrites(sqlc.New(pool)), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
 
 	// Yuran pendaftaran ahli (Stage 12, ToyyibPay, SEKALI BAYAR — bukan
@@ -269,7 +289,7 @@ func NewRouter(
 	// sahaja) dan lebih terdedah kepada amplification tanpa had.
 	registrationCheckoutRateLimiter := rateLimiter.Limit("registration-payment-checkout", rate.Every(6*time.Second), 5)
 	registrationWebhookRateLimiter := rateLimiter.Limit("registration-payment-webhook", rate.Every(2*time.Second), 20)
-	protected.POST("/registration-payments/checkout", registrationCheckoutRateLimiter, registrationPaymentHandler.Checkout)
+	protected.POST("/registration-payments/checkout", registrationCheckoutRateLimiter, middleware.BlockTesterWrites(sqlc.New(pool)), registrationPaymentHandler.Checkout)
 	r.POST("/registration-payments/webhook/toyyibpay", registrationWebhookRateLimiter, registrationPaymentHandler.Webhook)
 	r.GET("/registration-payments/return/toyyibpay", registrationPaymentHandler.ReturnPage)
 
@@ -288,7 +308,7 @@ func NewRouter(
 	// toyyibpay.go atau registration_payment.go (dua-dua di luar skop).
 	activityRegistrationPaymentHandler := handlers.NewActivityRegistrationPaymentHandler(pool, paymentGateways["toyyibpay-activity"])
 	activityPaymentCheckoutRateLimiter := rateLimiter.Limit("activity-payment-checkout", rate.Every(6*time.Second), 5)
-	verified.POST("/activities/:id/registration/checkout", activityPaymentCheckoutRateLimiter, activityRegistrationPaymentHandler.Checkout)
+	verified.POST("/activities/:id/registration/checkout", activityPaymentCheckoutRateLimiter, middleware.BlockTesterWrites(sqlc.New(pool)), activityRegistrationPaymentHandler.Checkout)
 	r.POST("/activity-registrations/webhook/toyyibpay", registrationWebhookRateLimiter, activityRegistrationPaymentHandler.Webhook)
 	r.GET("/activity-registrations/return/toyyibpay", activityRegistrationPaymentHandler.ReturnPage)
 

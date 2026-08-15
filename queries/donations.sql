@@ -6,6 +6,13 @@ returning *;
 -- name: GetDonationByGatewayRef :one
 select * from donations where gateway = $1 and gateway_ref = $2;
 
+-- name: GetMyDonationByID :one
+-- Resit — hanya donation SENDIRI (ahli log masuk, user_id = caller).
+-- Donation anonymous (user_id null) TIADA laluan muat turun resit sini —
+-- emel resit yang dihantar semasa webhook satu-satunya jejak mereka ada,
+-- tiada akaun untuk log masuk dan tuntut baris ni.
+select * from donations where id = $1 and user_id = $2;
+
 -- name: ListPendingDonationsOlderThan :many
 -- Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
 -- pada gateway (internal/paymentreconcile) — padanan alasan

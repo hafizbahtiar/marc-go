@@ -26,6 +26,16 @@ select * from registration_payments
 where status = 'pending' and created_at < $1
 order by created_at;
 
+-- name: GetMyRegistrationPaymentByID :one
+-- Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
+-- (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
+select rp.id, rp.amount_cents, rp.currency, rp.gateway, rp.gateway_ref, rp.status, rp.created_at,
+  p.member_id, p.display_name, u.email
+from registration_payments rp
+join profiles p on p.user_id = rp.user_id
+join users u on u.id = rp.user_id
+where rp.id = $1 and rp.user_id = $2;
+
 -- name: ListMyRegistrationPayments :many
 -- Sejarah PENUH percubaan yuran pendaftaran seorang ahli (bukan cuma
 -- status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin

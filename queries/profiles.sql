@@ -39,6 +39,16 @@ from profiles p
 join roles r on r.id = p.role_id
 where p.user_id = $1;
 
+-- name: GetRoleKeyByUserID :one
+-- Utk semakan berasaskan role SPESIFIK (bukan kategori umum) — cth
+-- middleware.BlockTesterWrites, yang perlu tahu role 'tester' tepat
+-- (category 'ahli' sengaja sama dengan ahli biasa, jadi
+-- GetRoleCategoryByUserID tak boleh bezakan dua-dua).
+select r.key
+from profiles p
+join roles r on r.id = p.role_id
+where p.user_id = $1;
+
 -- name: GetEmailVerifiedByUserID :one
 select email_verified from profiles where user_id = $1;
 

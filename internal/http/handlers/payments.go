@@ -7,25 +7,241 @@
 package handlers
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"marc/internal/authz"
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
+	"marc/internal/receipt"
+	"marc/internal/storage"
 )
 
 type PaymentsHandler struct {
 	queries *sqlc.Queries
+	r2      *storage.R2Client
 }
 
-func NewPaymentsHandler(pool *pgxpool.Pool) *PaymentsHandler {
-	return &PaymentsHandler{queries: sqlc.New(pool)}
+func NewPaymentsHandler(pool *pgxpool.Pool, r2Client *storage.R2Client) *PaymentsHandler {
+	return &PaymentsHandler{queries: sqlc.New(pool), r2: r2Client}
+}
+
+// receiptUploadTimeout — had bagi SATU muat naik R2 resit (padanan
+// certificateUploadTimeout, activity_certificates.go).
+const receiptUploadTimeout = 30 * time.Second
+
+// putReceiptObject bungkus PutObject dengan tempoh tamat per-panggilan.
+func putReceiptObject(ctx context.Context, r2 *storage.R2Client, key string, body []byte) error {
+	upCtx, cancel := context.WithTimeout(ctx, receiptUploadTimeout)
+	defer cancel()
+	return r2.PutObject(upCtx, key, "application/pdf", body)
+}
+
+// respondReceiptURL jana + muat naik PDF, pulangkan URL bertandatangan
+// (padanan corak CertificateHandler.Download — R2 yang sampaikan fail,
+// bukan backend). PDF SENGAJA dijana semula setiap panggilan (bukan
+// disimpan/ditanda "sudah dijana" dalam DB) — resit deterministik drpd
+// data yang dah tersimpan (jadual bayaran + payment_logs), jadi tiada
+// keadaan tambahan untuk diselaraskan; PutObject menulis ganti kunci
+// STABIL yang sama setiap kali, idempoten.
+func (h *PaymentsHandler) respondReceiptURL(c *gin.Context, r2Key string, pdfBytes []byte) {
+	ctx := c.Request.Context()
+	if err := putReceiptObject(ctx, h.r2, r2Key, pdfBytes); err != nil {
+		log.Printf("resit: muat naik R2 gagal (key=%s): %v", r2Key, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan resit"})
+		return
+	}
+	url := h.r2.SignedURL(ctx, r2Key)
+	if url == "" {
+		log.Printf("resit: tandatangan URL gagal (key=%s)", r2Key)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan pautan resit"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"url": url})
+}
+
+// RegistrationReceipt — GET /me/payments/registration/:id/receipt. Hanya
+// baris SENDIRI (query skop `user_id`) dan hanya bayaran 'succeeded' —
+// tiada resit untuk bayaran pending/gagal.
+func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
+	row, err := h.queries.GetMyRegistrationPaymentByID(ctx, sqlc.GetMyRegistrationPaymentByIDParams{
+		ID:     id,
+		UserID: middleware.UserID(c),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "resit tidak dijumpai"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan resit"})
+		return
+	}
+	if row.Status != "succeeded" {
+		c.JSON(http.StatusConflict, gin.H{"error": "bayaran belum berjaya, resit belum tersedia"})
+		return
+	}
+
+	displayName := ""
+	if n := textToPtr(row.DisplayName); n != nil {
+		displayName = *n
+	}
+	pdfBytes, err := receipt.GenerateFeePDF(receipt.FeePayment{
+		MemberID:    row.MemberID,
+		PayerName:   displayName,
+		PayerEmail:  row.Email,
+		AmountCents: int64(row.AmountCents),
+		Currency:    row.Currency,
+		GatewayRef:  row.GatewayRef,
+		PaidAt:      row.CreatedAt.Time,
+		Purpose:     "Yuran Pendaftaran Ahli",
+	})
+	if err != nil {
+		log.Printf("resit yuran pendaftaran: gagal jana PDF (id=%s): %v", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana resit"})
+		return
+	}
+
+	h.respondReceiptURL(c, fmt.Sprintf("receipts/registration/%s.pdf", row.ID), pdfBytes)
+}
+
+// ActivityReceipt — GET /me/payments/activity/:id/receipt. `:id` ialah
+// id PENDAFTARAN (activity_registrations.id), bukan id aktiviti — hanya
+// baris SENDIRI dan hanya `payment_status = 'paid'`.
+func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
+	row, err := h.queries.GetMyActivityFeeByID(ctx, sqlc.GetMyActivityFeeByIDParams{
+		ID:     id,
+		UserID: middleware.UserID(c),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "resit tidak dijumpai"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan resit"})
+		return
+	}
+	if row.PaymentStatus == "refunded" {
+		// Mesej berasingan drpd 'pending'/'not_required' (Opus verify
+		// 2026-08-15) — "belum berjaya" salah bagi bayaran yang MEMANG
+		// pernah berjaya lalu dikembalikan. Flutter tak pernah sampai
+		// laluan ni (butang disembunyikan bila bukan 'paid'), tapi
+		// caller API terus patut nampak mesej yang betul.
+		c.JSON(http.StatusConflict, gin.H{"error": "bayaran telah dikembalikan, resit tidak lagi tersedia"})
+		return
+	}
+	if row.PaymentStatus != "paid" {
+		c.JSON(http.StatusConflict, gin.H{"error": "bayaran belum berjaya, resit belum tersedia"})
+		return
+	}
+
+	displayName := ""
+	if n := textToPtr(row.DisplayName); n != nil {
+		displayName = *n
+	}
+	pdfBytes, err := receipt.GenerateFeePDF(receipt.FeePayment{
+		MemberID:    row.MemberID,
+		PayerName:   displayName,
+		PayerEmail:  row.Email,
+		AmountCents: int64(row.FeeCents),
+		Currency:    row.Currency,
+		GatewayRef:  textOrEmpty(row.PaymentRef),
+		// `registered_at` — waktu PENDAFTARAN dicipta (checkout mula),
+		// bukan waktu bayaran DISAHKAN (ahli boleh bayar berjam-jam
+		// kemudian). Sama anggaran/keputusan yang DonationReceipt guna
+		// (`created_at`, lihat komen di sana) — activity_registrations
+		// pun tiada lajur "confirmed at" khusus. Timestamp SEBENAR wujud
+		// dalam payment_logs (event webhook), tapi resit sengaja tak
+		// query jadual log utk medan kosmetik ni (Opus verify 2026-08-15).
+		PaidAt:  row.RegisteredAt.Time,
+		Purpose: row.Title,
+	})
+	if err != nil {
+		log.Printf("resit yuran aktiviti: gagal jana PDF (id=%s): %v", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana resit"})
+		return
+	}
+
+	h.respondReceiptURL(c, fmt.Sprintf("receipts/activity/%s.pdf", row.ID), pdfBytes)
+}
+
+// DonationReceipt — GET /me/payments/donation/:id/receipt. Ahli LOG
+// MASUK sahaja — donation anonymous (user_id null) tiada akaun untuk
+// tuntut baris ni, jejak mereka cuma emel resit yang dihantar semasa
+// webhook (donations.go sendReceiptEmail).
+func (h *PaymentsHandler) DonationReceipt(c *gin.Context) {
+	id, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	userID := middleware.UserID(c)
+
+	d, err := h.queries.GetMyDonationByID(ctx, sqlc.GetMyDonationByIDParams{
+		ID:     id,
+		UserID: pgUUID(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "resit tidak dijumpai"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan resit"})
+		return
+	}
+	if d.Status != "succeeded" {
+		c.JSON(http.StatusConflict, gin.H{"error": "bayaran belum berjaya, resit belum tersedia"})
+		return
+	}
+
+	memberID := ""
+	profile, err := h.queries.GetProfileByUserID(ctx, userID)
+	if err == nil {
+		memberID = profile.MemberID
+	}
+
+	pdfBytes, err := receipt.GeneratePDF(receipt.Donation{
+		MemberID:    memberID,
+		DonorName:   textOrEmpty(d.DonorName),
+		DonorEmail:  textOrEmpty(d.DonorEmail),
+		AmountCents: int64(d.AmountCents),
+		Currency:    d.Currency,
+		GatewayRef:  d.GatewayRef,
+		// `created_at` — bukan tarikh bayaran SEBENAR (donations tiada
+		// lajur paid_at, TODO.md L22/L27), sama anggaran yang emel resit
+		// asal guna kalau webhook lambat. Diterima — konsisten dgn
+		// gelagat sedia ada, bukan regresi.
+		PaidAt: d.CreatedAt.Time,
+	})
+	if err != nil {
+		log.Printf("resit donation: gagal jana PDF (id=%s): %v", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana resit"})
+		return
+	}
+
+	h.respondReceiptURL(c, fmt.Sprintf("receipts/donation/%s.pdf", d.ID), pdfBytes)
 }
 
 type registrationPaymentItem struct {
@@ -133,21 +349,45 @@ type paymentLogItem struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+// superAdminRoleKey — siling "superadmin sahaja" utk data derma. Derma
+// (Stripe) dianggap lebih sensitif drpd yuran (kelab) — keputusan produk
+// 2026-08-15: management biasa (supervisor/manager/admin) TAK nampak
+// baris donation langsung dalam /admin/payments, walau tapisan "Semua".
+const superAdminRoleKey = "superadmin"
+
+// nonDonationModules — apa yang management BIASA (bukan superadmin)
+// boleh nampak bila tiada tapisan modul eksplisit diminta.
+var nonDonationModules = []string{"registration_fee", "activity_fee"}
+
+var allPaymentLogModules = []string{"donation", "registration_fee", "activity_fee"}
+
 // ListAll — GET /admin/payments. Tinjauan merentas modul guna payment_logs
 // sedia ada — pengurusan sahaja (disemak DALAM handler, padanan
 // PaymentReconcileHandler.Run). Cursor keyset `before_id` (padanan
 // ListPosts), bukan offset — offset jadi tak stabil bila baris baharu
 // terus masuk semasa pengurus menatal.
+//
+// Modul `donation` disekat kepada superadmin sahaja (lihat komen
+// `superAdminRoleKey`) — dikuatkuasakan di SINI (Go), bukan bergantung
+// pada Flutter menyembunyikan cip penapis; caller yang minta
+// `?module=donation` terus (bukan menerusi UI) tetap disekat.
 func (h *PaymentsHandler) ListAll(c *gin.Context) {
 	ctx := c.Request.Context()
+	userID := middleware.UserID(c)
 
-	isManagement, err := authz.IsManagement(ctx, h.queries, middleware.UserID(c))
+	isManagement, err := authz.IsManagement(ctx, h.queries, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai bayaran"})
 		return
 	}
 	if !isManagement {
 		c.JSON(http.StatusForbidden, gin.H{"error": "akses ditolak"})
+		return
+	}
+
+	isSuperAdmin, err := authz.IsAtLeastRole(ctx, h.queries, userID, superAdminRoleKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai bayaran"})
 		return
 	}
 
@@ -164,13 +404,21 @@ func (h *PaymentsHandler) ListAll(c *gin.Context) {
 		limit = int32(n)
 	}
 
-	var moduleFilter pgtype.Text
+	var modules []string
 	if raw := c.Query("module"); raw != "" {
 		if !validPaymentLogModules[raw] {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "modul tidak sah"})
 			return
 		}
-		moduleFilter = pgtype.Text{String: raw, Valid: true}
+		if raw == "donation" && !isSuperAdmin {
+			c.JSON(http.StatusForbidden, gin.H{"error": "modul derma untuk superadmin sahaja"})
+			return
+		}
+		modules = []string{raw}
+	} else if isSuperAdmin {
+		modules = allPaymentLogModules
+	} else {
+		modules = nonDonationModules
 	}
 
 	var beforeID pgtype.Int8
@@ -185,7 +433,7 @@ func (h *PaymentsHandler) ListAll(c *gin.Context) {
 
 	rows, err := h.queries.ListRecentPaymentLogs(ctx, sqlc.ListRecentPaymentLogsParams{
 		Limit:    limit,
-		Module:   moduleFilter,
+		Modules:  modules,
 		BeforeID: beforeID,
 	})
 	if err != nil {

@@ -111,7 +111,7 @@ func (q *Queries) ListPaymentLogsByGatewayRef(ctx context.Context, arg ListPayme
 
 const listRecentPaymentLogs = `-- name: ListRecentPaymentLogs :many
 select id, module, event, status, gateway, gateway_ref, amount_cents, user_id, related_id, message, raw_payload, created_at from payment_logs
-where ($2::text is null or module = $2)
+where module = any($2::text[])
   and ($3::bigint is null or id < $3)
 order by id desc
 limit $1
@@ -119,16 +119,23 @@ limit $1
 
 type ListRecentPaymentLogsParams struct {
 	Limit    int32       `json:"limit"`
-	Module   pgtype.Text `json:"module"`
+	Modules  []string    `json:"modules"`
 	BeforeID pgtype.Int8 `json:"before_id"`
 }
 
 // Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
+// `modules` — SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
+// yang KIRA senarai modul dibenarkan (bukan SQL) — donation cuma untuk
+// superadmin (keputusan produk 2026-08-15), jadi handler hantar
+// {registration_fee, activity_fee} untuk management biasa, atau ketiga-
+// tiga (termasuk donation) untuk superadmin, atau satu modul tunggal
+// kalau caller tapis eksplisit. Query ni buta pada perbezaan tu — ia
+// cuma tapis `= any(modules)`, kawalan kebenaran 100% di Go.
 // `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
 // id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
 // semasa pengurus menatal.
 func (q *Queries) ListRecentPaymentLogs(ctx context.Context, arg ListRecentPaymentLogsParams) ([]PaymentLog, error) {
-	rows, err := q.db.Query(ctx, listRecentPaymentLogs, arg.Limit, arg.Module, arg.BeforeID)
+	rows, err := q.db.Query(ctx, listRecentPaymentLogs, arg.Limit, arg.Modules, arg.BeforeID)
 	if err != nil {
 		return nil, err
 	}

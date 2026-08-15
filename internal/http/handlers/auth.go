@@ -19,6 +19,7 @@ import (
 	"marc/internal/auth"
 	"marc/internal/authz"
 	"marc/internal/db/sqlc"
+	"marc/internal/disposableemail"
 	"marc/internal/email"
 	"marc/internal/http/middleware"
 	"marc/internal/phone"
@@ -125,6 +126,33 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
+	ctx := c.Request.Context()
+	// Tolak domain emel pelupusan (disposable/temporary) SEBELUM apa-apa
+	// kerja DB — senarai statik terbenam ialah pertahanan utama, jadual
+	// `blocked_email_domains` pelengkap utk tambahan management (lihat
+	// internal/disposableemail). Keputusan produk 2026-08-15.
+	if disposableemail.IsDisposable(req.Email) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sila guna alamat emel kekal, bukan emel pelupusan/sekali-guna"})
+		return
+	}
+	// `IsAllowed` diperiksa SEMULA di sini (bukan cuma dalam IsDisposable
+	// di atas) — laluan jadual DB ni TIDAK tahu pasal allowlist tester
+	// langsung, jadi tanpa semakan ni, management tambah "yopmail.com"
+	// ke blocked_email_domains akan senyap kunci keluar dua akaun tester
+	// walau allowedEmails kata sepatutnya dibenarkan (Opus verify
+	// 2026-08-15).
+	if domain := disposableemail.DomainOf(req.Email); domain != "" && !disposableemail.IsAllowed(req.Email) {
+		blocked, err := h.queries.IsEmailDomainBlocked(ctx, domain)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal proses pendaftaran"})
+			return
+		}
+		if blocked {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sila guna alamat emel kekal, bukan emel pelupusan/sekali-guna"})
+			return
+		}
+	}
+
 	// Malaysia sahaja buat masa ini (keputusan produk 2026-08-15) —
 	// `phone.NormalizeMY` pulang bentuk tempatan ternormal (`0XXXXXXXXX`)
 	// supaya nombor yang disimpan konsisten tak kira `+60`/`60`/`0`/
@@ -143,7 +171,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal proses pendaftaran"})

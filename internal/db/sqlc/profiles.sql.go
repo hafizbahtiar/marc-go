@@ -166,6 +166,24 @@ func (q *Queries) GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID)
 	return category, err
 }
 
+const getRoleKeyByUserID = `-- name: GetRoleKeyByUserID :one
+select r.key
+from profiles p
+join roles r on r.id = p.role_id
+where p.user_id = $1
+`
+
+// Utk semakan berasaskan role SPESIFIK (bukan kategori umum) — cth
+// middleware.BlockTesterWrites, yang perlu tahu role 'tester' tepat
+// (category 'ahli' sengaja sama dengan ahli biasa, jadi
+// GetRoleCategoryByUserID tak boleh bezakan dua-dua).
+func (q *Queries) GetRoleKeyByUserID(ctx context.Context, userID uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getRoleKeyByUserID, userID)
+	var key string
+	err := row.Scan(&key)
+	return key, err
+}
+
 const getStatusByUserID = `-- name: GetStatusByUserID :one
 select status from profiles where user_id = $1
 `

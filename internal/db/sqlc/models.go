@@ -76,6 +76,7 @@ type ActivityRegistration struct {
 	CheckinToken  string             `json:"checkin_token"`
 	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
 	CancelledAt   pgtype.Timestamptz `json:"cancelled_at"`
+	FeeCentsPaid  pgtype.Int4        `json:"fee_cents_paid"`
 }
 
 type ActivitySession struct {
@@ -101,6 +102,12 @@ type AuditLog struct {
 	IpAddress     pgtype.Text        `json:"ip_address"`
 	UserAgent     pgtype.Text        `json:"user_agent"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type BlockedEmailDomain struct {
+	Domain    string             `json:"domain"`
+	AddedBy   pgtype.UUID        `json:"added_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Comment struct {

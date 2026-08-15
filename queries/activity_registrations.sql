@@ -57,9 +57,13 @@ order by pr.display_name;
 
 -- name: SetRegistrationPaymentRef :one
 -- Simpan bill code ToyyibPay pada pendaftaran sedia ada, dipanggil sebaik
--- createBill berjaya semasa checkout yuran aktiviti.
+-- createBill berjaya semasa checkout yuran aktiviti. `fee_cents_paid`
+-- snapshot amaun SEBENAR dihantar ke gateway pada saat checkout ni —
+-- resit (payments.go) baca lajur ni dan bukan `activities.fee_cents`
+-- hidup, supaya yuran yang ditukar SELEPAS bayar tak senyap ubah resit
+-- yang sedia wujud (Opus verify 2026-08-15).
 update activity_registrations
-set payment_ref = $2
+set payment_ref = $2, fee_cents_paid = $3
 where id = $1
 returning *;
 
@@ -148,13 +152,36 @@ join activity_categories c on c.id = a.category_id
 where r.user_id = $1 and r.status <> 'cancelled' and a.deleted_at is null
 order by a.starts_at desc;
 
+-- name: GetMyActivityFeeByID :one
+-- Resit — hanya pendaftaran SENDIRI (user_id caller), sertakan medan
+-- papar (tajuk aktiviti/yuran/no. ahli/nama/emel). `fee_cents` guna
+-- `coalesce(r.fee_cents_paid, a.fee_cents)` — SENGAJA bukan
+-- `a.fee_cents` hidup terus: yuran aktiviti boleh ditukar SELEPAS ahli
+-- bayar (`PATCH /activities/:id`), dan resit dijana SEMULA setiap muat
+-- turun (tulis ganti kunci R2 stabil) — tanpa snapshot ni, resit sedia
+-- wujud akan senyap papar jumlah yang ahli tak pernah bayar (Opus
+-- verify 2026-08-15). Fallback ke `a.fee_cents` cuma utk baris lama
+-- sebelum lajur `fee_cents_paid` wujud. `title` SENGAJA kekal hidup
+-- (bukan snapshot) — nama aktiviti bukan tuntutan kewangan, papar nama
+-- TERKINI lebih berguna drpd bekukan typo asal.
+select r.id, r.payment_status, r.payment_ref, r.registered_at,
+  a.title, coalesce(r.fee_cents_paid, a.fee_cents) as fee_cents, a.currency,
+  p.member_id, p.display_name, u.email
+from activity_registrations r
+join activities a on a.id = r.activity_id
+join profiles p on p.user_id = r.user_id
+join users u on u.id = r.user_id
+where r.id = $1 and r.user_id = $2;
+
 -- name: ListMyActivityPayments :many
 -- Sejarah yuran aktiviti seorang ahli — TERMASUK pendaftaran yang telah
 -- dibatalkan (beza sengaja drpd ListMyRegistrations di atas, yang tolak
 -- baris 'cancelled' sebab tab "Aktiviti Saya" tu untuk pendaftaran AKTIF
 -- sahaja): sejarah bayaran patut tetap tunjuk percubaan yang gagal/tak
--- sempat dibayar sebelum disapu, bukan senyap hilang.
-select r.*, a.title, a.fee_cents, a.currency, a.starts_at
+-- sempat dibayar sebelum disapu, bukan senyap hilang. `fee_cents` —
+-- lihat komen `coalesce` di GetMyActivityFeeByID di atas, sebab sama.
+select r.*, a.title, coalesce(r.fee_cents_paid, a.fee_cents) as fee_cents,
+  a.currency, a.starts_at
 from activity_registrations r
 join activities a on a.id = r.activity_id
 where r.user_id = $1 and r.payment_status <> 'not_required'

@@ -16,7 +16,7 @@ const cancelRegistration = `-- name: CancelRegistration :one
 update activity_registrations
 set status = 'cancelled', cancelled_at = now()
 where activity_id = $1 and user_id = $2 and status <> 'cancelled'
-returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid
 `
 
 type CancelRegistrationParams struct {
@@ -37,6 +37,7 @@ func (q *Queries) CancelRegistration(ctx context.Context, arg CancelRegistration
 		&i.CheckinToken,
 		&i.RegisteredAt,
 		&i.CancelledAt,
+		&i.FeeCentsPaid,
 	)
 	return i, err
 }
@@ -46,7 +47,7 @@ update activity_registrations
 set status = 'cancelled', cancelled_at = now()
 where payment_status = 'pending' and status <> 'cancelled'
   and payment_ref is not null and registered_at < $1
-returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid
 `
 
 // Batal pendaftaran yang DAH cuba checkout (payment_ref wujud, bil
@@ -87,6 +88,7 @@ func (q *Queries) CancelStaleUnpaidBills(ctx context.Context, registeredAt pgtyp
 			&i.CheckinToken,
 			&i.RegisteredAt,
 			&i.CancelledAt,
+			&i.FeeCentsPaid,
 		); err != nil {
 			return nil, err
 		}
@@ -103,7 +105,7 @@ update activity_registrations
 set status = 'cancelled', cancelled_at = now()
 where payment_status = 'pending' and status <> 'cancelled'
   and payment_ref is null and registered_at < $1
-returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid
 `
 
 // Batal pendaftaran berbayar yang ahli TAK PERNAH cuba checkout
@@ -134,6 +136,7 @@ func (q *Queries) CancelStaleUnstartedPayments(ctx context.Context, registeredAt
 			&i.CheckinToken,
 			&i.RegisteredAt,
 			&i.CancelledAt,
+			&i.FeeCentsPaid,
 		); err != nil {
 			return nil, err
 		}
@@ -160,7 +163,7 @@ func (q *Queries) CountActiveRegistrations(ctx context.Context, activityID uuid.
 const createRegistration = `-- name: CreateRegistration :one
 insert into activity_registrations (activity_id, user_id, status, payment_status, checkin_token)
 values ($1, $2, $3, $4, $5)
-returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid
 `
 
 type CreateRegistrationParams struct {
@@ -190,12 +193,71 @@ func (q *Queries) CreateRegistration(ctx context.Context, arg CreateRegistration
 		&i.CheckinToken,
 		&i.RegisteredAt,
 		&i.CancelledAt,
+		&i.FeeCentsPaid,
+	)
+	return i, err
+}
+
+const getMyActivityFeeByID = `-- name: GetMyActivityFeeByID :one
+select r.id, r.payment_status, r.payment_ref, r.registered_at,
+  a.title, coalesce(r.fee_cents_paid, a.fee_cents) as fee_cents, a.currency,
+  p.member_id, p.display_name, u.email
+from activity_registrations r
+join activities a on a.id = r.activity_id
+join profiles p on p.user_id = r.user_id
+join users u on u.id = r.user_id
+where r.id = $1 and r.user_id = $2
+`
+
+type GetMyActivityFeeByIDParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+type GetMyActivityFeeByIDRow struct {
+	ID            uuid.UUID          `json:"id"`
+	PaymentStatus string             `json:"payment_status"`
+	PaymentRef    pgtype.Text        `json:"payment_ref"`
+	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
+	Title         string             `json:"title"`
+	FeeCents      int32              `json:"fee_cents"`
+	Currency      string             `json:"currency"`
+	MemberID      string             `json:"member_id"`
+	DisplayName   pgtype.Text        `json:"display_name"`
+	Email         string             `json:"email"`
+}
+
+// Resit — hanya pendaftaran SENDIRI (user_id caller), sertakan medan
+// papar (tajuk aktiviti/yuran/no. ahli/nama/emel). `fee_cents` guna
+// `coalesce(r.fee_cents_paid, a.fee_cents)` — SENGAJA bukan
+// `a.fee_cents` hidup terus: yuran aktiviti boleh ditukar SELEPAS ahli
+// bayar (`PATCH /activities/:id`), dan resit dijana SEMULA setiap muat
+// turun (tulis ganti kunci R2 stabil) — tanpa snapshot ni, resit sedia
+// wujud akan senyap papar jumlah yang ahli tak pernah bayar (Opus
+// verify 2026-08-15). Fallback ke `a.fee_cents` cuma utk baris lama
+// sebelum lajur `fee_cents_paid` wujud. `title` SENGAJA kekal hidup
+// (bukan snapshot) — nama aktiviti bukan tuntutan kewangan, papar nama
+// TERKINI lebih berguna drpd bekukan typo asal.
+func (q *Queries) GetMyActivityFeeByID(ctx context.Context, arg GetMyActivityFeeByIDParams) (GetMyActivityFeeByIDRow, error) {
+	row := q.db.QueryRow(ctx, getMyActivityFeeByID, arg.ID, arg.UserID)
+	var i GetMyActivityFeeByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.PaymentStatus,
+		&i.PaymentRef,
+		&i.RegisteredAt,
+		&i.Title,
+		&i.FeeCents,
+		&i.Currency,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Email,
 	)
 	return i, err
 }
 
 const getRegistrationByActivityAndUser = `-- name: GetRegistrationByActivityAndUser :one
-select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at from activity_registrations
+select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid from activity_registrations
 where activity_id = $1 and user_id = $2 and status <> 'cancelled'
 `
 
@@ -217,12 +279,13 @@ func (q *Queries) GetRegistrationByActivityAndUser(ctx context.Context, arg GetR
 		&i.CheckinToken,
 		&i.RegisteredAt,
 		&i.CancelledAt,
+		&i.FeeCentsPaid,
 	)
 	return i, err
 }
 
 const getRegistrationByCheckinToken = `-- name: GetRegistrationByCheckinToken :one
-select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at from activity_registrations
+select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid from activity_registrations
 where checkin_token = $1 and status <> 'cancelled'
 `
 
@@ -239,12 +302,13 @@ func (q *Queries) GetRegistrationByCheckinToken(ctx context.Context, checkinToke
 		&i.CheckinToken,
 		&i.RegisteredAt,
 		&i.CancelledAt,
+		&i.FeeCentsPaid,
 	)
 	return i, err
 }
 
 const getRegistrationByID = `-- name: GetRegistrationByID :one
-select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at from activity_registrations where id = $1
+select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid from activity_registrations where id = $1
 `
 
 func (q *Queries) GetRegistrationByID(ctx context.Context, id uuid.UUID) (ActivityRegistration, error) {
@@ -260,12 +324,14 @@ func (q *Queries) GetRegistrationByID(ctx context.Context, id uuid.UUID) (Activi
 		&i.CheckinToken,
 		&i.RegisteredAt,
 		&i.CancelledAt,
+		&i.FeeCentsPaid,
 	)
 	return i, err
 }
 
 const listMyActivityPayments = `-- name: ListMyActivityPayments :many
-select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, a.title, a.fee_cents, a.currency, a.starts_at
+select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, r.fee_cents_paid, a.title, coalesce(r.fee_cents_paid, a.fee_cents) as fee_cents,
+  a.currency, a.starts_at
 from activity_registrations r
 join activities a on a.id = r.activity_id
 where r.user_id = $1 and r.payment_status <> 'not_required'
@@ -282,6 +348,7 @@ type ListMyActivityPaymentsRow struct {
 	CheckinToken  string             `json:"checkin_token"`
 	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
 	CancelledAt   pgtype.Timestamptz `json:"cancelled_at"`
+	FeeCentsPaid  pgtype.Int4        `json:"fee_cents_paid"`
 	Title         string             `json:"title"`
 	FeeCents      int32              `json:"fee_cents"`
 	Currency      string             `json:"currency"`
@@ -292,7 +359,8 @@ type ListMyActivityPaymentsRow struct {
 // dibatalkan (beza sengaja drpd ListMyRegistrations di atas, yang tolak
 // baris 'cancelled' sebab tab "Aktiviti Saya" tu untuk pendaftaran AKTIF
 // sahaja): sejarah bayaran patut tetap tunjuk percubaan yang gagal/tak
-// sempat dibayar sebelum disapu, bukan senyap hilang.
+// sempat dibayar sebelum disapu, bukan senyap hilang. `fee_cents` —
+// lihat komen `coalesce` di GetMyActivityFeeByID di atas, sebab sama.
 func (q *Queries) ListMyActivityPayments(ctx context.Context, userID uuid.UUID) ([]ListMyActivityPaymentsRow, error) {
 	rows, err := q.db.Query(ctx, listMyActivityPayments, userID)
 	if err != nil {
@@ -312,6 +380,7 @@ func (q *Queries) ListMyActivityPayments(ctx context.Context, userID uuid.UUID) 
 			&i.CheckinToken,
 			&i.RegisteredAt,
 			&i.CancelledAt,
+			&i.FeeCentsPaid,
 			&i.Title,
 			&i.FeeCents,
 			&i.Currency,
@@ -328,7 +397,7 @@ func (q *Queries) ListMyActivityPayments(ctx context.Context, userID uuid.UUID) 
 }
 
 const listMyRegistrations = `-- name: ListMyRegistrations :many
-select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, a.title, a.starts_at, a.ends_at, a.status as activity_status,
+select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, r.fee_cents_paid, a.title, a.starts_at, a.ends_at, a.status as activity_status,
   c.name as category_name
 from activity_registrations r
 join activities a on a.id = r.activity_id
@@ -347,6 +416,7 @@ type ListMyRegistrationsRow struct {
 	CheckinToken   string             `json:"checkin_token"`
 	RegisteredAt   pgtype.Timestamptz `json:"registered_at"`
 	CancelledAt    pgtype.Timestamptz `json:"cancelled_at"`
+	FeeCentsPaid   pgtype.Int4        `json:"fee_cents_paid"`
 	Title          string             `json:"title"`
 	StartsAt       pgtype.Timestamptz `json:"starts_at"`
 	EndsAt         pgtype.Timestamptz `json:"ends_at"`
@@ -373,6 +443,7 @@ func (q *Queries) ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]
 			&i.CheckinToken,
 			&i.RegisteredAt,
 			&i.CancelledAt,
+			&i.FeeCentsPaid,
 			&i.Title,
 			&i.StartsAt,
 			&i.EndsAt,
@@ -390,7 +461,7 @@ func (q *Queries) ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]
 }
 
 const listPendingActivityRegistrationsOlderThan = `-- name: ListPendingActivityRegistrationsOlderThan :many
-select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at from activity_registrations
+select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid from activity_registrations
 where payment_status = 'pending' and payment_ref is not null and registered_at < $1
 order by registered_at
 `
@@ -422,6 +493,7 @@ func (q *Queries) ListPendingActivityRegistrationsOlderThan(ctx context.Context,
 			&i.CheckinToken,
 			&i.RegisteredAt,
 			&i.CancelledAt,
+			&i.FeeCentsPaid,
 		); err != nil {
 			return nil, err
 		}
@@ -434,7 +506,7 @@ func (q *Queries) ListPendingActivityRegistrationsOlderThan(ctx context.Context,
 }
 
 const listRegistrationsByActivity = `-- name: ListRegistrationsByActivity :many
-select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, pr.member_id, pr.display_name, pr.avatar_r2_key,
+select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, r.fee_cents_paid, pr.member_id, pr.display_name, pr.avatar_r2_key,
   coalesce(att.session_ids, '{}')::uuid[] as attended_session_ids
 from activity_registrations r
 join profiles pr on pr.user_id = r.user_id
@@ -459,6 +531,7 @@ type ListRegistrationsByActivityRow struct {
 	CheckinToken       string             `json:"checkin_token"`
 	RegisteredAt       pgtype.Timestamptz `json:"registered_at"`
 	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
+	FeeCentsPaid       pgtype.Int4        `json:"fee_cents_paid"`
 	MemberID           string             `json:"member_id"`
 	DisplayName        pgtype.Text        `json:"display_name"`
 	AvatarR2Key        pgtype.Text        `json:"avatar_r2_key"`
@@ -495,6 +568,7 @@ func (q *Queries) ListRegistrationsByActivity(ctx context.Context, activityID uu
 			&i.CheckinToken,
 			&i.RegisteredAt,
 			&i.CancelledAt,
+			&i.FeeCentsPaid,
 			&i.MemberID,
 			&i.DisplayName,
 			&i.AvatarR2Key,
@@ -547,20 +621,25 @@ func (q *Queries) LockActivityForRegistration(ctx context.Context, id uuid.UUID)
 
 const setRegistrationPaymentRef = `-- name: SetRegistrationPaymentRef :one
 update activity_registrations
-set payment_ref = $2
+set payment_ref = $2, fee_cents_paid = $3
 where id = $1
-returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid
 `
 
 type SetRegistrationPaymentRefParams struct {
-	ID         uuid.UUID   `json:"id"`
-	PaymentRef pgtype.Text `json:"payment_ref"`
+	ID           uuid.UUID   `json:"id"`
+	PaymentRef   pgtype.Text `json:"payment_ref"`
+	FeeCentsPaid pgtype.Int4 `json:"fee_cents_paid"`
 }
 
 // Simpan bill code ToyyibPay pada pendaftaran sedia ada, dipanggil sebaik
-// createBill berjaya semasa checkout yuran aktiviti.
+// createBill berjaya semasa checkout yuran aktiviti. `fee_cents_paid`
+// snapshot amaun SEBENAR dihantar ke gateway pada saat checkout ni —
+// resit (payments.go) baca lajur ni dan bukan `activities.fee_cents`
+// hidup, supaya yuran yang ditukar SELEPAS bayar tak senyap ubah resit
+// yang sedia wujud (Opus verify 2026-08-15).
 func (q *Queries) SetRegistrationPaymentRef(ctx context.Context, arg SetRegistrationPaymentRefParams) (ActivityRegistration, error) {
-	row := q.db.QueryRow(ctx, setRegistrationPaymentRef, arg.ID, arg.PaymentRef)
+	row := q.db.QueryRow(ctx, setRegistrationPaymentRef, arg.ID, arg.PaymentRef, arg.FeeCentsPaid)
 	var i ActivityRegistration
 	err := row.Scan(
 		&i.ID,
@@ -572,6 +651,7 @@ func (q *Queries) SetRegistrationPaymentRef(ctx context.Context, arg SetRegistra
 		&i.CheckinToken,
 		&i.RegisteredAt,
 		&i.CancelledAt,
+		&i.FeeCentsPaid,
 	)
 	return i, err
 }
@@ -580,7 +660,7 @@ const updateRegistrationPaymentStatusByPaymentRef = `-- name: UpdateRegistration
 update activity_registrations
 set payment_status = $2
 where payment_ref = $1 and payment_status <> 'paid'
-returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid
 `
 
 type UpdateRegistrationPaymentStatusByPaymentRefParams struct {
@@ -616,6 +696,7 @@ func (q *Queries) UpdateRegistrationPaymentStatusByPaymentRef(ctx context.Contex
 		&i.CheckinToken,
 		&i.RegisteredAt,
 		&i.CancelledAt,
+		&i.FeeCentsPaid,
 	)
 	return i, err
 }

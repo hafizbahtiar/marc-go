@@ -15,11 +15,18 @@ order by created_at asc;
 
 -- name: ListRecentPaymentLogs :many
 -- Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
+-- `modules` — SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
+-- yang KIRA senarai modul dibenarkan (bukan SQL) — donation cuma untuk
+-- superadmin (keputusan produk 2026-08-15), jadi handler hantar
+-- {registration_fee, activity_fee} untuk management biasa, atau ketiga-
+-- tiga (termasuk donation) untuk superadmin, atau satu modul tunggal
+-- kalau caller tapis eksplisit. Query ni buta pada perbezaan tu — ia
+-- cuma tapis `= any(modules)`, kawalan kebenaran 100% di Go.
 -- `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
 -- id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
 -- semasa pengurus menatal.
 select * from payment_logs
-where (sqlc.narg('module')::text is null or module = sqlc.narg('module'))
+where module = any(sqlc.arg('modules')::text[])
   and (sqlc.narg('before_id')::bigint is null or id < sqlc.narg('before_id'))
 order by id desc
 limit $1;
