@@ -26,6 +26,14 @@ select * from registration_payments
 where status = 'pending' and created_at < $1
 order by created_at;
 
+-- name: ListMyRegistrationPayments :many
+-- Sejarah PENUH percubaan yuran pendaftaran seorang ahli (bukan cuma
+-- status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin
+-- "Sejarah Bayaran Saya".
+select * from registration_payments
+where user_id = $1
+order by created_at desc;
+
 -- name: HasSucceededRegistrationPayment :one
 select exists(
   select 1 from registration_payments where user_id = $1 and status = 'succeeded'

@@ -127,6 +127,17 @@ func NewRouter(
 	// Sama logik dengan sapuan latar berkala (cmd/api/main.go), cuma
 	// dicetuskan on-demand.
 	approved.POST("/admin/payments/reconcile", handlers.NewPaymentReconcileHandler(paymentReconciler, sqlc.New(pool)).Run)
+
+	// Sejarah bayaran (bacaan sahaja) — lihat internal/http/handlers/payments.go.
+	paymentsHandler := handlers.NewPaymentsHandler(pool)
+	// `protected` (bukan `approved`) SENGAJA — checkout yuran pendaftaran
+	// sendiri duduk atas `protected` (baris /registration-payments/checkout
+	// di bawah), jadi ahli `pending` yang DAH bayar mesti boleh tengok
+	// sejarah bayaran sendiri, bukan dapat 403 sebelum status approved
+	// (Opus verify 2026-08-15 tangkap gap ni).
+	protected.GET("/me/payments", paymentsHandler.Mine)
+	approved.GET("/admin/payments", paymentsHandler.ListAll)
+
 	approved.GET("/roles", profileHandler.ListRoles)
 	approved.POST("/device-tokens", deviceTokenHandler.Upsert)
 	approved.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)

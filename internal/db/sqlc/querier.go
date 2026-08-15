@@ -186,7 +186,17 @@ type Querier interface {
 	// nama yang boleh dicetak.
 	ListEligibleForCertificate(ctx context.Context, activityID uuid.UUID) ([]ListEligibleForCertificateRow, error)
 	ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error)
+	// Sejarah yuran aktiviti seorang ahli — TERMASUK pendaftaran yang telah
+	// dibatalkan (beza sengaja drpd ListMyRegistrations di atas, yang tolak
+	// baris 'cancelled' sebab tab "Aktiviti Saya" tu untuk pendaftaran AKTIF
+	// sahaja): sejarah bayaran patut tetap tunjuk percubaan yang gagal/tak
+	// sempat dibayar sebelum disapu, bukan senyap hilang.
+	ListMyActivityPayments(ctx context.Context, userID uuid.UUID) ([]ListMyActivityPaymentsRow, error)
 	ListMyCertificates(ctx context.Context, userID uuid.UUID) ([]ListMyCertificatesRow, error)
+	// Sejarah PENUH percubaan yuran pendaftaran seorang ahli (bukan cuma
+	// status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin
+	// "Sejarah Bayaran Saya".
+	ListMyRegistrationPayments(ctx context.Context, userID uuid.UUID) ([]RegistrationPayment, error)
 	ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyRegistrationsRow, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk
@@ -224,7 +234,10 @@ type Querier interface {
 	// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
-	// Tinjauan am terkini merentas modul — endpoint admin.
+	// Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
+	// `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
+	// id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
+	// semasa pengurus menatal.
 	ListRecentPaymentLogs(ctx context.Context, arg ListRecentPaymentLogsParams) ([]PaymentLog, error)
 	// attended_session_ids menjawab "sesi mana pendaftaran ini sudah hadir?" —
 	// skrin kehadiran pengurusan menyemai suisnya daripada medan ini. Satu

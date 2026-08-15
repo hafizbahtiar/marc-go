@@ -112,18 +112,23 @@ func (q *Queries) ListPaymentLogsByGatewayRef(ctx context.Context, arg ListPayme
 const listRecentPaymentLogs = `-- name: ListRecentPaymentLogs :many
 select id, module, event, status, gateway, gateway_ref, amount_cents, user_id, related_id, message, raw_payload, created_at from payment_logs
 where ($2::text is null or module = $2)
+  and ($3::bigint is null or id < $3)
 order by id desc
 limit $1
 `
 
 type ListRecentPaymentLogsParams struct {
-	Limit  int32       `json:"limit"`
-	Module pgtype.Text `json:"module"`
+	Limit    int32       `json:"limit"`
+	Module   pgtype.Text `json:"module"`
+	BeforeID pgtype.Int8 `json:"before_id"`
 }
 
-// Tinjauan am terkini merentas modul — endpoint admin.
+// Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
+// `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
+// id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
+// semasa pengurus menatal.
 func (q *Queries) ListRecentPaymentLogs(ctx context.Context, arg ListRecentPaymentLogsParams) ([]PaymentLog, error) {
-	rows, err := q.db.Query(ctx, listRecentPaymentLogs, arg.Limit, arg.Module)
+	rows, err := q.db.Query(ctx, listRecentPaymentLogs, arg.Limit, arg.Module, arg.BeforeID)
 	if err != nil {
 		return nil, err
 	}

@@ -264,6 +264,69 @@ func (q *Queries) GetRegistrationByID(ctx context.Context, id uuid.UUID) (Activi
 	return i, err
 }
 
+const listMyActivityPayments = `-- name: ListMyActivityPayments :many
+select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, a.title, a.fee_cents, a.currency, a.starts_at
+from activity_registrations r
+join activities a on a.id = r.activity_id
+where r.user_id = $1 and r.payment_status <> 'not_required'
+order by r.registered_at desc
+`
+
+type ListMyActivityPaymentsRow struct {
+	ID            uuid.UUID          `json:"id"`
+	ActivityID    uuid.UUID          `json:"activity_id"`
+	UserID        uuid.UUID          `json:"user_id"`
+	Status        string             `json:"status"`
+	PaymentStatus string             `json:"payment_status"`
+	PaymentRef    pgtype.Text        `json:"payment_ref"`
+	CheckinToken  string             `json:"checkin_token"`
+	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
+	CancelledAt   pgtype.Timestamptz `json:"cancelled_at"`
+	Title         string             `json:"title"`
+	FeeCents      int32              `json:"fee_cents"`
+	Currency      string             `json:"currency"`
+	StartsAt      pgtype.Timestamptz `json:"starts_at"`
+}
+
+// Sejarah yuran aktiviti seorang ahli — TERMASUK pendaftaran yang telah
+// dibatalkan (beza sengaja drpd ListMyRegistrations di atas, yang tolak
+// baris 'cancelled' sebab tab "Aktiviti Saya" tu untuk pendaftaran AKTIF
+// sahaja): sejarah bayaran patut tetap tunjuk percubaan yang gagal/tak
+// sempat dibayar sebelum disapu, bukan senyap hilang.
+func (q *Queries) ListMyActivityPayments(ctx context.Context, userID uuid.UUID) ([]ListMyActivityPaymentsRow, error) {
+	rows, err := q.db.Query(ctx, listMyActivityPayments, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMyActivityPaymentsRow
+	for rows.Next() {
+		var i ListMyActivityPaymentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivityID,
+			&i.UserID,
+			&i.Status,
+			&i.PaymentStatus,
+			&i.PaymentRef,
+			&i.CheckinToken,
+			&i.RegisteredAt,
+			&i.CancelledAt,
+			&i.Title,
+			&i.FeeCents,
+			&i.Currency,
+			&i.StartsAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMyRegistrations = `-- name: ListMyRegistrations :many
 select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, a.title, a.starts_at, a.ends_at, a.status as activity_status,
   c.name as category_name

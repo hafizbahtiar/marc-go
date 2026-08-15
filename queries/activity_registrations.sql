@@ -147,3 +147,15 @@ join activities a on a.id = r.activity_id
 join activity_categories c on c.id = a.category_id
 where r.user_id = $1 and r.status <> 'cancelled' and a.deleted_at is null
 order by a.starts_at desc;
+
+-- name: ListMyActivityPayments :many
+-- Sejarah yuran aktiviti seorang ahli — TERMASUK pendaftaran yang telah
+-- dibatalkan (beza sengaja drpd ListMyRegistrations di atas, yang tolak
+-- baris 'cancelled' sebab tab "Aktiviti Saya" tu untuk pendaftaran AKTIF
+-- sahaja): sejarah bayaran patut tetap tunjuk percubaan yang gagal/tak
+-- sempat dibayar sebelum disapu, bukan senyap hilang.
+select r.*, a.title, a.fee_cents, a.currency, a.starts_at
+from activity_registrations r
+join activities a on a.id = r.activity_id
+where r.user_id = $1 and r.payment_status <> 'not_required'
+order by r.registered_at desc;

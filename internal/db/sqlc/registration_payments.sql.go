@@ -90,6 +90,44 @@ func (q *Queries) HasSucceededRegistrationPayment(ctx context.Context, userID uu
 	return exists, err
 }
 
+const listMyRegistrationPayments = `-- name: ListMyRegistrationPayments :many
+select id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at from registration_payments
+where user_id = $1
+order by created_at desc
+`
+
+// Sejarah PENUH percubaan yuran pendaftaran seorang ahli (bukan cuma
+// status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin
+// "Sejarah Bayaran Saya".
+func (q *Queries) ListMyRegistrationPayments(ctx context.Context, userID uuid.UUID) ([]RegistrationPayment, error) {
+	rows, err := q.db.Query(ctx, listMyRegistrationPayments, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistrationPayment
+	for rows.Next() {
+		var i RegistrationPayment
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AmountCents,
+			&i.Currency,
+			&i.Gateway,
+			&i.GatewayRef,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingRegistrationPaymentsOlderThan = `-- name: ListPendingRegistrationPaymentsOlderThan :many
 select id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at from registration_payments
 where status = 'pending' and created_at < $1

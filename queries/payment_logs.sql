@@ -14,9 +14,13 @@ where gateway = $1 and gateway_ref = $2
 order by created_at asc;
 
 -- name: ListRecentPaymentLogs :many
--- Tinjauan am terkini merentas modul — endpoint admin.
+-- Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
+-- `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
+-- id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
+-- semasa pengurus menatal.
 select * from payment_logs
 where (sqlc.narg('module')::text is null or module = sqlc.narg('module'))
+  and (sqlc.narg('before_id')::bigint is null or id < sqlc.narg('before_id'))
 order by id desc
 limit $1;
 
