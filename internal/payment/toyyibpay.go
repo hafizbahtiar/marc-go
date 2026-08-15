@@ -1,10 +1,13 @@
 package payment
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -173,32 +176,94 @@ func (t *ToyyibPayGateway) VerifyWebhook(payload []byte, headers http.Header) (W
 		return WebhookEvent{}, ErrNotConfigured
 	}
 
-	// Go 1.17+ `url.ParseQuery` TOLAK `;` mentah dalam query string terus
-	// (pengukuhan keselamatan — kekaburan lama sama ada `;` pemisah atau
-	// aksara literal dalam nilai, lihat golang.org/issue/25192). Disahkan
-	// LIVE di staging: callback ToyyibPay sebenar bawa `;` mentah dalam
-	// salah satu nilai (cth medan `msg`/`reason`), jadi parse GAGAL
-	// TERUS setiap kali — bukan kes tepi jarang, callback sentiasa gagal.
-	// Kod ni cuma perlukan `billcode` (status sebenar disahkan semula
-	// via poll, bukan daripada body — lihat komen fungsi), jadi selamat
-	// escape `;` literal ke `%3B` dulu: tak ubah struktur pasangan
-	// key=value yang dipisah `&`, cuma neutralkan `;` di mana-mana ia
-	// muncul supaya parser tak tolak keseluruhan body sebab satu aksara
-	// dalam satu medan yang kita tak guna pun.
-	sanitized := strings.ReplaceAll(string(payload), ";", "%3B")
-	values, err := url.ParseQuery(sanitized)
-	if err != nil {
-		return WebhookEvent{}, fmt.Errorf("toyyibpay callback: parse body: %w", err)
-	}
-
-	billCode := values.Get("billcode")
+	billCode := extractBillCode(payload, headers.Get("Content-Type"))
 	if billCode == "" {
-		return WebhookEvent{}, fmt.Errorf("toyyibpay callback: billcode kosong")
+		// Payload MENTAH dalam ralat (bukan cuma "billcode kosong") —
+		// dokumentasi rasmi ToyyibPay tak boleh dibaca (403, lihat
+		// PAYMENT-TOYYIB.md), dan bentuk callback sebenar dah SILAP
+		// diandaikan dua kali berturut-turut semasa kajian (`;` mentah
+		// tolak url.ParseQuery keseluruhan; sebelum itu andaian medan
+		// wajib pun silap). Kali ni kegagalan bawa BUKTI PENUH terus
+		// dalam log — tak payah round-trip staging-fix-staging lagi
+		// untuk cari punca. Payload boleh bawa PII pembayar (nama/emel)
+		// — dipotong 1000 aksara dan cuma masuk LOG SERVER, tak pernah
+		// sampai ke client.
+		snippet := string(payload)
+		if len(snippet) > 1000 {
+			snippet = snippet[:1000]
+		}
+		return WebhookEvent{}, fmt.Errorf(
+			"toyyibpay callback: billcode tidak dijumpai (content-type=%q, payload mentah=%q)",
+			headers.Get("Content-Type"), snippet,
+		)
 	}
 
 	// Interface VerifyWebhook tiada parameter context (lihat payment.go) —
 	// httpClient.Timeout (15s) yang mengawal had masa panggilan ni.
 	return t.confirmStatus(context.Background(), billCode)
+}
+
+// extractBillCode cuba BERURUTAN pelbagai bentuk body callback yang
+// munasabah — bukan andaikan SATU bentuk sahaja. Sebab: ToyyibPay tak
+// dokumenkan bentuk callback tepat secara rasmi (apireference/ 403,
+// lihat PAYMENT-TOYYIB.md), dan setiap andaian tunggal sebelum ni
+// (medan wajib, bentuk "No data found!", `;` sebagai pemisah sah) dah
+// silap sekali bila diuji live. Susunan cubaan: form (url-encoded ATAU
+// multipart, `;` literal diselamatkan dulu), lepas tu JSON — dan
+// PADANAN KUNCI CASE-INSENSITIVE pada dua-dua (respons createBill ToyyibPay
+// sendiri guna "BillCode" huruf besar, callback tak disahkan sama).
+func extractBillCode(payload []byte, contentType string) string {
+	// `;` mentah (disahkan wujud live di salah satu medan lain, cth
+	// msg/reason) buat url.ParseQuery tolak KESELURUHAN body sebelum
+	// sempat baca billcode — escape dulu, tak ubah struktur pasangan
+	// key=value yang dipisah `&`.
+	sanitized := strings.ReplaceAll(string(payload), ";", "%3B")
+	if values, err := url.ParseQuery(sanitized); err == nil {
+		if code := billCodeFromValues(values); code != "" {
+			return code
+		}
+	}
+
+	// multipart/form-data — sesetengah backend PHP hantar callback
+	// begini, bukan x-www-form-urlencoded. url.ParseQuery di atas tak
+	// akan error (ia baca teks bebas macam pasangan tak bermakna) tapi
+	// juga takkan jumpa billcode — cuba eksplisit kalau Content-Type
+	// memang kata multipart.
+	if mediaType, params, err := mime.ParseMediaType(contentType); err == nil && strings.HasPrefix(mediaType, "multipart/") {
+		if boundary, ok := params["boundary"]; ok {
+			mr := multipart.NewReader(bytes.NewReader(payload), boundary)
+			if form, err := mr.ReadForm(1 << 20); err == nil {
+				if code := billCodeFromValues(url.Values(form.Value)); code != "" {
+					return code
+				}
+			}
+		}
+	}
+
+	// JSON — kalau bukan dua-dua bentuk form di atas.
+	var jsonBody map[string]any
+	if err := json.Unmarshal(payload, &jsonBody); err == nil {
+		for key, val := range jsonBody {
+			if !strings.EqualFold(key, "billcode") {
+				continue
+			}
+			if s, ok := val.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+
+	return ""
+}
+
+// billCodeFromValues padan kunci "billcode" case-insensitive.
+func billCodeFromValues(values url.Values) string {
+	for key, vals := range values {
+		if strings.EqualFold(key, "billcode") && len(vals) > 0 && vals[0] != "" {
+			return vals[0]
+		}
+	}
+	return ""
 }
 
 // confirmStatus poll getBillTransactions — sumber kebenaran SEBENAR,
