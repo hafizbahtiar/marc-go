@@ -109,9 +109,14 @@ func registerTx(ctx context.Context, pool *pgxpool.Pool, activityID, userID uuid
 		return zero, err
 	}
 
-	// payment_status kekal 'not_required' sehingga integrasi payment
-	// mendarat; fee_cents sentiasa 0 buat masa ini.
+	// payment_status 'pending' untuk aktiviti berbayar (fee_cents > 0) —
+	// ahli tetap dapat slot kapasiti serta-merta (design decision), tapi
+	// kelayakan sijil (activity_certificates.sql) hanya benarkan lepas
+	// payment_status='paid'. Aktiviti percuma kekal 'not_required'.
 	status, paymentStatus := "registered", "not_required"
+	if activity.FeeCents > 0 {
+		paymentStatus = "pending"
+	}
 
 	reg, err := q.CreateRegistration(ctx, sqlc.CreateRegistrationParams{
 		ActivityID:    activityID,

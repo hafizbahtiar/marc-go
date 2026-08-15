@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"marc/internal/activitysweep"
 	"marc/internal/auth"
 	"marc/internal/config"
 	"marc/internal/db"
@@ -110,6 +111,20 @@ func main() {
 			cfg.PublicBaseURL+"/registration-payments/webhook/toyyibpay",
 			cfg.PublicBaseURL+"/registration-payments/return/toyyibpay",
 		),
+		// "toyyibpay-activity" — instance KEDUA, kredential SAMA (satu
+		// akaun ToyyibPay), tapi callbackURL/returnURL berbeza (dibakar
+		// tetap semasa dibina, lihat komennya di internal/http/router.go
+		// atas laluan /activity-registrations/...). Wired ke
+		// ActivityRegistrationPaymentHandler (yuran aktiviti berbayar,
+		// activities.fee_cents) — BUKAN "toyyibpay" (yuran pendaftaran
+		// ahli sekali bayar).
+		"toyyibpay-activity": payment.NewToyyibPayGateway(
+			cfg.ToyyibPayBaseURL,
+			cfg.ToyyibPaySecretKey,
+			cfg.ToyyibPayCategoryCode,
+			cfg.PublicBaseURL+"/activity-registrations/webhook/toyyibpay",
+			cfg.PublicBaseURL+"/activity-registrations/return/toyyibpay",
+		),
 	}
 
 	// Pembersih storan (Stage 10 lanjutan) — gambar post yang dipadam dan
@@ -122,6 +137,12 @@ func main() {
 		AuditRecord:     cfg.AuditRecordRetention,
 		UploadTombstone: cfg.UploadTombstoneRetention,
 	}, 24*time.Hour).Start(ctx)
+
+	// Sapuan pendaftaran aktiviti berbayar yang ditinggalkan — bebaskan
+	// slot kapasiti yang tersilap dipegang (lihat internal/activitysweep).
+	// Kadar sama dengan reaper (15 minit); umur lapuk (45 minit) dikawal
+	// dalam package itu sendiri.
+	activitysweep.New(sqlc.New(pool), 15*time.Minute).Start(ctx)
 
 	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli)
 

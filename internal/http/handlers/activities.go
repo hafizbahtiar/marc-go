@@ -534,32 +534,12 @@ type activityRequest struct {
 	AttendanceThresholdPct int16     `json:"attendance_threshold_pct"`
 }
 
-// errFeeNotSupported — aktiviti berbayar ditolak SELAGI tiada integrasi
-// pembayaran.
-//
-// Bukan kerana lajur itu salah, tetapi kerana tiada apa-apa dalam modul ini
-// yang boleh memungut yuran: RegisterForActivity menetapkan
-// payment_status='not_required' tanpa syarat, jadi seorang yang mendaftar
-// untuk aktiviti berbayar tetap masuk secara percuma. Lebih teruk lagi,
-// klausa kelayakan sijil `(a.fee_cents = 0 or r.payment_status = 'paid')`
-// menjadi palsu untuk SETIAP pendaftar, jadi ListEligibleForCertificate
-// memulangkan sifar baris dan pengurus nampak "0 sijil diterbitkan" tanpa
-// sebarang ralat yang menjelaskannya.
-//
-// Sengaja di handler sahaja, bukan CHECK pada lajur: `fee_cents` mesti
-// kekal boleh guna sebaik sahaja pembayaran mendarat, tanpa migrasi
-// membatalkan kekangan.
-var errFeeNotSupported = errors.New(
-	"aktiviti berbayar belum disokong — integrasi pembayaran belum tersedia; " +
-		"tetapkan fee_cents kepada 0",
-)
-
+// validateFeeCents — aktiviti berbayar kini disokong (ToyyibPay wired,
+// lihat ActivityRegistrationPaymentHandler). Cuma nilai negatif yang tak
+// masuk akal ditolak di sini.
 func validateFeeCents(fee int32) error {
 	if fee < 0 {
 		return errors.New("yuran tidak boleh negatif")
-	}
-	if fee != 0 {
-		return errFeeNotSupported
 	}
 	return nil
 }

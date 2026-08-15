@@ -752,16 +752,12 @@ func TestBatalAktivitiMenulisNotifikasiDenganActivityID(t *testing.T) {
 	}
 }
 
-// ---- Perangkap fee_cents ----
+// ---- fee_cents: aktiviti berbayar kini disokong ----
 
-// Tiada dalam modul ini yang boleh memungut yuran: RegisterForActivity
-// menetapkan payment_status='not_required' tanpa syarat, dan klausa
-// kelayakan sijil `(a.fee_cents = 0 or r.payment_status = 'paid')` menjadi
-// palsu untuk SETIAP pendaftar aktiviti berbayar — jadi
-// ListEligibleForCertificate memulangkan sifar baris dan pengurus nampak
-// "0 sijil diterbitkan" tanpa sebarang ralat. Satu-satunya tempat perkara
-// itu boleh dihentikan ialah di pintu masuk.
-func TestCreateMenolakYuranBukanSifar(t *testing.T) {
+// ToyyibPay dah wired (ActivityRegistrationPaymentHandler) — aktiviti
+// berbayar (fee_cents > 0) kini DIBENARKAN pada Create/Update. Cuma nilai
+// negatif yang tak masuk akal ditolak (validateFeeCents).
+func TestCreateBenarkanYuranBukanSifar(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
 	manager := seedMember(t, ctx, pool, "manager", "approved")
@@ -785,37 +781,36 @@ func TestCreateMenolakYuranBukanSifar(t *testing.T) {
 
 	rec := activityCall(t, pool, manager, http.MethodPost, "/activities", body(1500),
 		nil, (*ActivityHandler).Create)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, mahu 400 (badan: %s)", rec.Code, rec.Body.String())
-	}
-	if msg, _ := decodeBody(t, rec)["error"].(string); !strings.Contains(msg, "pembayaran") {
-		t.Errorf("mesej = %q, mahu menyebut integrasi pembayaran", msg)
-	}
-
-	// Dan tiada baris yang tercicir daripada percubaan yang ditolak.
-	var n int
-	if err := pool.QueryRow(ctx,
-		`select count(*) from activities where title = 'Aktiviti Berbayar'`).Scan(&n); err != nil {
-		t.Fatalf("kira aktiviti: %v", err)
-	}
-	if n != 0 {
-		t.Errorf("aktiviti tercipta = %d, mahu 0", n)
-	}
-
-	// fee_cents = 0 (dan yang tiada langsung) kekal dibenarkan.
-	rec = activityCall(t, pool, manager, http.MethodPost, "/activities", body(0),
-		nil, (*ActivityHandler).Create)
 	if rec.Code != http.StatusCreated {
-		t.Fatalf("yuran sifar: status = %d, mahu 201 (badan: %s)", rec.Code, rec.Body.String())
+		t.Fatalf("yuran 1500: status = %d, mahu 201 (badan: %s)", rec.Code, rec.Body.String())
 	}
 	if id, ok := decodeBody(t, rec)["id"].(string); ok {
 		t.Cleanup(func() {
 			_, _ = pool.Exec(context.Background(), `delete from activities where id = $1`, id)
 		})
 	}
+
+	var fee int32
+	if err := pool.QueryRow(ctx,
+		`select fee_cents from activities where title = 'Aktiviti Berbayar'`).Scan(&fee); err != nil {
+		t.Fatalf("baca semula: %v", err)
+	}
+	if fee != 1500 {
+		t.Errorf("fee_cents = %d, mahu 1500", fee)
+	}
+
+	// Nilai negatif tetap ditolak — itu satu-satunya semakan yang kekal.
+	rec = activityCall(t, pool, manager, http.MethodPost, "/activities", body(-100),
+		nil, (*ActivityHandler).Create)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("yuran negatif: status = %d, mahu 400 (badan: %s)", rec.Code, rec.Body.String())
+	}
+	if msg, _ := decodeBody(t, rec)["error"].(string); !strings.Contains(msg, "negatif") {
+		t.Errorf("mesej = %q, mahu menyebut negatif", msg)
+	}
 }
 
-func TestUpdateMenolakYuranBukanSifar(t *testing.T) {
+func TestUpdateBenarkanYuranBukanSifar(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
 	manager := seedMember(t, ctx, pool, "manager", "approved")
@@ -823,11 +818,8 @@ func TestUpdateMenolakYuranBukanSifar(t *testing.T) {
 
 	rec := activityCall(t, pool, manager, http.MethodPatch, "/activities/x",
 		`{"fee_cents":2000}`, idParam(activityID), (*ActivityHandler).Update)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, mahu 400 (badan: %s)", rec.Code, rec.Body.String())
-	}
-	if msg, _ := decodeBody(t, rec)["error"].(string); !strings.Contains(msg, "pembayaran") {
-		t.Errorf("mesej = %q, mahu menyebut integrasi pembayaran", msg)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, mahu 200 (badan: %s)", rec.Code, rec.Body.String())
 	}
 
 	var fee int32
@@ -835,17 +827,21 @@ func TestUpdateMenolakYuranBukanSifar(t *testing.T) {
 		`select fee_cents from activities where id = $1`, activityID).Scan(&fee); err != nil {
 		t.Fatalf("baca semula: %v", err)
 	}
-	if fee != 0 {
-		t.Errorf("fee_cents = %d, mahu kekal 0 selepas PATCH ditolak", fee)
+	if fee != 2000 {
+		t.Errorf("fee_cents = %d, mahu 2000 selepas PATCH", fee)
 	}
 
-	// Baris warisan yang SUDAH berbayar mesti kekal boleh dibetulkan —
-	// itulah sebab semakan ini menyekat medan yang DIHANTAR dan bukan nilai
-	// hasil gabungan.
-	if _, err := pool.Exec(ctx,
-		`update activities set fee_cents = 1500 where id = $1`, activityID); err != nil {
-		t.Fatalf("tetapkan yuran warisan: %v", err)
+	// Nilai negatif tetap ditolak.
+	rec = activityCall(t, pool, manager, http.MethodPatch, "/activities/x",
+		`{"fee_cents":-100}`, idParam(activityID), (*ActivityHandler).Update)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("yuran negatif: status = %d, mahu 400 (badan: %s)", rec.Code, rec.Body.String())
 	}
+	if msg, _ := decodeBody(t, rec)["error"].(string); !strings.Contains(msg, "negatif") {
+		t.Errorf("mesej = %q, mahu menyebut negatif", msg)
+	}
+
+	// Pembetulan balik ke 0 kekal berfungsi.
 	rec = activityCall(t, pool, manager, http.MethodPatch, "/activities/x",
 		`{"fee_cents":0}`, idParam(activityID), (*ActivityHandler).Update)
 	if rec.Code != http.StatusOK {

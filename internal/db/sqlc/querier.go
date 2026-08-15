@@ -14,6 +14,36 @@ import (
 type Querier interface {
 	ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error)
 	CancelRegistration(ctx context.Context, arg CancelRegistrationParams) (ActivityRegistration, error)
+	// Batal pendaftaran yang DAH cuba checkout (payment_ref wujud, bil
+	// ToyyibPay sebenar dicipta) selepas cutoff PANJANG — sengaja lain drpd
+	// CancelStaleUnstartedPayments.
+	//
+	// Kenapa cutoff PANJANG di sini: bil ToyyibPay yang dah dicipta boleh
+	// disahkan bila-bila masa oleh webhook (FPX/bank kadang ambil lebih 45
+	// minit — pembayar boleh tinggalkan app lama sebelum sambung semula ke
+	// laman bank). Kalau baris ni dibatal pada cutoff PENDEK yang sama
+	// macam "tak pernah cuba", webhook yang tiba LEPAS itu (UPDATE ...
+	// WHERE payment_ref = $1 AND payment_status <> 'paid', TIADA
+	// `status <> 'cancelled'` guard dengan sengaja — lihat komen
+	// UpdateRegistrationPaymentStatusByPaymentRef) akan tetap tanda
+	// payment_status='paid' atas baris yang `status='cancelled'` — ahli
+	// dah BAYAR tapi slotnya HILANG, tiada jejak melainkan seseorang cari
+	// baris cancelled+paid secara manual. Cutoff panjang kurangkan
+	// kebarangkalian tetingkap lumba ni secara drastik (bukan hapuskan
+	// 100% — itu perlukan reka bentuk lebih kompleks, dianggap tak
+	// berbaloi buat masa ini: risiko kapasiti terikat lebih lama jauh
+	// lebih kecil drpd risiko kehilangan bayaran ahli).
+	CancelStaleUnpaidBills(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error)
+	// Batal pendaftaran berbayar yang ahli TAK PERNAH cuba checkout
+	// (payment_ref masih NULL — tiada bil ToyyibPay pernah dicipta) selepas
+	// cutoff PENDEK. Selamat dibatal cepat: tiada webhook akan datang untuk
+	// baris ni sebab tiada bil wujud langsung.
+	//
+	// `and status <> 'cancelled'` — tanpa ni, baris yang DAH dibatal pusingan
+	// sebelum kena UPDATE semula setiap 15 minit selama-lamanya, tulis ganti
+	// `cancelled_at` (rosakkan jejak audit "bila SEBENAR ia dibatal") dan
+	// kembungkan bilangan baris dilaporkan log tanpa sebab.
+	CancelStaleUnstartedPayments(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error)
 	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
 	// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 	// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
@@ -203,6 +233,9 @@ type Querier interface {
 	SetActivityCertificatesIssuedAt(ctx context.Context, id uuid.UUID) error
 	SetActivityStatus(ctx context.Context, arg SetActivityStatusParams) (Activity, error)
 	SetCertificateR2Key(ctx context.Context, arg SetCertificateR2KeyParams) error
+	// Simpan bill code ToyyibPay pada pendaftaran sedia ada, dipanggil sebaik
+	// createBill berjaya semasa checkout yuran aktiviti.
+	SetRegistrationPaymentRef(ctx context.Context, arg SetRegistrationPaymentRefParams) (ActivityRegistration, error)
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
@@ -225,6 +258,22 @@ type Querier interface {
 	// dicuba semula pada gateway_ref yang sama tetap boleh naik
 	// 'failed' -> 'succeeded' (sebab itu bukan `status = 'pending'`).
 	UpdateRegistrationPaymentStatusByGatewayRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByGatewayRefParams) (RegistrationPayment, error)
+	// Padanan UpdateRegistrationPaymentStatusByGatewayRef (registration_payments)
+	// tapi bagi activity_registrations: kunci carian payment_ref (bill code),
+	// bukan (gateway, gateway_ref) berasingan sebab jadual ni tak simpan lajur
+	// gateway berasingan (satu gateway sahaja buat masa ini, ToyyibPay).
+	// Kekang `payment_status <> 'paid'` idempotent — 'paid' ialah keadaan
+	// terminal, replay webhook lepas tu ialah no-op.
+	//
+	// SENGAJA TIADA `and status <> 'cancelled'`: kalau baris ni dah dibatal
+	// (CancelStaleUnpaidBills) tapi webhook confirm lambat tiba, UPDATE ni
+	// MASIH akan tanda payment_status='paid' walaupun status='cancelled' —
+	// keadaan cancelled+paid yang ganjil, tapi SENGAJA supaya boleh dikesan
+	// (handler Go log ERROR bila ini berlaku, lihat activity_registration_payment.go)
+	// bukan senyap hilang. Kalau guard `status<>'cancelled'` ditambah di sini,
+	// UPDATE gagal (0 baris), pgx.ErrNoRows dianggap "replay biasa", dan
+	// kesnya jadi kelihatan macam tiada apa berlaku — walhal ahli dah bayar.
+	UpdateRegistrationPaymentStatusByPaymentRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByPaymentRefParams) (ActivityRegistration, error)
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)
 }
 

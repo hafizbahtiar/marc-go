@@ -199,16 +199,9 @@ Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
       - **`marc_flutter`**: skrin bayar dalam aliran daftar/skrin pending
         belum dibina — backend `Checkout`/`Webhook` sedia tapi tiada UI
         panggil.
-      - **Yuran aktiviti** (guna kes 2, `activities.fee_cents`) — BELUM
-        dibina, keputusan berasingan diperlukan: `RegisterForActivity`
-        tolak `fee_cents != 0` sekarang (lihat "Sudah ditutup dalam
-        pusingan ini"). Bila ToyyibPay disambung di sini, kena putuskan
-        bayar SEBELUM `payment_status='paid'` ditulis (redirect → tunggu
-        webhook/poll) atau pendaftaran dicipta serta-merta dengan status
-        `pending_payment` baharu — **corak reka bentuk sama** dengan
-        guna kes 1 (gate lepas commitment, bukan gate sebelum), tapi
-        titik gate berbeza (di sini: `payment_status` pada baris
-        `activity_registrations`, bukan `profiles.status`).
+      - **Yuran aktiviti** (guna kes 2) — **DIBINA DAN DISAHKAN 2026-08-15**,
+        lihat entri "Yuran aktiviti tidak berfungsi" di bawah (bahagian
+        Modul Aktiviti) untuk butiran penuh.
 
 ## Modul Aktiviti — jurang yang tinggal
 
@@ -219,27 +212,62 @@ bawah ini **tidak** dibina, dan sebahagiannya sengaja.
 
 ### Sengaja dikecualikan daripada skop (spec reka bentuk)
 
-- [ ] **Yuran aktiviti tidak berfungsi.** `activities.fee_cents` dan
-      `activity_registrations.payment_status`/`payment_ref` wujud dalam
-      schema sebagai cangkuk — **tiada gateway disambungkan langsung**.
-      `Register` sentiasa tulis `payment_status = 'not_required'` tanpa
-      syarat. Hanya aktiviti **percuma** yang berfungsi.
-      **Perangkap:** API *menerima* `fee_cents > 0` (borang Flutter tidak
-      mendedahkannya, tetapi `POST`/`PATCH /activities` mendedahkan). Bila
-      itu berlaku, pendaftaran tetap percuma dan senyap — DAN klausa
-      kelayakan sijil `(a.fee_cents = 0 or r.payment_status = 'paid')`
-      menjadi palsu untuk **semua** pendaftar, jadi tiada seorang pun layak
-      menerima sijil dan tiada ralat menjelaskan sebabnya. Sehingga gateway
-      mendarat, kekalkan `fee_cents = 0`.
+- [x] **Yuran aktiviti — DIBINA DAN DIWIRING 2026-08-15.**
+      `activities.fee_cents` disambung penuh ke `ToyyibPayGateway`
+      (instance KEDUA, `"toyyibpay-activity"` — `callbackURL`/`returnURL`
+      dikunci semasa `NewToyyibPayGateway` dibina, jadi tak boleh kongsi
+      instance dengan yuran pendaftaran ahli). Sekatan `fee_cents != 0`
+      dibuang; `registerTx` tulis `payment_status='pending'` (bukan
+      `not_required`) untuk aktiviti berbayar, kapasiti tetap direserve
+      serta-merta (transaksi kunci sedia ada tak berubah). Checkout
+      **berasingan** daripada daftar — `POST /activities/:id/registration`
+      dulu (cipta baris), lepas tu `POST /activities/:id/registration/
+      checkout` (mulakan bayaran untuk baris yang SUDAH wujud). Klausa
+      kelayakan sijil (`fee_cents = 0 or payment_status = 'paid'`) sudah
+      betul sejak awal — tiada perubahan diperlukan di situ.
 
-      **Gateway disahkan 2026-08-15**: `ToyyibPayGateway` (lihat bahagian
-      Payment) — guna kes kedua daripada dua yang disahkan (pertama:
-      yuran pendaftaran ahli). Reka bentuk pendaftaran aktiviti berbayar
-      masih perlu keputusan sama sifat dengan yuran pendaftaran: bila
-      `payment_status` bertukar `'paid'` (lepas redirect + webhook/poll
-      confirm, bukan serta-merta) dan sama ada `RegisterForActivity`
-      cipta baris `pending_payment` dulu atau tunggu bayaran sebelum
-      cipta baris pendaftaran langsung.
+      **Sapuan latar baharu** (`internal/activitysweep`, package
+      berasingan drpd reaper/retention — lihat komen pakej untuk sebab)
+      bebaskan slot kapasiti yang ditinggalkan — DUA tingkat cutoff
+      (bukan satu, selepas Opus verify dedah race, lihat bawah):
+      belum-cuba-checkout (`payment_ref` NULL) dibatal lepas 45 minit;
+      DAH-cuba-checkout (`payment_ref` wujud, bil ToyyibPay sebenar)
+      dibatal lepas **24 jam** — jauh lebih panjang sengaja, elak race
+      dengan webhook lewat.
+
+      **Opus verify 2026-08-15 jumpa 4 isu, semua DIBAIKI**:
+      - **HIGH** — race sweep-vs-webhook: baris dibatal (slot hilang)
+        SEBELUM webhook confirm bayaran tiba → ahli bayar, senyap tiada
+        rekod. Dibaiki: cutoff dua-tingkat (24 jam untuk bil sedia ada)
+        + `UpdateRegistrationPaymentStatusByPaymentRef` sengaja TIADA
+        guard `status<>cancelled` supaya kes cancelled+paid tetap
+        tertulis (bukan `pgx.ErrNoRows` senyap) DAN handler log `ERROR`
+        eksplisit bila ini berlaku — perlukan semakan manual (padanan
+        proses refund manual sedia ada), belum automasi pulih.
+      - **MEDIUM** — sapuan tulis ganti `cancelled_at` pada baris yang
+        DAH dibatal setiap 15 minit selama-lamanya. Dibaiki: guard
+        `status <> 'cancelled'` ditambah pada kedua-dua query sapuan.
+      - **LOW** — checkout berulang tulis ganti `payment_ref`, bil lama
+        jadi yatim (webhook tak jumpa padanan kalau bayaran sampai ke
+        situ). Sengaja TAK disekat (block penuh akan kunci ahli yang
+        bil pertama tamat tempoh daripada cuba lagi, lebih teruk) — log
+        sahaja untuk kelihatan dalam pemantauan.
+      - **UX (bukan bug, tapi disyorkan Opus)** — halaman detail
+        aktiviti tak dedahkan `payment_status` pendaftaran (respons
+        backend tak bawa medan tu), jadi ahli yang daftar aktiviti
+        berbayar tak nampak apa-apa isyarat kena bayar sehingga mereka
+        navigasi ke "Aktiviti Saya" — pada masa tu mungkin dah terlepas.
+        Dibaiki (minimum, bukan repair penuh): mesej kejayaan daftar
+        kini sebut eksplisit "aktiviti ini berbayar, sila selesaikan di
+        Aktiviti Saya" bila `feeCents > 0` (`activity_detail_page.dart`).
+        Repair penuh (dedahkan `payment_status` terus pada respons
+        detail) masih belum dibuat — halaman detail masih tak boleh
+        bezakan "dah bayar" drpd "belum bayar", cuma tahu "perlu bayar".
+
+      **Flutter**: `my_activities_page.dart` sahaja yang papar status
+      bayaran + butang "Bayar Yuran Aktiviti" (satu-satunya tempat data
+      `payment_status` sedia — via `GET /me/activities`). Halaman detail
+      aktiviti tak boleh (lihat UX di atas).
 - [ ] **Check-in `self_scan` dan `code`.** Kekangan `method` dalam
       `activity_attendances` menerima keempat-empat nilai, tetapi hanya
       `manual` dan `scan` ada pelaksanaan (lihat komen

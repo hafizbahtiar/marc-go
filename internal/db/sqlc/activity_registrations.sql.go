@@ -41,6 +41,110 @@ func (q *Queries) CancelRegistration(ctx context.Context, arg CancelRegistration
 	return i, err
 }
 
+const cancelStaleUnpaidBills = `-- name: CancelStaleUnpaidBills :many
+update activity_registrations
+set status = 'cancelled', cancelled_at = now()
+where payment_status = 'pending' and status <> 'cancelled'
+  and payment_ref is not null and registered_at < $1
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+`
+
+// Batal pendaftaran yang DAH cuba checkout (payment_ref wujud, bil
+// ToyyibPay sebenar dicipta) selepas cutoff PANJANG — sengaja lain drpd
+// CancelStaleUnstartedPayments.
+//
+// Kenapa cutoff PANJANG di sini: bil ToyyibPay yang dah dicipta boleh
+// disahkan bila-bila masa oleh webhook (FPX/bank kadang ambil lebih 45
+// minit — pembayar boleh tinggalkan app lama sebelum sambung semula ke
+// laman bank). Kalau baris ni dibatal pada cutoff PENDEK yang sama
+// macam "tak pernah cuba", webhook yang tiba LEPAS itu (UPDATE ...
+// WHERE payment_ref = $1 AND payment_status <> 'paid', TIADA
+// `status <> 'cancelled'` guard dengan sengaja — lihat komen
+// UpdateRegistrationPaymentStatusByPaymentRef) akan tetap tanda
+// payment_status='paid' atas baris yang `status='cancelled'` — ahli
+// dah BAYAR tapi slotnya HILANG, tiada jejak melainkan seseorang cari
+// baris cancelled+paid secara manual. Cutoff panjang kurangkan
+// kebarangkalian tetingkap lumba ni secara drastik (bukan hapuskan
+// 100% — itu perlukan reka bentuk lebih kompleks, dianggap tak
+// berbaloi buat masa ini: risiko kapasiti terikat lebih lama jauh
+// lebih kecil drpd risiko kehilangan bayaran ahli).
+func (q *Queries) CancelStaleUnpaidBills(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error) {
+	rows, err := q.db.Query(ctx, cancelStaleUnpaidBills, registeredAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityRegistration
+	for rows.Next() {
+		var i ActivityRegistration
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivityID,
+			&i.UserID,
+			&i.Status,
+			&i.PaymentStatus,
+			&i.PaymentRef,
+			&i.CheckinToken,
+			&i.RegisteredAt,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const cancelStaleUnstartedPayments = `-- name: CancelStaleUnstartedPayments :many
+update activity_registrations
+set status = 'cancelled', cancelled_at = now()
+where payment_status = 'pending' and status <> 'cancelled'
+  and payment_ref is null and registered_at < $1
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+`
+
+// Batal pendaftaran berbayar yang ahli TAK PERNAH cuba checkout
+// (payment_ref masih NULL — tiada bil ToyyibPay pernah dicipta) selepas
+// cutoff PENDEK. Selamat dibatal cepat: tiada webhook akan datang untuk
+// baris ni sebab tiada bil wujud langsung.
+//
+// `and status <> 'cancelled'` — tanpa ni, baris yang DAH dibatal pusingan
+// sebelum kena UPDATE semula setiap 15 minit selama-lamanya, tulis ganti
+// `cancelled_at` (rosakkan jejak audit "bila SEBENAR ia dibatal") dan
+// kembungkan bilangan baris dilaporkan log tanpa sebab.
+func (q *Queries) CancelStaleUnstartedPayments(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error) {
+	rows, err := q.db.Query(ctx, cancelStaleUnstartedPayments, registeredAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityRegistration
+	for rows.Next() {
+		var i ActivityRegistration
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivityID,
+			&i.UserID,
+			&i.Status,
+			&i.PaymentStatus,
+			&i.PaymentRef,
+			&i.CheckinToken,
+			&i.RegisteredAt,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countActiveRegistrations = `-- name: CountActiveRegistrations :one
 select count(*) from activity_registrations
 where activity_id = $1 and status <> 'cancelled'
@@ -330,6 +434,81 @@ func (q *Queries) LockActivityForRegistration(ctx context.Context, id uuid.UUID)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const setRegistrationPaymentRef = `-- name: SetRegistrationPaymentRef :one
+update activity_registrations
+set payment_ref = $2
+where id = $1
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+`
+
+type SetRegistrationPaymentRefParams struct {
+	ID         uuid.UUID   `json:"id"`
+	PaymentRef pgtype.Text `json:"payment_ref"`
+}
+
+// Simpan bill code ToyyibPay pada pendaftaran sedia ada, dipanggil sebaik
+// createBill berjaya semasa checkout yuran aktiviti.
+func (q *Queries) SetRegistrationPaymentRef(ctx context.Context, arg SetRegistrationPaymentRefParams) (ActivityRegistration, error) {
+	row := q.db.QueryRow(ctx, setRegistrationPaymentRef, arg.ID, arg.PaymentRef)
+	var i ActivityRegistration
+	err := row.Scan(
+		&i.ID,
+		&i.ActivityID,
+		&i.UserID,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.PaymentRef,
+		&i.CheckinToken,
+		&i.RegisteredAt,
+		&i.CancelledAt,
+	)
+	return i, err
+}
+
+const updateRegistrationPaymentStatusByPaymentRef = `-- name: UpdateRegistrationPaymentStatusByPaymentRef :one
+update activity_registrations
+set payment_status = $2
+where payment_ref = $1 and payment_status <> 'paid'
+returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at
+`
+
+type UpdateRegistrationPaymentStatusByPaymentRefParams struct {
+	PaymentRef    pgtype.Text `json:"payment_ref"`
+	PaymentStatus string      `json:"payment_status"`
+}
+
+// Padanan UpdateRegistrationPaymentStatusByGatewayRef (registration_payments)
+// tapi bagi activity_registrations: kunci carian payment_ref (bill code),
+// bukan (gateway, gateway_ref) berasingan sebab jadual ni tak simpan lajur
+// gateway berasingan (satu gateway sahaja buat masa ini, ToyyibPay).
+// Kekang `payment_status <> 'paid'` idempotent — 'paid' ialah keadaan
+// terminal, replay webhook lepas tu ialah no-op.
+//
+// SENGAJA TIADA `and status <> 'cancelled'`: kalau baris ni dah dibatal
+// (CancelStaleUnpaidBills) tapi webhook confirm lambat tiba, UPDATE ni
+// MASIH akan tanda payment_status='paid' walaupun status='cancelled' —
+// keadaan cancelled+paid yang ganjil, tapi SENGAJA supaya boleh dikesan
+// (handler Go log ERROR bila ini berlaku, lihat activity_registration_payment.go)
+// bukan senyap hilang. Kalau guard `status<>'cancelled'` ditambah di sini,
+// UPDATE gagal (0 baris), pgx.ErrNoRows dianggap "replay biasa", dan
+// kesnya jadi kelihatan macam tiada apa berlaku — walhal ahli dah bayar.
+func (q *Queries) UpdateRegistrationPaymentStatusByPaymentRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByPaymentRefParams) (ActivityRegistration, error) {
+	row := q.db.QueryRow(ctx, updateRegistrationPaymentStatusByPaymentRef, arg.PaymentRef, arg.PaymentStatus)
+	var i ActivityRegistration
+	err := row.Scan(
+		&i.ID,
+		&i.ActivityID,
+		&i.UserID,
+		&i.Status,
+		&i.PaymentStatus,
+		&i.PaymentRef,
+		&i.CheckinToken,
+		&i.RegisteredAt,
+		&i.CancelledAt,
 	)
 	return i, err
 }

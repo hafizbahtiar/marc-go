@@ -252,5 +252,24 @@ func NewRouter(
 	r.POST("/registration-payments/webhook/toyyibpay", registrationWebhookRateLimiter, registrationPaymentHandler.Webhook)
 	r.GET("/registration-payments/return/toyyibpay", registrationPaymentHandler.ReturnPage)
 
+	// Yuran AKTIVITI (activities.fee_cents) — berasingan konseptual drpd
+	// yuran pendaftaran ahli di atas (padanan ActivityRegistrationPaymentHandler
+	// vs RegistrationPaymentHandler, jangan keliru dua-dua).
+	//
+	// Gateway "toyyibpay-activity" (bukan "toyyibpay") sengaja: instance
+	// ToyyibPayGateway bakar callbackURL/returnURL TETAP semasa dibina
+	// (lihat NewToyyibPayGateway, cmd/api/main.go) — bill yang dicipta guna
+	// instance "toyyibpay" akan sentiasa callback ke
+	// /registration-payments/webhook/toyyibpay, tak kira apa route yang
+	// kita daftarkan di sini. Instance KEDUA (kredential SAMA, URL callback/
+	// return BERBEZA) ialah satu-satunya cara ToyyibPay benar-benar panggil
+	// balik /activity-registrations/webhook/toyyibpay tanpa menyentuh
+	// toyyibpay.go atau registration_payment.go (dua-dua di luar skop).
+	activityRegistrationPaymentHandler := handlers.NewActivityRegistrationPaymentHandler(pool, paymentGateways["toyyibpay-activity"])
+	activityPaymentCheckoutRateLimiter := rateLimiter.Limit("activity-payment-checkout", rate.Every(6*time.Second), 5)
+	verified.POST("/activities/:id/registration/checkout", activityPaymentCheckoutRateLimiter, activityRegistrationPaymentHandler.Checkout)
+	r.POST("/activity-registrations/webhook/toyyibpay", registrationWebhookRateLimiter, activityRegistrationPaymentHandler.Webhook)
+	r.GET("/activity-registrations/return/toyyibpay", activityRegistrationPaymentHandler.ReturnPage)
+
 	return r
 }

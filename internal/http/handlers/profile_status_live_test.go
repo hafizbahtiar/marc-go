@@ -65,6 +65,21 @@ func seedMember(t *testing.T, ctx context.Context, pool *pgxpool.Pool, roleKey, 
 	return userID
 }
 
+// seedSucceededRegistrationPayment — gate `setMemberStatus` (L?, yuran
+// pendaftaran 2026-08-15) sekat pending->approved sehingga
+// HasSucceededRegistrationPayment true. Ujian status/audit ni tak
+// menguji laluan bayaran itu sendiri, jadi seed terus baris 'succeeded'
+// supaya gate lulus dan ujian fokus pada apa yang ia sepatutnya uji.
+func seedSucceededRegistrationPayment(t *testing.T, ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) {
+	t.Helper()
+	if _, err := pool.Exec(ctx,
+		`insert into registration_payments (user_id, amount_cents, currency, gateway, gateway_ref, status)
+		 values ($1, 1000, 'myr', 'toyyibpay', $2, 'succeeded')`,
+		userID, "test-"+uuid.NewString()); err != nil {
+		t.Fatalf("seed registration_payments: %v", err)
+	}
+}
+
 func callSetStatus(t *testing.T, pool *pgxpool.Pool, callerID, targetID uuid.UUID, action string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -118,6 +133,7 @@ func TestApproveMemberDiaudit(t *testing.T) {
 	pool, ctx := statusTestPool(t)
 	manager := seedMember(t, ctx, pool, "manager", "approved")
 	target := seedMember(t, ctx, pool, "ahli", "pending")
+	seedSucceededRegistrationPayment(t, ctx, pool, target)
 
 	rec := callSetStatus(t, pool, manager, target, "approve")
 	if rec.Code != http.StatusOK {
@@ -145,6 +161,7 @@ func TestApproveBerulangTidakCiptaCatatanKedua(t *testing.T) {
 	pool, ctx := statusTestPool(t)
 	manager := seedMember(t, ctx, pool, "manager", "approved")
 	target := seedMember(t, ctx, pool, "ahli", "pending")
+	seedSucceededRegistrationPayment(t, ctx, pool, target)
 
 	callSetStatus(t, pool, manager, target, "approve")
 	rec := callSetStatus(t, pool, manager, target, "approve")
