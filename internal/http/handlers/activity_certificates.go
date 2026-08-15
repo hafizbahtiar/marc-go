@@ -57,22 +57,28 @@ var (
 )
 
 type CertificateHandler struct {
-	pool    *pgxpool.Pool
-	queries *sqlc.Queries
-	r2      *storage.R2Client
-	push    *push.Service
-	baseURL string
+	pool      *pgxpool.Pool
+	queries   *sqlc.Queries
+	r2        *storage.R2Client
+	push      *push.Service
+	baseURL   string
+	verifyURL string
 }
 
+// NewCertificateHandler — verifyURL optional, padanan pola EmailVerifyURL
+// (URL PENUH halaman Astro, bukan pangkalan + laluan tetap). Kosong =
+// fallback ke baseURL + "/verify/certificates/:token" (laluan JSON awam
+// Go sendiri, tingkah laku sedia ada).
 func NewCertificateHandler(
-	pool *pgxpool.Pool, r2 *storage.R2Client, pushSvc *push.Service, baseURL string,
+	pool *pgxpool.Pool, r2 *storage.R2Client, pushSvc *push.Service, baseURL, verifyURL string,
 ) *CertificateHandler {
 	return &CertificateHandler{
-		pool:    pool,
-		queries: sqlc.New(pool),
-		r2:      r2,
-		push:    pushSvc,
-		baseURL: strings.TrimRight(baseURL, "/"),
+		pool:      pool,
+		queries:   sqlc.New(pool),
+		r2:        r2,
+		push:      pushSvc,
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		verifyURL: verifyURL,
 	}
 }
 
@@ -287,7 +293,7 @@ func issueCertificatesTx(
 // menyambung tidak memberitahu orang yang sama dua kali.
 func fillPendingCertificateFiles(
 	ctx context.Context, pool *pgxpool.Pool, r2 *storage.R2Client,
-	baseURL string, activityID uuid.UUID,
+	baseURL, verifyURL string, activityID uuid.UUID,
 ) ([]sqlc.ActivityCertificate, error) {
 	q := sqlc.New(pool)
 	pending, err := q.ListCertificatesPendingFile(ctx, activityID)
@@ -305,13 +311,17 @@ func fillPendingCertificateFiles(
 
 	var completed []sqlc.ActivityCertificate
 	for _, cert := range pending {
+		link := strings.TrimRight(baseURL, "/") + "/verify/certificates/" + cert.VerifyToken
+		if verifyURL != "" {
+			link = verifyURL + "?token=" + cert.VerifyToken
+		}
 		pdf, err := certificate.GeneratePDF(certificate.Data{
 			Serial:        cert.Serial,
 			RecipientName: cert.RecipientName,
 			ActivityTitle: cert.ActivityTitle,
 			CategoryName:  activity.CategoryName,
 			ActivityDate:  cert.ActivityDate.Time,
-			VerifyURL:     strings.TrimRight(baseURL, "/") + "/verify/certificates/" + cert.VerifyToken,
+			VerifyURL:     link,
 		})
 		if err != nil {
 			// Ralat GeneratePDF menamakan medan yang menyinggung; ia
@@ -464,7 +474,7 @@ func (h *CertificateHandler) Issue(c *gin.Context) {
 		return
 	}
 
-	ready, err := fillPendingCertificateFiles(ctx, h.pool, h.r2, h.baseURL, activityID)
+	ready, err := fillPendingCertificateFiles(ctx, h.pool, h.r2, h.baseURL, h.verifyURL, activityID)
 
 	// Diberitahu untuk setiap sijil yang failnya SIAP dalam pusingan ini —
 	// termasuk pusingan yang gagal separuh jalan, kerana sijil yang sudah

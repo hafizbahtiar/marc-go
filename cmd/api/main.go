@@ -163,7 +163,7 @@ func main() {
 	paymentReconciler := paymentreconcile.New(sqlc.New(pool), paymentGateways, 30*time.Minute)
 	paymentReconciler.Start(ctx)
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli, paymentReconciler)
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli, paymentReconciler, cfg.CORSAllowedOrigins, cfg.RegistrationPaymentReturnURL, cfg.ActivityPaymentReturnURL, cfg.CertificateVerifyURL)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

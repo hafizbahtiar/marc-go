@@ -576,7 +576,7 @@ func certificateHandlerCall(
 	c.Params = params
 	c.Set("userID", callerID)
 
-	fn(NewCertificateHandler(pool, storage.NewR2Client("", "", "", "", ""), testPushService(pool), "https://marc.test"), c)
+	fn(NewCertificateHandler(pool, storage.NewR2Client("", "", "", "", ""), testPushService(pool), "https://marc.test", ""), c)
 	return rec
 }
 
@@ -711,7 +711,7 @@ func TestSenaraiSijilSayaHanyaMilikSendiri(t *testing.T) {
 func verifyRouter(pool *pgxpool.Pool) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewCertificateHandler(pool, storage.NewR2Client("", "", "", "", ""), testPushService(pool), "https://marc.test")
+	h := NewCertificateHandler(pool, storage.NewR2Client("", "", "", "", ""), testPushService(pool), "https://marc.test", "")
 	r.GET(VerifyCertificateRoute,
 		middleware.NewRateLimiter(nil).Limit(VerifyRateLimitBucket, rate.Every(2*time.Second), 20),
 		h.Verify)
@@ -861,7 +861,7 @@ func TestFasaDuaMuatNaikSebenar(t *testing.T) {
 		t.Cleanup(func() { _ = r2.DeleteImage(context.Background(), key) })
 	}
 
-	if _, err := fillPendingCertificateFiles(ctx, pool, r2, "https://marc.test", activityID); err != nil {
+	if _, err := fillPendingCertificateFiles(ctx, pool, r2, "https://marc.test", "", activityID); err != nil {
 		t.Fatalf("fasa 2: %v", err)
 	}
 
@@ -877,7 +877,7 @@ func TestFasaDuaMuatNaikSebenar(t *testing.T) {
 	// "boleh disambung semula". err == nil sahaja tak cukup: fasa 2
 	// pulang awal bila gilir kosong, jadi keadaan selepasnya yang
 	// disemak semula.
-	if _, err := fillPendingCertificateFiles(ctx, pool, r2, "https://marc.test", activityID); err != nil {
+	if _, err := fillPendingCertificateFiles(ctx, pool, r2, "https://marc.test", "", activityID); err != nil {
 		t.Fatalf("fasa 2 ulangan: %v", err)
 	}
 	pending, err = sqlc.New(pool).ListCertificatesPendingFile(ctx, activityID)
@@ -945,7 +945,7 @@ func TestNotifikasiSijilSampaiKepadaPengurusYangTurutMenerima(t *testing.T) {
 	}
 
 	h := NewCertificateHandler(pool, storage.NewR2Client("", "", "", "", ""),
-		testPushService(pool), "https://marc.test")
+		testPushService(pool), "https://marc.test", "")
 	h.notifyCertificateReady(certs, manager)
 
 	sijilBagi := make(map[uuid.UUID]uuid.UUID, len(certs))

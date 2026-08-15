@@ -5,29 +5,33 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
-	Port                 string
-	DatabaseURL          string
-	JWTSecret            string
-	AccessTokenTTL       time.Duration
-	RefreshTokenTTL      time.Duration
-	OneSignalAppID       string
-	OneSignalAPIKey      string
-	ResendAPIKey         string
-	EmailFrom            string
-	PublicBaseURL        string
-	EmailVerifyURL       string
-	R2AccountID          string
-	R2AccessKeyID        string
-	R2SecretKey          string
-	R2Bucket             string
-	R2PublicURL          string
-	StripeSecretKey      string
-	StripePublishableKey string
-	StripeWebhookSecret  string
+	Port                         string
+	DatabaseURL                  string
+	JWTSecret                    string
+	AccessTokenTTL               time.Duration
+	RefreshTokenTTL              time.Duration
+	OneSignalAppID               string
+	OneSignalAPIKey              string
+	ResendAPIKey                 string
+	EmailFrom                    string
+	PublicBaseURL                string
+	EmailVerifyURL               string
+	RegistrationPaymentReturnURL string
+	ActivityPaymentReturnURL     string
+	CertificateVerifyURL         string
+	R2AccountID                  string
+	R2AccessKeyID                string
+	R2SecretKey                  string
+	R2Bucket                     string
+	R2PublicURL                  string
+	StripeSecretKey              string
+	StripePublishableKey         string
+	StripeWebhookSecret          string
 
 	// ToyyibPay — yuran ahli (Stage 12, belum wired ke handler; lihat
 	// TODO.md bahagian Payment untuk keputusan produk yang belum dibuat).
@@ -46,6 +50,13 @@ type Config struct {
 	// Optional — kosong = ciri yang bergantung padanya jatuh balik kepada
 	// tingkah laku setempat (per-instance), bukan gagal.
 	RedisURL string
+
+	// CORSAllowedOrigins — senarai origin web dibenarkan buat fetch()
+	// cross-origin (comma-separated, cth "https://marc.hafizbahtiar.com").
+	// Kosong = CORS middleware tak tambah header apa-apa (laluan yang
+	// pakainya jadi same-origin-only secara efektif). Lihat
+	// internal/http/middleware/cors.go — dipasang per-route, bukan global.
+	CORSAllowedOrigins []string
 
 	// Polisi simpanan. Boleh ubah tanpa deploy semula (env var), sebab ni
 	// keputusan POLISI dan bukan keputusan teknikal — lihat
@@ -81,6 +92,21 @@ func Load() (Config, error) {
 		// portfolio-astro). Kalau kosong, fallback ke Go punya HTML page
 		// sendiri (PublicBaseURL + /auth/verify-email/confirm).
 		EmailVerifyURL: os.Getenv("EMAIL_VERIFY_URL"),
+		// Optional — padanan pola EmailVerifyURL di atas, untuk halaman
+		// landing selepas bayar ToyyibPay (Stage 8 lanjutan, portfolio-
+		// astro). Kalau kosong, fallback ke HTML statik Go sendiri
+		// (RegistrationPaymentHandler/ActivityRegistrationPaymentHandler.
+		// ReturnPage) — tiada perubahan tingkah laku sedia ada.
+		RegistrationPaymentReturnURL: os.Getenv("REGISTRATION_PAYMENT_RETURN_URL"),
+		ActivityPaymentReturnURL:     os.Getenv("ACTIVITY_PAYMENT_RETURN_URL"),
+		// Optional — padanan pola EmailVerifyURL di atas: URL PENUH halaman
+		// Astro (bukan pangkalan + laluan tetap), token dilampir sebagai
+		// `?token=` (lihat fillPendingCertificateFiles, activity_certificates.go).
+		// Kalau kosong, fallback ke laluan JSON awam Go sendiri (PublicBaseURL
+		// + /verify/certificates/:token — tingkah laku sedia ada). HANYA
+		// jejas sijil yang dijana SELEPAS nilai ditukar — sijil dicetak
+		// sedia ada tak boleh dibetulkan (lihat komen VerifyCertificateRoute).
+		CertificateVerifyURL: os.Getenv("CERTIFICATE_VERIFY_URL"),
 		// Optional — kalau kosong, upload post image (R2) jadi disabled
 		// (endpoint pulang error jelas, bukan crash).
 		R2AccountID:   os.Getenv("R2_ACCOUNT_ID"),
@@ -107,6 +133,8 @@ func Load() (Config, error) {
 		RegistrationFeeCents: getEnvInt("REGISTRATION_FEE_CENTS", 1000),
 
 		RedisURL: os.Getenv("REDIS_URL"),
+
+		CORSAllowedOrigins: getEnvList("CORS_ALLOWED_ORIGINS"),
 
 		// Default: metadata permintaan (IP/user-agent) hidup 90 hari —
 		// cukup untuk menyiasat penyalahgunaan, tak lebih. Catatan audit
@@ -164,4 +192,22 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getEnvList parse senarai comma-separated, buang ruang kosong di
+// tepi setiap entri dan entri kosong (cth trailing comma).
+func getEnvList(key string) []string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

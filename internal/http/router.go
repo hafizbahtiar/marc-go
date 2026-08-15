@@ -67,6 +67,10 @@ func NewRouter(
 	registrationFeeCents int,
 	redisCli *redisclient.Client,
 	paymentReconciler *paymentreconcile.Reconciler,
+	corsAllowedOrigins []string,
+	registrationPaymentReturnURL string,
+	activityPaymentReturnURL string,
+	certificateVerifyURL string,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
@@ -89,7 +93,12 @@ func NewRouter(
 	authGroup.POST("/login", authRateLimiter, authHandler.Login)
 	authGroup.POST("/refresh", authSessionRateLimiter, authHandler.Refresh)
 	authGroup.POST("/logout", authSessionRateLimiter, authHandler.Logout)
-	authGroup.POST("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerification)
+	// CORS dipasang khusus di sini — satu-satunya laluan awam dipanggil
+	// via fetch() dari laman web (marc.hafizbahtiar.com), bukan navigasi
+	// pelayar penuh. Lihat internal/http/middleware/cors.go.
+	corsMW := middleware.CORS(corsAllowedOrigins)
+	authGroup.POST("/verify-email/confirm", corsMW, authRateLimiter, authHandler.ConfirmEmailVerification)
+	authGroup.OPTIONS("/verify-email/confirm", corsMW)
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
 
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
@@ -234,7 +243,10 @@ func NewRouter(
 	// Sijil. Terbit/tarik-balik ialah pengurusan (dikuatkuasakan dalam
 	// handler) dan duduk atas `verified`; membaca sijil SENDIRI cukup
 	// dengan `approved` — sama garisan seperti /me/activities.
-	certificateHandler := handlers.NewCertificateHandler(pool, r2Client, pushSvc, publicBaseURL)
+	// certificateVerifyURL optional — lihat komen CertificateVerifyURL,
+	// config.go. Kosong = tiada perubahan tingkah laku sedia ada (QR
+	// terus ke laluan JSON awam Go, publicBaseURL + /verify/certificates/:token).
+	certificateHandler := handlers.NewCertificateHandler(pool, r2Client, pushSvc, publicBaseURL, certificateVerifyURL)
 
 	verified.POST("/activities/:id/certificates", certificateHandler.Issue)
 	verified.POST("/certificates/:id/revoke", certificateHandler.Revoke)
@@ -251,7 +263,11 @@ func NewRouter(
 	// Laluan dan nama baldi ialah pemalar dieksport dalam `handlers` supaya
 	// ia tak boleh terpesong daripada rujukan lain (lihat komennya di sana).
 	verifyRateLimiter := rateLimiter.Limit(handlers.VerifyRateLimitBucket, rate.Every(2*time.Second), 20)
-	r.GET(handlers.VerifyCertificateRoute, verifyRateLimiter, certificateHandler.Verify)
+	// CORS — kalau QR dibakar ke halaman Astro (CertificateVerifyBaseURL
+	// diisi), Astro fetch() laluan JSON ni cross-origin. GET simple
+	// request tak trigger preflight OPTIONS, tapi respons masih perlu
+	// header Access-Control-Allow-Origin untuk JS baca. Lihat cors.go.
+	r.GET(handlers.VerifyCertificateRoute, corsMW, verifyRateLimiter, certificateHandler.Verify)
 
 	uploadRateLimiter := rateLimiter.Limit("upload", rate.Every(6*time.Second), 5)
 	verified.POST("/uploads/presign", uploadRateLimiter, uploadHandler.Presign)
@@ -291,7 +307,7 @@ func NewRouter(
 	registrationWebhookRateLimiter := rateLimiter.Limit("registration-payment-webhook", rate.Every(2*time.Second), 20)
 	protected.POST("/registration-payments/checkout", registrationCheckoutRateLimiter, middleware.BlockTesterWrites(sqlc.New(pool)), registrationPaymentHandler.Checkout)
 	r.POST("/registration-payments/webhook/toyyibpay", registrationWebhookRateLimiter, registrationPaymentHandler.Webhook)
-	r.GET("/registration-payments/return/toyyibpay", registrationPaymentHandler.ReturnPage)
+	r.GET("/registration-payments/return/toyyibpay", redirectIfConfigured(registrationPaymentReturnURL), registrationPaymentHandler.ReturnPage)
 
 	// Yuran AKTIVITI (activities.fee_cents) — berasingan konseptual drpd
 	// yuran pendaftaran ahli di atas (padanan ActivityRegistrationPaymentHandler
@@ -310,7 +326,28 @@ func NewRouter(
 	activityPaymentCheckoutRateLimiter := rateLimiter.Limit("activity-payment-checkout", rate.Every(6*time.Second), 5)
 	verified.POST("/activities/:id/registration/checkout", activityPaymentCheckoutRateLimiter, middleware.BlockTesterWrites(sqlc.New(pool)), activityRegistrationPaymentHandler.Checkout)
 	r.POST("/activity-registrations/webhook/toyyibpay", registrationWebhookRateLimiter, activityRegistrationPaymentHandler.Webhook)
-	r.GET("/activity-registrations/return/toyyibpay", activityRegistrationPaymentHandler.ReturnPage)
+	r.GET("/activity-registrations/return/toyyibpay", redirectIfConfigured(activityPaymentReturnURL), activityRegistrationPaymentHandler.ReturnPage)
 
 	return r
+}
+
+// redirectIfConfigured — padanan pola EmailVerifyURL: kalau `targetURL`
+// diisi (Stage 8 lanjutan, portfolio-astro), 302 ke sana dgn query
+// string ToyyibPay (status_id, billcode, dll) dikekalkan supaya halaman
+// Astro boleh papar mesej ikut status. Kalau kosong, biar handler Go
+// sendiri (ReturnPage) yang jawab macam sebelum ni — tiada perubahan
+// tingkah laku sedia ada.
+func redirectIfConfigured(targetURL string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if targetURL == "" {
+			c.Next()
+			return
+		}
+		dest := targetURL
+		if c.Request.URL.RawQuery != "" {
+			dest += "?" + c.Request.URL.RawQuery
+		}
+		c.Redirect(302, dest)
+		c.Abort()
+	}
 }
