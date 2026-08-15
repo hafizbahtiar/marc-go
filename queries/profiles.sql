@@ -1,6 +1,6 @@
 -- name: CreateProfile :one
-insert into profiles (user_id, member_id, role_id)
-values ($1, $2, $3)
+insert into profiles (user_id, member_id, role_id, phone)
+values ($1, $2, $3, $4)
 returning *;
 
 -- name: GetProfileByUserID :one

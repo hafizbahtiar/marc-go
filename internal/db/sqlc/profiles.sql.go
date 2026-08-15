@@ -45,19 +45,25 @@ func (q *Queries) ApproveProfile(ctx context.Context, arg ApproveProfileParams) 
 }
 
 const createProfile = `-- name: CreateProfile :one
-insert into profiles (user_id, member_id, role_id)
-values ($1, $2, $3)
+insert into profiles (user_id, member_id, role_id, phone)
+values ($1, $2, $3, $4)
 returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
 `
 
 type CreateProfileParams struct {
-	UserID   uuid.UUID `json:"user_id"`
-	MemberID string    `json:"member_id"`
-	RoleID   int16     `json:"role_id"`
+	UserID   uuid.UUID   `json:"user_id"`
+	MemberID string      `json:"member_id"`
+	RoleID   int16       `json:"role_id"`
+	Phone    pgtype.Text `json:"phone"`
 }
 
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, createProfile, arg.UserID, arg.MemberID, arg.RoleID)
+	row := q.db.QueryRow(ctx, createProfile,
+		arg.UserID,
+		arg.MemberID,
+		arg.RoleID,
+		arg.Phone,
+	)
 	var i Profile
 	err := row.Scan(
 		&i.ID,

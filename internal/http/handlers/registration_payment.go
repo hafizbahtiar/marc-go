@@ -4,14 +4,17 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
+	"marc/internal/phone"
 )
 
 // RegistrationPaymentHandler — yuran pendaftaran ahli SEKALI BAYAR
@@ -38,10 +41,29 @@ func NewRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, feeCe
 // dia; lihat TODO.md keputusan produk 2026-08-15). Rekod
 // `registration_payments` status 'pending', gate sebenar (`pending` ->
 // `approved`) disemak dalam `ProfileHandler.setMemberStatus`.
+// checkoutRequest — Phone PILIHAN: cuma perlu bila `profiles.phone`
+// masih kosong (ahli `pending` yang daftar SEBELUM phone jadi wajib di
+// `/auth/register`, lihat auth.go). Checkout panggilan pertama (tanpa
+// Phone) untuk ahli begini akan ditolak dengan `code: "phone_required"`
+// — Flutter papar dialog minta nombor, panggil semula Checkout DENGAN
+// Phone diisi.
+type checkoutRequest struct {
+	Phone string `json:"phone"`
+}
+
 func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	if h.gw == nil || !h.gw.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "pembayaran yuran pendaftaran belum tersedia"})
 		return
+	}
+
+	var req checkoutRequest
+	// Body kosong sah (kes biasa — ahli yang dah ada phone tak perlu
+	// hantar apa-apa) — cuma tolak kalau JSON yang DIHANTAR cacat.
+	if c.Request.ContentLength > 0 {
+		if !bindJSON(c, &req) {
+			return
+		}
 	}
 
 	ctx := c.Request.Context()
@@ -83,14 +105,57 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 		billTo = profile.MemberID
 	}
 
+	// billPhone JUGA WAJIB oleh ToyyibPay (disahkan LIVE di staging
+	// 2026-08-15). Ahli baharu sentiasa ada phone (wajib di
+	// /auth/register), tapi ahli `pending` yang daftar SEBELUM syarat tu
+	// mungkin belum ada. TIADA placeholder rekaan lagi (keputusan
+	// 2026-08-15, sesi susulan) — minta terus dari ahli semasa proses
+	// bayar, dan SIMPAN ke profil supaya tak perlu tanya lagi kali
+	// seterusnya.
+	//
+	// Phone yang TERSIMPAN turut disahkan semula (Opus verify 2026-08-15
+	// dedah: baris lama yang ditulis SEBELUM `UpdateMe` disahkan hari ni
+	// mungkin bawa nilai cacat cth "abc" — tanpa semakan ni, createBill
+	// akan tolak dgn 500 generik dan ahli tersekat kekal, tiada laluan
+	// untuk cuba lagi). Phone cacat dilayan SAMA macam phone kosong —
+	// jatuh ke laluan minta-semula di bawah.
+	billPhone := ""
+	if profile.Phone.Valid && profile.Phone.String != "" {
+		if normalized, ok := phone.NormalizeMY(profile.Phone.String); ok {
+			billPhone = normalized
+		}
+	}
+	if billPhone == "" {
+		trimmed := strings.TrimSpace(req.Phone)
+		if trimmed == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "sila isi nombor telefon dahulu",
+				"code":  "phone_required",
+			})
+			return
+		}
+		normalized, ok := phone.NormalizeMY(trimmed)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "format nombor telefon tidak sah"})
+			return
+		}
+		if _, err := h.queries.UpdateProfile(ctx, sqlc.UpdateProfileParams{
+			UserID: userID,
+			Phone:  pgtype.Text{String: normalized, Valid: true},
+		}); err != nil {
+			log.Printf("simpan phone semasa checkout yuran pendaftaran: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
+			return
+		}
+		billPhone = normalized
+	}
+
 	metadata := map[string]string{
 		"description": "Yuran pendaftaran ahli MARC",
 		"reference":   profile.MemberID,
 		"billTo":      billTo,
 		"billEmail":   profile.Email,
-	}
-	if profile.Phone.Valid && profile.Phone.String != "" {
-		metadata["billPhone"] = profile.Phone.String
+		"billPhone":   billPhone,
 	}
 
 	result, err := h.gw.CreatePayment(ctx, payment.CreateParams{

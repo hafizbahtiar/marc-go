@@ -21,6 +21,7 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	"marc/internal/http/middleware"
+	"marc/internal/phone"
 )
 
 const emailVerificationTTL = time.Hour
@@ -109,6 +110,12 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (t
 type registerRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6,max=72"`
+	// Phone WAJIB sejak 2026-08-15 — ToyyibPay (yuran pendaftaran)
+	// perlukan billPhone bukan-kosong pada createBill (disahkan LIVE di
+	// staging), dan mengumpulnya lambat (PATCH /me selepas daftar) buat
+	// ahli sedia ada yang belum isi sekat proses bayar mereka. Kutip
+	// di sini terus supaya SEMUA ahli baharu ada nombor sejak mula.
+	Phone string `json:"phone" binding:"required,max=30"`
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -117,6 +124,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	// Malaysia sahaja buat masa ini (keputusan produk 2026-08-15) —
+	// `phone.NormalizeMY` pulang bentuk tempatan ternormal (`0XXXXXXXXX`)
+	// supaya nombor yang disimpan konsisten tak kira `+60`/`60`/`0`/
+	// dash/space yang pengguna taip. SIMPAN nilai ternormal, bukan input
+	// mentah — `req.Phone` ditulis ganti di sini.
+	normalizedPhone, ok := phone.NormalizeMY(req.Phone)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format nombor telefon tidak sah"})
+		return
+	}
+	req.Phone = normalizedPhone
 
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -160,6 +179,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		UserID:   user.ID,
 		MemberID: memberID,
 		RoleID:   role.ID,
+		Phone:    pgtype.Text{String: req.Phone, Valid: true},
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal proses pendaftaran"})
 		return

@@ -19,6 +19,7 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	"marc/internal/http/middleware"
+	"marc/internal/phone"
 	"marc/internal/storage"
 )
 
@@ -111,6 +112,25 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor telefon terlalu panjang (maksimum 30 aksara)"})
 		return
 	}
+	// Sahkan format Malaysia sama macam /auth/register (Opus verify
+	// 2026-08-15 jumpa: laluan ni terima SEBARANG string sebelum ni,
+	// membuka semula bug asal yang perubahan register cuba tutup — ahli
+	// approved boleh PATCH phone jadi "abc", ToyyibPay createBill akan
+	// tolak semula bila ahli tu cuba bayar). String KOSONG tetap
+	// dibenarkan (buang nombor, padanan pola medan opsyenal lain di
+	// handler ni) — cuma nilai BUKAN kosong perlu format sah.
+	var normalizedPhone string
+	if req.Phone != nil {
+		trimmed := strings.TrimSpace(*req.Phone)
+		if trimmed != "" {
+			normalized, ok := phone.NormalizeMY(trimmed)
+			if !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "format nombor telefon tidak sah"})
+				return
+			}
+			normalizedPhone = normalized
+		}
+	}
 
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
@@ -120,7 +140,7 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 		params.DisplayName = pgtype.Text{String: strings.TrimSpace(*req.DisplayName), Valid: true}
 	}
 	if req.Phone != nil {
-		params.Phone = pgtype.Text{String: strings.TrimSpace(*req.Phone), Valid: true}
+		params.Phone = pgtype.Text{String: normalizedPhone, Valid: true}
 	}
 
 	updated, err := h.queries.UpdateProfile(ctx, params)
