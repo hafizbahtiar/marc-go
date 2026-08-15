@@ -15,13 +15,10 @@ simpanan. Modul aktiviti (backend penuh) siap — jurangnya direkod di bawah.
 
 - [ ] **Deploy environment `production` Railway** — `staging` sahaja live.
 - [ ] **Migrate data lama dari Supabase** (2 profiles, 4 roles).
-- [ ] **MATIKAN Public Development URL r2.dev di Cloudflare.** Kod dah
-      guna presigned GET (lihat bawah), tapi disahkan 2026-08-09: objek
-      MASIH boleh diambil tanpa tandatangan melalui
-      `https://pub-....r2.dev/posts/...` (status 200). Selagi toggle tu
-      hidup, perubahan kod tak menutup apa-apa.
-      Cloudflare → R2 → bucket → Settings → Public Development URL →
-      **Disable**. Selepas tu `R2_PUBLIC_URL` boleh dikosongkan.
+- [x] **MATIKAN Public Development URL r2.dev di Cloudflare — DIBUAT
+      2026-08-15** (terus di Cloudflare dashboard, bukan kod). `R2_PUBLIC_URL`
+      boleh dikosongkan di env sekarang (belum disahkan sama ada dah
+      dibuat).
 - [ ] **Rotate kunci test Stripe** yang sempat masuk git (commit `c170391`,
       dah di-amend sebelum push — tapi rotate tetap lebih selamat).
 - [ ] **Sambungkan Redis ke marc-go**: tambah pemboleh ubah rujukan
@@ -521,13 +518,57 @@ bawah ini **tidak** dibina, dan sebahagiannya sengaja.
       bayaran + butang "Bayar Yuran Aktiviti" (satu-satunya tempat data
       `payment_status` sedia — via `GET /me/activities`). Halaman detail
       aktiviti tak boleh (lihat UX di atas).
-- [ ] **Check-in `self_scan` dan `code`.** Kekangan `method` dalam
-      `activity_attendances` menerima keempat-empat nilai, tetapi hanya
-      `manual` dan `scan` ada pelaksanaan (lihat komen
-      `activity_attendance.go:39`). `self_scan` memerlukan **token
-      berputar** — `checkin_token` sekarang statik, jadi satu tangkapan
-      skrin QR boleh diedarkan dan sesiapa boleh tanda dirinya hadir.
-      Jangan buka self-scan tanpa token berputar.
+- [x] **Check-in `self_scan` — DIBINA 2026-08-16.** `code` kekal belum
+      dibina (tiada laluan klien). Reka bentuk keselamatan: TODO ni dulu
+      kata self_scan "memerlukan token berputar" (checkin_token statik
+      = kelayakan pembawa boleh diedarkan). Dielakkan SEPENUHNYA dengan
+      TIDAK guna checkin_token/registration_id langsung utk self_scan —
+      identiti datang drpd JWT pemanggil (`middleware.UserID`), bukan
+      drpd apa-apa dalam body permintaan. QR yang diimbas ahli
+      (`SessionCheckinQrPage`, dipaparkan management di venue) cuma
+      mengekod `marc-checkin:{activityId}:{sessionId}` — data AWAM
+      "sesi apa", bukan kelayakan peribadi; tangkapan skrinnya tak
+      berguna kepada sesiapa. `AttendanceHandler.Mark`
+      (`activity_attendance.go`) kini bercabang: `manual`/`scan` kekal
+      pengurusan sahaja (`requireManagement`), `self_scan` TIADA gate
+      management (itulah maksud "self") tapi tolak eksplisit kalau
+      `registration_id`/`checkin_token`/`amend` dihantar sekali (elak
+      laluan ni jadi "cara kedua" tanda org lain/pindaan tanpa gate).
+      Semua semakan LAIN (tetingkap masa 2 jam, pendaftaran dibatalkan,
+      kunci baris aktiviti, audit) kekal SAMA drpd `manual`/`scan` —
+      `markAttendanceTx` tak berubah langsung. Query baharu
+      `GetRegistrationByActivityAndUser` (sedia ada, guna semula).
+
+      **Flutter**: `SessionCheckinQrPage` (papar QR venue, management,
+      `registrations_page.dart` → ikon QR pada AppBar bila sesi
+      dipilih) + `SelfCheckinScannerPage` (ahli imbas, tiada parameter
+      route — aktiviti/sesi drpd kandungan QR, akses via ikon QR pada
+      `my_activities_page.dart`). `ScanResult`/`ScanResultKind`/
+      `ScanDebouncer` dialih drpd `manage/scan_result.dart` ke
+      `activities/scan_result.dart` (dikongsi dua laluan sekarang, bukan
+      pengurusan sahaja). `selfCheckIn` baharu pada `ActivityRepository`
+      (`activity_providers.dart`, BUKAN `manage_providers.dart` —
+      accessible ahli biasa).
+
+      **Kesan pada L12 (checkin_token dlm respons senarai peserta)**:
+      TODO tu dulu ramalkan L12 naik Low→Medium "sebaik self_scan
+      dibina". Ramalan tu berdasarkan self_scan akan GUNA SEMULA
+      checkin_token sbg kelayakan pembawa (corak biasa dlm app lain) —
+      reka bentuk sebenar di atas TAK buat macam tu, jadi L12 KEKAL Low.
+      Tiada perubahan diperlukan pada L12.
+
+      **PERHATIAN reka bentuk (Opus verify 2026-08-16, bukan bug —
+      kena faham, bukan kena baiki)**: self_scan TIADA bukti kehadiran
+      fizikal. QR venue tak bawa "proof-of-possession" — endpoint ambil
+      activity/session drpd URL, bukan drpd apa-apa yang buktikan
+      pengimbas betul-betul ADA kat venue. Mana-mana ahli berdaftar +
+      diluluskan boleh panggil endpoint terus (tanpa QR pun) selagi dlm
+      tetingkap masa (±2 jam) — session id boleh nampak drpd
+      `GET /activities/:id`. Kawalan sebenar cuma DUA: pendaftaran +
+      tetingkap masa, BUKAN kehadiran fizikal. Kalau kelak ada keperluan
+      "bukti betul-betul hadir" (cth sijil bernilai tinggi), self_scan
+      SAHAJA tak cukup — pertimbang GPS/geofence atau kembali ke
+      pengimbas pengurusan utk kes tu.
 - [ ] **Sijil pencapaian (johan/naib johan) dan sijil peranan** (jurulatih,
       pengadil). `activity_certificates` **tiada lajur jenis** langsung —
       menambahnya perlukan migration, bukan sekadar UI. Penyertaan sahaja
@@ -535,24 +576,39 @@ bawah ini **tidak** dibina, dan sebahagiannya sengaja.
 
 ### Perlukan kerja berjadual (scheduler yang belum wujud)
 
-- [ ] **Peringatan H-1 tidak dibina.** Spec menjanjikannya dalam senarai
-      push (diterbitkan / H-1 / sijil sedia / dibatalkan); tiga yang lain
-      ada, H-1 tiada. Ia perlukan pencetus berasaskan masa, dan codebase ni
-      tiada scheduler. Dua goroutine latar yang ada (`reaper` 15 minit,
-      `retention` harian) ialah sapuan idempoten yang berjalan pada SETIAP
-      instance — menggantungkan penghantaran push pada salah satu bermakna
-      N replika hantar N peringatan kepada orang yang sama. Perlu
-      penyahduaan (baris "reminder dihantar") sebelum sapuan boleh jadi
-      tuan rumah.
-- [ ] **Aktiviti tidak pernah beralih ke `completed` secara automatik.**
-      `statusCompleted` wujud dan diterima oleh penapis senarai, tetapi
-      tiada kod di mana-mana yang MENULIS nilai itu — cari
-      `statusCompleted` dalam `handlers/` dan tiga padanan semuanya ialah
-      pengisytiharan/senarai penapis. Aktiviti kekal `published` selamanya
-      selepas sesi terakhir tamat. Kesan: tab "Lepas" di Flutter bergantung
-      sepenuhnya pada perbandingan tarikh, dan pengurus tak ada cara
-      menandakan aktiviti sebagai selesai kecuali `PATCH` status manual.
-      Pilihan: sapuan berjadual, atau peralihan pada penerbitan sijil.
+- [x] **Peringatan H-1 — DIBINA 2026-08-16.** Pakej baharu
+      `internal/activitylifecycle` (jalan setiap 1 jam, wired
+      `cmd/api/main.go`). Aktiviti `status='published'` yang bermula
+      dlm ~24 jam (`starts_at <= now() + 24h`) dan belum pernah dihantar
+      (`reminder_sent_at is null`) dapat push sekali sahaja kepada semua
+      berdaftar. **Penyahduaan merentas replika**: lajur baharu
+      `activities.reminder_sent_at` (migration
+      `20260815100000_activity_lifecycle_jobs.sql`), ditanda SEBELUM
+      push dihantar (bukan selepas — kalau push gagal separuh jalan,
+      lebih selamat satu aktiviti terlepas sebahagian penerima drpd N
+      replika banjiri semua org dgn push berganda), guard
+      `MarkActivityReminderSent` (`where reminder_sent_at is null`)
+      buat UPDATE idempoten — replika kedua yang cuba baris SAMA affect
+      0 rows, bukan ralat. Jenis notifikasi baharu `activity_reminder`
+      (widen CHECK `notifications`, sama migration). `actor_id`
+      notifikasi diset kpd PENERIMA SENDIRI (bukan akaun "sistem" —
+      tiada satu wujud dlm skema, dan `actor_id` NOT NULL + ON DELETE
+      CASCADE pada `users`).
+- [x] **Aktiviti auto-complete — DIBINA 2026-08-16.** Query baharu
+      `CompleteEndedActivities` (`internal/activitylifecycle`, sama
+      sapuan 1 jam dgn H-1 di atas) — `status='published' and ends_at <
+      now()` → `status='completed'`. Guard `status='published'` buat
+      kemas kini idempoten (padanan gaya `CancelStaleUnstartedPayments`,
+      activitysweep). Tiada push/notifikasi (housekeeping dalaman,
+      bukan salah satu 4 jenis push spec asal).
+
+      **Belum disahkan/dibuat**: kedua-dua ciri di atas TIADA ujian
+      automasi (padanan `activitysweep`/`paymentreconcile`, yang pun
+      tiada test file — konsisten dgn corak sedia ada, bukan jurang
+      baharu), dan belum diuji hujung-ke-hujung terhadap aktiviti
+      sebenar yang tamat/bermula (cuma disahkan via `go build`/`go vet`
+      + baca kod). Opus verify dijadualkan bersama ciri self_scan
+      (sesi kerja yang sama).
 
 ### Keselamatan
 

@@ -48,6 +48,12 @@ type Querier interface {
 	// kembungkan bilangan baris dilaporkan log tanpa sebab.
 	CancelStaleUnstartedPayments(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error)
 	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
+	// Peralihan status automatik 'published' -> 'completed' bila aktiviti
+	// dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) —
+	// sapuan berjadual (internal/activitylifecycle). Guard `status =
+	// 'published'` buat kemas kini idempoten merentas replika, padanan
+	// gaya `CancelStaleUnstartedPayments` (activitysweep).
+	CompleteEndedActivities(ctx context.Context) ([]Activity, error)
 	// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 	// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
 	// hash sama dihantar serentak (row-level lock Postgres). Row TAK
@@ -184,6 +190,13 @@ type Querier interface {
 	// upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir
 	// dahulu). upcoming=false → yang dah tamat, isih menurun.
 	ListActivities(ctx context.Context, arg ListActivitiesParams) ([]ListActivitiesRow, error)
+	// Aktiviti akan bermula dlm ~24 jam (H-1) yang belum pernah dihantar
+	// peringatan — sapuan berjadual (internal/activitylifecycle). Guard
+	// `reminder_sent_at is null` buat kemas kini idempoten merentas
+	// replika. `starts_at > now()` elak hantar peringatan utk aktiviti yang
+	// dah bermula (cth aktiviti baharu diterbitkan lepas tetingkap H-1
+	// terlepas, atau sapuan tak jalan sekian lama).
+	ListActivitiesNeedingReminder(ctx context.Context) ([]Activity, error)
 	ListActivityCategories(ctx context.Context) ([]ActivityCategory, error)
 	ListActivitySessions(ctx context.Context, activityID uuid.UUID) ([]ActivitySession, error)
 	ListActivitySessionsByIDs(ctx context.Context, activityIds []uuid.UUID) ([]ActivitySession, error)
@@ -309,6 +322,10 @@ type Querier interface {
 	// `for update` atas baris aktiviti — ini yang menyerikan pendaftaran
 	// serentak supaya kiraan kapasiti tak boleh basi antara baca dan tulis.
 	LockActivityForRegistration(ctx context.Context, id uuid.UUID) (Activity, error)
+	// Guard `reminder_sent_at is null` — dua replika yang baca baris SAMA
+	// dlm ListActivitiesNeedingReminder serentak, cuma SATU yang berjaya
+	// UPDATE (baris kedua affect 0 rows), elak hantar push berganda.
+	MarkActivityReminderSent(ctx context.Context, id uuid.UUID) (int64, error)
 	MarkAllNotificationsRead(ctx context.Context, recipientID uuid.UUID) error
 	// on conflict do nothing + returning: imbas kedua QR yang sama bukan ralat,
 	// ia cuma tiada kerja. Handler membezakan "baharu" daripada "sudah ada"

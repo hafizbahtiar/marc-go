@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"marc/internal/activitylifecycle"
 	"marc/internal/activitysweep"
 	"marc/internal/auth"
 	"marc/internal/config"
@@ -145,6 +146,11 @@ func main() {
 	// Kadar sama dengan reaper (15 minit); umur lapuk (45 minit) dikawal
 	// dalam package itu sendiri.
 	activitysweep.New(sqlc.New(pool), 15*time.Minute).Start(ctx)
+
+	// Peringatan H-1 + auto-complete aktiviti tamat (lihat
+	// internal/activitylifecycle). 1 jam — cukup halus utk tetingkap H-1
+	// (~24 jam) tanpa kerap macam sapuan kapasiti/storan.
+	activitylifecycle.New(sqlc.New(pool), pushSvc, time.Hour).Start(ctx)
 
 	// Reconcile bayaran 'pending' lapuk terus pada gateway merentas
 	// ketiga-tiga modul (lihat internal/paymentreconcile) — 30 minit

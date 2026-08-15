@@ -12,6 +12,61 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const completeEndedActivities = `-- name: CompleteEndedActivities :many
+update activities
+set status = 'completed'
+where status = 'published' and ends_at < now()
+returning id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at, reminder_sent_at
+`
+
+// Peralihan status automatik 'published' -> 'completed' bila aktiviti
+// dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) —
+// sapuan berjadual (internal/activitylifecycle). Guard `status =
+// 'published'` buat kemas kini idempoten merentas replika, padanan
+// gaya `CancelStaleUnstartedPayments` (activitysweep).
+func (q *Queries) CompleteEndedActivities(ctx context.Context) ([]Activity, error) {
+	rows, err := q.db.Query(ctx, completeEndedActivities)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Activity
+	for rows.Next() {
+		var i Activity
+		if err := rows.Scan(
+			&i.ID,
+			&i.CategoryID,
+			&i.Title,
+			&i.Description,
+			&i.LocationName,
+			&i.LocationAddress,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.RegistrationOpensAt,
+			&i.RegistrationClosesAt,
+			&i.Capacity,
+			&i.FeeCents,
+			&i.Currency,
+			&i.AttendanceThresholdPct,
+			&i.Status,
+			&i.CancelledReason,
+			&i.CertificatesIssuedAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.ReminderSentAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countActivitySessions = `-- name: CountActivitySessions :one
 select count(*) from activity_sessions where activity_id = $1
 `
@@ -44,7 +99,7 @@ insert into activities (
   starts_at, ends_at, registration_opens_at, registration_closes_at,
   capacity, fee_cents, attendance_threshold_pct, created_by
 ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-returning id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at
+returning id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at, reminder_sent_at
 `
 
 type CreateActivityParams struct {
@@ -102,6 +157,7 @@ func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReminderSentAt,
 	)
 	return i, err
 }
@@ -176,7 +232,7 @@ func (q *Queries) DeleteActivitySessions(ctx context.Context, activityID uuid.UU
 }
 
 const getActivityByID = `-- name: GetActivityByID :one
-select a.id, a.category_id, a.title, a.description, a.location_name, a.location_address, a.starts_at, a.ends_at, a.registration_opens_at, a.registration_closes_at, a.capacity, a.fee_cents, a.currency, a.attendance_threshold_pct, a.status, a.cancelled_reason, a.certificates_issued_at, a.created_by, a.created_at, a.updated_at, a.deleted_at, c.key as category_key, c.name as category_name
+select a.id, a.category_id, a.title, a.description, a.location_name, a.location_address, a.starts_at, a.ends_at, a.registration_opens_at, a.registration_closes_at, a.capacity, a.fee_cents, a.currency, a.attendance_threshold_pct, a.status, a.cancelled_reason, a.certificates_issued_at, a.created_by, a.created_at, a.updated_at, a.deleted_at, a.reminder_sent_at, c.key as category_key, c.name as category_name
 from activities a
 join activity_categories c on c.id = a.category_id
 where a.id = $1 and a.deleted_at is null
@@ -204,6 +260,7 @@ type GetActivityByIDRow struct {
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	ReminderSentAt         pgtype.Timestamptz `json:"reminder_sent_at"`
 	CategoryKey            string             `json:"category_key"`
 	CategoryName           string             `json:"category_name"`
 }
@@ -233,6 +290,7 @@ func (q *Queries) GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivit
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReminderSentAt,
 		&i.CategoryKey,
 		&i.CategoryName,
 	)
@@ -276,7 +334,7 @@ func (q *Queries) GetActivitySessionByID(ctx context.Context, id uuid.UUID) (Act
 }
 
 const listActivities = `-- name: ListActivities :many
-select a.id, a.category_id, a.title, a.description, a.location_name, a.location_address, a.starts_at, a.ends_at, a.registration_opens_at, a.registration_closes_at, a.capacity, a.fee_cents, a.currency, a.attendance_threshold_pct, a.status, a.cancelled_reason, a.certificates_issued_at, a.created_by, a.created_at, a.updated_at, a.deleted_at, c.key as category_key, c.name as category_name,
+select a.id, a.category_id, a.title, a.description, a.location_name, a.location_address, a.starts_at, a.ends_at, a.registration_opens_at, a.registration_closes_at, a.capacity, a.fee_cents, a.currency, a.attendance_threshold_pct, a.status, a.cancelled_reason, a.certificates_issued_at, a.created_by, a.created_at, a.updated_at, a.deleted_at, a.reminder_sent_at, c.key as category_key, c.name as category_name,
   (select count(*) from activity_registrations r
     where r.activity_id = a.id and r.status <> 'cancelled') as registration_count
 from activities a
@@ -338,6 +396,7 @@ type ListActivitiesRow struct {
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	ReminderSentAt         pgtype.Timestamptz `json:"reminder_sent_at"`
 	CategoryKey            string             `json:"category_key"`
 	CategoryName           string             `json:"category_name"`
 	RegistrationCount      int64              `json:"registration_count"`
@@ -385,9 +444,65 @@ func (q *Queries) ListActivities(ctx context.Context, arg ListActivitiesParams) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.ReminderSentAt,
 			&i.CategoryKey,
 			&i.CategoryName,
 			&i.RegistrationCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActivitiesNeedingReminder = `-- name: ListActivitiesNeedingReminder :many
+select id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at, reminder_sent_at from activities
+where status = 'published' and reminder_sent_at is null
+  and starts_at > now() and starts_at <= now() + interval '24 hours'
+`
+
+// Aktiviti akan bermula dlm ~24 jam (H-1) yang belum pernah dihantar
+// peringatan — sapuan berjadual (internal/activitylifecycle). Guard
+// `reminder_sent_at is null` buat kemas kini idempoten merentas
+// replika. `starts_at > now()` elak hantar peringatan utk aktiviti yang
+// dah bermula (cth aktiviti baharu diterbitkan lepas tetingkap H-1
+// terlepas, atau sapuan tak jalan sekian lama).
+func (q *Queries) ListActivitiesNeedingReminder(ctx context.Context) ([]Activity, error) {
+	rows, err := q.db.Query(ctx, listActivitiesNeedingReminder)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Activity
+	for rows.Next() {
+		var i Activity
+		if err := rows.Scan(
+			&i.ID,
+			&i.CategoryID,
+			&i.Title,
+			&i.Description,
+			&i.LocationName,
+			&i.LocationAddress,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.RegistrationOpensAt,
+			&i.RegistrationClosesAt,
+			&i.Capacity,
+			&i.FeeCents,
+			&i.Currency,
+			&i.AttendanceThresholdPct,
+			&i.Status,
+			&i.CancelledReason,
+			&i.CertificatesIssuedAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.ReminderSentAt,
 		); err != nil {
 			return nil, err
 		}
@@ -529,6 +644,22 @@ func (q *Queries) ListAllActivityCategories(ctx context.Context) ([]ActivityCate
 	return items, nil
 }
 
+const markActivityReminderSent = `-- name: MarkActivityReminderSent :execrows
+update activities set reminder_sent_at = now()
+where id = $1 and reminder_sent_at is null
+`
+
+// Guard `reminder_sent_at is null` — dua replika yang baca baris SAMA
+// dlm ListActivitiesNeedingReminder serentak, cuma SATU yang berjaya
+// UPDATE (baris kedua affect 0 rows), elak hantar push berganda.
+func (q *Queries) MarkActivityReminderSent(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markActivityReminderSent, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const recomputeActivityWindow = `-- name: RecomputeActivityWindow :exec
 update activities a set
   starts_at = s.min_start,
@@ -562,7 +693,7 @@ func (q *Queries) SetActivityCertificatesIssuedAt(ctx context.Context, id uuid.U
 const setActivityStatus = `-- name: SetActivityStatus :one
 update activities set status = $2, cancelled_reason = $3, updated_at = now()
 where id = $1 and deleted_at is null
-returning id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at
+returning id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at, reminder_sent_at
 `
 
 type SetActivityStatusParams struct {
@@ -596,6 +727,7 @@ func (q *Queries) SetActivityStatus(ctx context.Context, arg SetActivityStatusPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReminderSentAt,
 	)
 	return i, err
 }
@@ -608,7 +740,7 @@ update activities set
   capacity = $9, fee_cents = $10, attendance_threshold_pct = $11,
   updated_at = now()
 where id = $1 and deleted_at is null
-returning id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at
+returning id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at, reminder_sent_at
 `
 
 type UpdateActivityParams struct {
@@ -662,6 +794,7 @@ func (q *Queries) UpdateActivity(ctx context.Context, arg UpdateActivityParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReminderSentAt,
 	)
 	return i, err
 }

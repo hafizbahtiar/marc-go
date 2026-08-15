@@ -585,7 +585,7 @@ func (q *Queries) ListRegistrationsByActivity(ctx context.Context, activityID uu
 }
 
 const lockActivityForRegistration = `-- name: LockActivityForRegistration :one
-select id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at from activities where id = $1 and deleted_at is null for update
+select id, category_id, title, description, location_name, location_address, starts_at, ends_at, registration_opens_at, registration_closes_at, capacity, fee_cents, currency, attendance_threshold_pct, status, cancelled_reason, certificates_issued_at, created_by, created_at, updated_at, deleted_at, reminder_sent_at from activities where id = $1 and deleted_at is null for update
 `
 
 // `for update` atas baris aktiviti — ini yang menyerikan pendaftaran
@@ -615,6 +615,7 @@ func (q *Queries) LockActivityForRegistration(ctx context.Context, id uuid.UUID)
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.ReminderSentAt,
 	)
 	return i, err
 }

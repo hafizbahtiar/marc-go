@@ -36,10 +36,13 @@ var (
 	errAttendanceNotFound   = errors.New("kehadiran tidak dijumpai")
 )
 
-// Kaedah yang ada UI. Skema membenarkan 'self_scan' dan 'code' juga, tetapi
-// kedua-duanya tiada laluan klien lagi — menerimanya sekarang bermakna
-// menerima nilai yang tiada siapa boleh hasilkan secara sah.
-var validAttendanceMethods = map[string]bool{"manual": true, "scan": true}
+// Kaedah yang ada UI. Skema membenarkan 'code' juga, tetapi ia tiada
+// laluan klien lagi — menerimanya sekarang bermakna menerima nilai yang
+// tiada siapa boleh hasilkan secara sah. 'self_scan' DITAMBAH 2026-08-15
+// — lihat komen `Mark` utk reka bentuk keselamatan penuh (kenapa ia
+// TIDAK memerlukan `checkin_token` berputar seperti yang pernah
+// dibimbangkan TODO.md).
+var validAttendanceMethods = map[string]bool{"manual": true, "scan": true, "self_scan": true}
 
 type markResult struct {
 	Created bool
@@ -229,12 +232,23 @@ type memberSummary struct {
 
 // Mark — POST /activities/:id/sessions/:sid/attendance.
 //
-// Pengurusan sahaja: kehadiran ialah bukti yang menentukan siapa menerima
-// sijil, jadi ia tidak boleh ditanda oleh orang yang menerimanya.
+// Pengurusan sahaja untuk method 'manual'/'scan': kehadiran ialah bukti
+// yang menentukan siapa menerima sijil, jadi ia tidak boleh ditanda oleh
+// orang yang menerimanya (staff tandakan ahli LAIN).
+//
+// 'self_scan' (2026-08-15) PENGECUALIAN SENGAJA — ahli tandakan
+// kehadiran SENDIRI, tiada gate management. Reka bentuk keselamatan:
+// TODO.md pernah nyatakan self_scan "memerlukan token berputar" (elak
+// checkin_token statik jadi kelayakan pembawa yang boleh diedarkan via
+// tangkapan skrin). Reka bentuk di sini elak keperluan itu SEPENUHNYA
+// dengan tidak menggunakan checkin_token/registration_id LANGSUNG utk
+// self_scan — identiti datang drpd JWT pemanggil (`middleware.UserID`),
+// bukan drpd apa-apa dalam body permintaan. QR yang diimbas ahli
+// (`checkin_qr_session.dart`) cuma mengekod PASANGAN aktiviti+sesi
+// (data awam venue, bukan kelayakan peribadi) — tangkapan skrinnya
+// tidak berguna kepada sesiapa: ia cuma "sesi apa", server tetap kira
+// SIAPA drpd token JWT log masuk sebenar peng-imbas.
 func (h *AttendanceHandler) Mark(c *gin.Context) {
-	if !h.requireManagement(c) {
-		return
-	}
 	activityID, ok := parseUUIDParam(c, "id")
 	if !ok {
 		return
@@ -249,20 +263,101 @@ func (h *AttendanceHandler) Mark(c *gin.Context) {
 		return
 	}
 	if !validAttendanceMethods[req.Method] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "kaedah kehadiran mesti 'manual' atau 'scan'"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "kaedah kehadiran tidak sah"})
 		return
 	}
-	// TEPAT satu pengenalan. Menerima kedua-duanya bermakna memilih satu
-	// secara senyap bila ia bercanggah — dan yang tidak dipilih itu ahli
-	// yang sebenarnya berdiri di depan scanner.
-	if (req.RegistrationID == "") == (req.CheckinToken == "") {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "berikan registration_id atau checkin_token, satu sahaja"})
+
+	ctx := c.Request.Context()
+	var reg sqlc.ActivityRegistration
+	var err error
+
+	if req.Method == "self_scan" {
+		// Dua medan ni TIADA makna utk self_scan (identiti drpd JWT) — kalau
+		// dibenarkan lalu diabaikan senyap, caller mungkin salah anggap ia
+		// dihormati. Tolak eksplisit supaya salah faham tak berlaku, dan
+		// elak laluan ni pernah jadi "cara kedua" tanda org LAIN tanpa gate
+		// management (kalau kelak seseorang cuba hantar registration_id
+		// org lain sekali dgn method=self_scan, ia mesti ditolak, bukan
+		// senyap diabaikan/diterima).
+		if req.RegistrationID != "" || req.CheckinToken != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "self_scan tidak menerima registration_id/checkin_token"})
+			return
+		}
+		// Pindaan (amend) ialah alat PEMBETULAN management (rekod SIAPA
+		// meluluskan pengecualian tetingkap masa, dgn sebab beraudit) —
+		// bukan sesuatu ahli patut boleh buat atas rekod kehadiran sendiri.
+		if req.Amend {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "self_scan tidak menyokong pindaan"})
+			return
+		}
+		reg, err = h.queries.GetRegistrationByActivityAndUser(ctx, sqlc.GetRegistrationByActivityAndUserParams{
+			ActivityID: activityID,
+			UserID:     middleware.UserID(c),
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				c.JSON(http.StatusConflict, gin.H{"error": "anda tidak berdaftar untuk aktiviti ini"})
+				return
+			}
+			log.Printf("baca pendaftaran sendiri (self_scan) aktiviti %s: %v", activityID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tanda kehadiran"})
+			return
+		}
+	} else {
+		if !h.requireManagement(c) {
+			return
+		}
+		// TEPAT satu pengenalan. Menerima kedua-duanya bermakna memilih satu
+		// secara senyap bila ia bercanggah — dan yang tidak dipilih itu ahli
+		// yang sebenarnya berdiri di depan scanner.
+		if (req.RegistrationID == "") == (req.CheckinToken == "") {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "berikan registration_id atau checkin_token, satu sahaja"})
+			return
+		}
+		// Token diselesaikan DI SINI supaya markAttendanceTx melihat satu
+		// bentuk input sahaja.
+		if req.CheckinToken != "" {
+			reg, err = h.queries.GetRegistrationByCheckinToken(ctx, req.CheckinToken)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					c.JSON(http.StatusNotFound, gin.H{"error": "QR tidak dikenali"})
+					return
+				}
+				log.Printf("selesaikan token check-in: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tanda kehadiran"})
+				return
+			}
+		} else {
+			registrationID, parseErr := uuid.Parse(req.RegistrationID)
+			if parseErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "registration_id tidak sah"})
+				return
+			}
+			reg, err = h.queries.GetRegistrationByID(ctx, registrationID)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					c.JSON(http.StatusConflict, gin.H{"error": "ahli ini tidak berdaftar untuk aktiviti ini"})
+					return
+				}
+				log.Printf("baca pendaftaran %s: %v", registrationID, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tanda kehadiran"})
+				return
+			}
+		}
+	}
+
+	// Pendaftaran mesti milik aktiviti dalam laluan; markAttendanceTx pula
+	// mengesahkan sesi milik aktiviti yang sama, di bawah kunci.
+	if reg.ActivityID != activityID {
+		c.JSON(http.StatusConflict, gin.H{"error": "ahli ini tidak berdaftar untuk aktiviti ini"})
 		return
 	}
+
 	// Ditolak SEBELUM apa-apa sentuhan DB: pindaan tanpa sebab ialah tepat
 	// perkara yang jejak audit sepatutnya halang, jadi ia tidak boleh
-	// meninggalkan baris kehadiran di belakangnya.
+	// meninggalkan baris kehadiran di belakangnya. (self_scan dah tolak
+	// req.Amend=true di atas, jadi cawangan ni tak dicapai utk self_scan.)
 	var amend *attendanceAmendment
 	if req.Amend {
 		reason := strings.TrimSpace(req.Reason)
@@ -271,47 +366,6 @@ func (h *AttendanceHandler) Mark(c *gin.Context) {
 			return
 		}
 		amend = &attendanceAmendment{Reason: reason}
-	}
-
-	ctx := c.Request.Context()
-
-	// Token diselesaikan DI SINI supaya markAttendanceTx melihat satu bentuk
-	// input sahaja.
-	var reg sqlc.ActivityRegistration
-	var err error
-	if req.CheckinToken != "" {
-		reg, err = h.queries.GetRegistrationByCheckinToken(ctx, req.CheckinToken)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "QR tidak dikenali"})
-				return
-			}
-			log.Printf("selesaikan token check-in: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tanda kehadiran"})
-			return
-		}
-	} else {
-		registrationID, parseErr := uuid.Parse(req.RegistrationID)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "registration_id tidak sah"})
-			return
-		}
-		reg, err = h.queries.GetRegistrationByID(ctx, registrationID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				c.JSON(http.StatusConflict, gin.H{"error": "ahli ini tidak berdaftar untuk aktiviti ini"})
-				return
-			}
-			log.Printf("baca pendaftaran %s: %v", registrationID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tanda kehadiran"})
-			return
-		}
-	}
-	// Pendaftaran mesti milik aktiviti dalam laluan; markAttendanceTx pula
-	// mengesahkan sesi milik aktiviti yang sama, di bawah kunci.
-	if reg.ActivityID != activityID {
-		c.JSON(http.StatusConflict, gin.H{"error": "ahli ini tidak berdaftar untuk aktiviti ini"})
-		return
 	}
 
 	res, err := markAttendanceTx(ctx, h.pool, sessionID, reg.ID, req.Method, auditActor(c, h.queries), amend)
