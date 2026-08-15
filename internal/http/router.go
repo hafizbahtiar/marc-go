@@ -15,6 +15,7 @@ import (
 	"marc/internal/http/handlers"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
+	"marc/internal/paymentreconcile"
 	"marc/internal/push"
 	"marc/internal/redisclient"
 	"marc/internal/storage"
@@ -65,6 +66,7 @@ func NewRouter(
 	paymentGateways map[string]payment.Gateway,
 	registrationFeeCents int,
 	redisCli *redisclient.Client,
+	paymentReconciler *paymentreconcile.Reconciler,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
@@ -119,6 +121,12 @@ func NewRouter(
 
 	// Jejak audit (management sahaja, dikuatkuasakan dalam handler).
 	approved.GET("/audit-logs", handlers.NewAuditHandler(pool).List)
+
+	// Pencetus manual internal/paymentreconcile (management sahaja,
+	// dikuatkuasakan dalam handler) — padanan pola /audit-logs di atas.
+	// Sama logik dengan sapuan latar berkala (cmd/api/main.go), cuma
+	// dicetuskan on-demand.
+	approved.POST("/admin/payments/reconcile", handlers.NewPaymentReconcileHandler(paymentReconciler, sqlc.New(pool)).Run)
 	approved.GET("/roles", profileHandler.ListRoles)
 	approved.POST("/device-tokens", deviceTokenHandler.Upsert)
 	approved.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)

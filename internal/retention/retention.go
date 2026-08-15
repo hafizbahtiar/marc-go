@@ -34,6 +34,9 @@ type Policy struct {
 	// UploadTombstone — umur sebelum baris deleted_uploads yang selesai
 	// dibuang.
 	UploadTombstone time.Duration
+	// PaymentLog — umur sebelum baris payment_logs dipadam (lihat
+	// internal/paymentlog).
+	PaymentLog time.Duration
 }
 
 type Runner struct {
@@ -95,6 +98,16 @@ func (r *Runner) RunOnce(ctx context.Context) {
 			log.Printf("retention: prune batu nisan upload gagal: %v", err)
 		case n > 0:
 			log.Printf("retention: %d batu nisan upload dibuang", n)
+		}
+	}
+
+	if r.policy.PaymentLog > 0 {
+		n, err := r.queries.DeletePaymentLogsOlderThan(ctx, cutoff(r.policy.PaymentLog))
+		switch {
+		case err != nil:
+			log.Printf("retention: padam payment_logs gagal: %v", err)
+		case n > 0:
+			log.Printf("retention: %d payment_logs dipadam", n)
 		}
 	}
 }

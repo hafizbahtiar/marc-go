@@ -15,6 +15,7 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
+	"marc/internal/paymentlog"
 	"marc/internal/phone"
 )
 
@@ -184,6 +185,14 @@ func (h *ActivityRegistrationPaymentHandler) Checkout(c *gin.Context) {
 	})
 	if err != nil {
 		log.Printf("%s create payment (activity fee): %v", h.gw.Name(), err)
+		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+			Module:  paymentlog.ModuleActivityFee,
+			Event:   paymentlog.EventCheckoutFailed,
+			Status:  paymentlog.StatusError,
+			Gateway: h.gw.Name(),
+			UserID:  &userID,
+			Message: truncateForLog(err.Error()),
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
@@ -196,6 +205,19 @@ func (h *ActivityRegistrationPaymentHandler) Checkout(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
+
+	feeCents := int64(activity.FeeCents)
+	paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+		Module:      paymentlog.ModuleActivityFee,
+		Event:       paymentlog.EventCheckoutCreated,
+		Status:      paymentlog.StatusOK,
+		Gateway:     h.gw.Name(),
+		GatewayRef:  result.GatewayRef,
+		AmountCents: &feeCents,
+		UserID:      &userID,
+		RelatedID:   &reg.ID,
+		RawPayload:  []byte(result.RawResponse),
+	})
 
 	c.JSON(http.StatusOK, gin.H{"redirect_url": result.RedirectURL})
 }
@@ -215,6 +237,16 @@ func (h *ActivityRegistrationPaymentHandler) Webhook(c *gin.Context) {
 		return
 	}
 
+	// Rekod payload MENTAH dahulu, sebelum apa-apa parsing/pengesahan —
+	// lihat komen padanan di DonationHandler.Webhook.
+	paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+		Module:     paymentlog.ModuleActivityFee,
+		Event:      paymentlog.EventWebhookReceived,
+		Status:     paymentlog.StatusOK,
+		Gateway:    h.gw.Name(),
+		RawPayload: payload,
+	})
+
 	event, err := h.gw.VerifyWebhook(payload, c.Request.Header)
 	if err != nil {
 		if errors.Is(err, payment.ErrIgnoredEvent) {
@@ -229,6 +261,13 @@ func (h *ActivityRegistrationPaymentHandler) Webhook(c *gin.Context) {
 			return
 		}
 		log.Printf("webhook %s (activity fee): verify gagal: %v", h.gw.Name(), err)
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:  paymentlog.ModuleActivityFee,
+			Event:   paymentlog.EventWebhookVerifyFailed,
+			Status:  paymentlog.StatusError,
+			Gateway: h.gw.Name(),
+			Message: truncateForLog(err.Error()),
+		})
 		c.JSON(http.StatusBadRequest, gin.H{"error": "signature tidak sah"})
 		return
 	}
@@ -243,6 +282,17 @@ func (h *ActivityRegistrationPaymentHandler) Webhook(c *gin.Context) {
 	// ditinggalkan tanpa respons langsung. Cuma "succeeded" -> 'paid'
 	// yang ditulis di sini.
 	if event.Status != "succeeded" {
+		// Skema activity_registrations tiada 'failed' (lihat komen di atas)
+		// — baris DB TAK diubah, tapi payment_logs tiada kekangan sedemikian,
+		// jadi tetap bernilai untuk direkod di sini (StatusFailed, beza drpd
+		// tingkah laku tulisan DB yang sengaja tak berubah).
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:     paymentlog.ModuleActivityFee,
+			Event:      paymentlog.EventStatusUpdated,
+			Status:     paymentlog.StatusFailed,
+			Gateway:    h.gw.Name(),
+			GatewayRef: event.GatewayRef,
+		})
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
@@ -270,6 +320,24 @@ func (h *ActivityRegistrationPaymentHandler) Webhook(c *gin.Context) {
 		// supaya nampak dalam pemantauan produksi, bukan tenggelam
 		// dalam log biasa.
 		log.Printf("ERROR activity_registration_payment: ahli BAYAR (ref=%s, registration=%s) tapi pendaftaran SUDAH DIBATAL oleh sapuan — perlukan semakan manual (slot mungkin dah diambil orang lain)", event.GatewayRef, updated.ID)
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:     paymentlog.ModuleActivityFee,
+			Event:      paymentlog.EventStatusUpdated,
+			Status:     paymentlog.StatusMismatch,
+			Gateway:    h.gw.Name(),
+			GatewayRef: event.GatewayRef,
+			RelatedID:  &updated.ID,
+			Message:    "ahli bayar tapi pendaftaran sudah dibatal oleh sapuan",
+		})
+	} else {
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:     paymentlog.ModuleActivityFee,
+			Event:      paymentlog.EventStatusUpdated,
+			Status:     paymentlog.StatusSucceeded,
+			Gateway:    h.gw.Name(),
+			GatewayRef: event.GatewayRef,
+			RelatedID:  &updated.ID,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})

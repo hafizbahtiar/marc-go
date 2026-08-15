@@ -71,6 +71,7 @@ type Querier interface {
 	CreateDonation(ctx context.Context, arg CreateDonationParams) (Donation, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
+	CreatePaymentLog(ctx context.Context, arg CreatePaymentLogParams) error
 	CreatePendingUpload(ctx context.Context, arg CreatePendingUploadParams) error
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
 	CreatePostImage(ctx context.Context, arg CreatePostImageParams) (PostImage, error)
@@ -91,6 +92,9 @@ type Querier interface {
 	DeleteDoneDeletedUploadsBefore(ctx context.Context, deletedAt pgtype.Timestamptz) (int64, error)
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
+	// Retention 3 bulan (keputusan produk 2026-08-15) — dipanggil
+	// internal/retention, padanan pola sapuan audit_logs sedia ada.
+	DeletePaymentLogsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
 	// Tanpa skop user — untuk penyapu latar, bukan permintaan pengguna.
 	DeletePendingUploadByKey(ctx context.Context, r2Key string) error
@@ -109,6 +113,22 @@ type Querier interface {
 	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
 	GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
+	// Untuk `/me` — Flutter perlukan ni supaya ahli nampak bayaran mereka
+	// berjaya/gagal/menunggu, bukan senyap (gap ditemui 2026-08-15: bayaran
+	// gagal/berjaya dua-dua direkod betul dalam DB tapi client tak pernah
+	// baca, jadi ahli nampak "tiada apa berlaku" tak kira hasil sebenar).
+	// `pgx.ErrNoRows` bermakna ahli tak pernah cuba bayar langsung — caller
+	// (Go) layan tu sebagai null, bukan ralat.
+	//
+	// Utamakan 'succeeded' dulu (Opus verify 2026-08-15): `Checkout` cuma
+	// sekat bayaran BERULANG bila dah ada baris 'succeeded' — kalau ahli
+	// tekan Bayar dua kali (baris A, lepas tu B) dan bayar bil A dulu,
+	// 'order by created_at desc' semata-mata akan pulang B ('pending', baris
+	// LEBIH BAHARU) walhal A dah 'succeeded' — ahli nampak "sedang disahkan"
+	// selama-lamanya walau dah bayar. `(status = 'succeeded') desc` letak
+	// baris succeeded MANA-MANA PUN di atas dulu; `created_at desc` cuma
+	// pemisah antara baris tak-succeeded (paparkan percubaan TERKINI).
+	GetLatestRegistrationPaymentStatus(ctx context.Context, userID uuid.UUID) (string, error)
 	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error)
@@ -167,12 +187,39 @@ type Querier interface {
 	// dibuang. Menangkap dua perkara: post yang dipadam SEBELUM gilir
 	// pembersihan wujud, dan mana-mana kunci yang terlepas sejak itu.
 	ListOrphanedPostImageKeys(ctx context.Context, limit int32) ([]string, error)
+	// Sejarah penuh satu bayaran (semua peristiwa: checkout, webhook,
+	// reconcile) — untuk diagnosis satu insiden, bukan tinjauan am.
+	ListPaymentLogsByGatewayRef(ctx context.Context, arg ListPaymentLogsByGatewayRefParams) ([]PaymentLog, error)
+	// Baris 'pending' YANG DAH cuba checkout (payment_ref wujud) dan dah
+	// cukup umur untuk layak disemak semula terus pada gateway
+	// (internal/paymentreconcile) — padanan `CancelStaleUnpaidBills` dari
+	// segi skop (payment_ref is not null), tapi cutoff jauh lebih pendek
+	// (reconcile MEMBETULKAN state, bukan membatalkan secara musnah, jadi
+	// semak awal selamat — lihat internal/paymentreconcile untuk alasan
+	// penuh). Baris `payment_ref is null` (tak pernah cuba checkout) dilangkau
+	// — tiada apa nak disemak pada gateway untuk baris begitu.
+	ListPendingActivityRegistrationsOlderThan(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error)
+	// Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
+	// pada gateway (internal/paymentreconcile) — padanan alasan
+	// ListPendingRegistrationPaymentsOlderThan (registration_payments.sql):
+	// cuma 'pending', bukan 'failed' (terminal, tak perlu disemak semula).
+	ListPendingDonationsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) ([]Donation, error)
+	// Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
+	// pada gateway (internal/paymentreconcile) — bukan `status <> 'succeeded'`
+	// macam query UPDATE di atas, sengaja `status = 'pending'` sahaja: baris
+	// 'failed' TAK perlu disemak semula (terminal jugak, sama macam
+	// 'succeeded', reconcile tak sepatutnya "hidupkan semula" bayaran gagal
+	// tanpa ahli cuba lagi secara eksplisit — bayaran baharu akan hasilkan
+	// baris baharu).
+	ListPendingRegistrationPaymentsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) ([]RegistrationPayment, error)
 	ListPostImageKeys(ctx context.Context, postID uuid.UUID) ([]string, error)
 	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
 	// Keyset pagination atas (created_at, id) — bukan created_at je, elak
 	// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
+	// Tinjauan am terkini merentas modul — endpoint admin.
+	ListRecentPaymentLogs(ctx context.Context, arg ListRecentPaymentLogsParams) ([]PaymentLog, error)
 	// attended_session_ids menjawab "sesi mana pendaftaran ini sudah hadir?" —
 	// skrin kehadiran pengurusan menyemai suisnya daripada medan ini. Satu
 	// boolean per peserta tidak mencukupi: kehadiran ialah per-sesi.

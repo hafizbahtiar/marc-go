@@ -80,6 +80,47 @@ func (q *Queries) GetDonationByGatewayRef(ctx context.Context, arg GetDonationBy
 	return i, err
 }
 
+const listPendingDonationsOlderThan = `-- name: ListPendingDonationsOlderThan :many
+select id, user_id, donor_name, donor_email, amount_cents, currency, gateway, gateway_ref, status, created_at from donations
+where status = 'pending' and created_at < $1
+order by created_at
+`
+
+// Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
+// pada gateway (internal/paymentreconcile) — padanan alasan
+// ListPendingRegistrationPaymentsOlderThan (registration_payments.sql):
+// cuma 'pending', bukan 'failed' (terminal, tak perlu disemak semula).
+func (q *Queries) ListPendingDonationsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) ([]Donation, error) {
+	rows, err := q.db.Query(ctx, listPendingDonationsOlderThan, createdAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Donation
+	for rows.Next() {
+		var i Donation
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.DonorName,
+			&i.DonorEmail,
+			&i.AmountCents,
+			&i.Currency,
+			&i.Gateway,
+			&i.GatewayRef,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateDonationStatusByGatewayRef = `-- name: UpdateDonationStatusByGatewayRef :one
 update donations
 set status = $3

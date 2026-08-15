@@ -20,6 +20,7 @@ import (
 	httpapi "marc/internal/http"
 	"marc/internal/onesignal"
 	"marc/internal/payment"
+	"marc/internal/paymentreconcile"
 	"marc/internal/push"
 	"marc/internal/reaper"
 	"marc/internal/redisclient"
@@ -136,6 +137,7 @@ func main() {
 		AuditPII:        cfg.AuditPIIRetention,
 		AuditRecord:     cfg.AuditRecordRetention,
 		UploadTombstone: cfg.UploadTombstoneRetention,
+		PaymentLog:      cfg.PaymentLogRetention,
 	}, 24*time.Hour).Start(ctx)
 
 	// Sapuan pendaftaran aktiviti berbayar yang ditinggalkan — bebaskan
@@ -144,7 +146,18 @@ func main() {
 	// dalam package itu sendiri.
 	activitysweep.New(sqlc.New(pool), 15*time.Minute).Start(ctx)
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli)
+	// Reconcile bayaran 'pending' lapuk terus pada gateway merentas
+	// ketiga-tiga modul (lihat internal/paymentreconcile) — 30 minit
+	// dipilih sebagai kadar sapuan latar: cukup kerap untuk tangkap
+	// webhook yang gagal senyap dalam masa munasabah, tapi tak terlalu
+	// kerap sampai membebankan API gateway untuk bayaran yang MEMANG
+	// masih genuinely pending (checkout ToyyibPay/Stripe boleh ambil
+	// beberapa minit). Instance sama dipakai juga oleh pencetus manual
+	// (POST /admin/payments/reconcile, lihat router.go).
+	paymentReconciler := paymentreconcile.New(sqlc.New(pool), paymentGateways, 30*time.Minute)
+	paymentReconciler.Start(ctx)
+
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli, paymentReconciler)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

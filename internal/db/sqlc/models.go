@@ -173,6 +173,21 @@ type Notification struct {
 	CertificateID pgtype.UUID        `json:"certificate_id"`
 }
 
+type PaymentLog struct {
+	ID          int64              `json:"id"`
+	Module      string             `json:"module"`
+	Event       string             `json:"event"`
+	Status      string             `json:"status"`
+	Gateway     string             `json:"gateway"`
+	GatewayRef  pgtype.Text        `json:"gateway_ref"`
+	AmountCents pgtype.Int4        `json:"amount_cents"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	RelatedID   pgtype.UUID        `json:"related_id"`
+	Message     pgtype.Text        `json:"message"`
+	RawPayload  pgtype.Text        `json:"raw_payload"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type PendingUpload struct {
 	R2Key     string             `json:"r2_key"`
 	UserID    uuid.UUID          `json:"user_id"`

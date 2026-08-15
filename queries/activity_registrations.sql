@@ -84,6 +84,19 @@ set payment_status = $2
 where payment_ref = $1 and payment_status <> 'paid'
 returning *;
 
+-- name: ListPendingActivityRegistrationsOlderThan :many
+-- Baris 'pending' YANG DAH cuba checkout (payment_ref wujud) dan dah
+-- cukup umur untuk layak disemak semula terus pada gateway
+-- (internal/paymentreconcile) — padanan `CancelStaleUnpaidBills` dari
+-- segi skop (payment_ref is not null), tapi cutoff jauh lebih pendek
+-- (reconcile MEMBETULKAN state, bukan membatalkan secara musnah, jadi
+-- semak awal selamat — lihat internal/paymentreconcile untuk alasan
+-- penuh). Baris `payment_ref is null` (tak pernah cuba checkout) dilangkau
+-- — tiada apa nak disemak pada gateway untuk baris begitu.
+select * from activity_registrations
+where payment_status = 'pending' and payment_ref is not null and registered_at < $1
+order by registered_at;
+
 -- name: CancelStaleUnstartedPayments :many
 -- Batal pendaftaran berbayar yang ahli TAK PERNAH cuba checkout
 -- (payment_ref masih NULL — tiada bil ToyyibPay pernah dicipta) selepas

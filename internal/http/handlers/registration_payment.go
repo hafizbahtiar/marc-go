@@ -14,6 +14,7 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
+	"marc/internal/paymentlog"
 	"marc/internal/phone"
 )
 
@@ -79,6 +80,11 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	// ni sebelum ni). Elak bil ToyyibPay berulang untuk sesuatu yang dah
 	// tak relevan.
 	if profile.Status == "approved" {
+		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+			Module: paymentlog.ModuleRegistrationFee, Event: paymentlog.EventCheckoutFailed,
+			Status: paymentlog.StatusError, Gateway: h.gw.Name(), UserID: &userID,
+			Message: "sudah diluluskan",
+		})
 		c.JSON(http.StatusBadRequest, gin.H{"error": "akaun anda sudah diluluskan, tiada yuran pendaftaran perlu dibayar"})
 		return
 	}
@@ -89,6 +95,11 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 		return
 	}
 	if alreadyPaid {
+		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+			Module: paymentlog.ModuleRegistrationFee, Event: paymentlog.EventCheckoutFailed,
+			Status: paymentlog.StatusError, Gateway: h.gw.Name(), UserID: &userID,
+			Message: "sudah dibayar",
+		})
 		c.JSON(http.StatusBadRequest, gin.H{"error": "yuran pendaftaran anda sudah dibayar"})
 		return
 	}
@@ -128,6 +139,11 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	if billPhone == "" {
 		trimmed := strings.TrimSpace(req.Phone)
 		if trimmed == "" {
+			paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+				Module: paymentlog.ModuleRegistrationFee, Event: paymentlog.EventCheckoutFailed,
+				Status: paymentlog.StatusError, Gateway: h.gw.Name(), UserID: &userID,
+				Message: "phone_required",
+			})
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "sila isi nombor telefon dahulu",
 				"code":  "phone_required",
@@ -165,21 +181,42 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	})
 	if err != nil {
 		log.Printf("%s create payment (registration fee): %v", h.gw.Name(), err)
+		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+			Module:  paymentlog.ModuleRegistrationFee,
+			Event:   paymentlog.EventCheckoutFailed,
+			Status:  paymentlog.StatusError,
+			Gateway: h.gw.Name(),
+			UserID:  &userID,
+			Message: truncateForLog(err.Error()),
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
 
-	if _, err := h.queries.CreateRegistrationPayment(ctx, sqlc.CreateRegistrationPaymentParams{
+	regPayment, err := h.queries.CreateRegistrationPayment(ctx, sqlc.CreateRegistrationPaymentParams{
 		UserID:      userID,
 		AmountCents: int32(h.feeCents),
 		Currency:    "myr",
 		Gateway:     h.gw.Name(),
 		GatewayRef:  result.GatewayRef,
-	}); err != nil {
+	})
+	if err != nil {
 		log.Printf("create registration payment row: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
+
+	paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+		Module:      paymentlog.ModuleRegistrationFee,
+		Event:       paymentlog.EventCheckoutCreated,
+		Status:      paymentlog.StatusOK,
+		Gateway:     h.gw.Name(),
+		GatewayRef:  result.GatewayRef,
+		AmountCents: &h.feeCents,
+		UserID:      &userID,
+		RelatedID:   &regPayment.ID,
+		RawPayload:  []byte(result.RawResponse),
+	})
 
 	c.JSON(http.StatusOK, gin.H{"redirect_url": result.RedirectURL})
 }
@@ -202,6 +239,16 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 		return
 	}
 
+	// Rekod payload MENTAH dahulu, sebelum apa-apa parsing/pengesahan —
+	// lihat komen padanan di DonationHandler.Webhook.
+	paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+		Module:     paymentlog.ModuleRegistrationFee,
+		Event:      paymentlog.EventWebhookReceived,
+		Status:     paymentlog.StatusOK,
+		Gateway:    h.gw.Name(),
+		RawPayload: payload,
+	})
+
 	event, err := h.gw.VerifyWebhook(payload, c.Request.Header)
 	if err != nil {
 		if errors.Is(err, payment.ErrIgnoredEvent) {
@@ -216,6 +263,13 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 			return
 		}
 		log.Printf("webhook %s (registration fee): verify gagal: %v", h.gw.Name(), err)
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:  paymentlog.ModuleRegistrationFee,
+			Event:   paymentlog.EventWebhookVerifyFailed,
+			Status:  paymentlog.StatusError,
+			Gateway: h.gw.Name(),
+			Message: truncateForLog(err.Error()),
+		})
 		c.JSON(http.StatusBadRequest, gin.H{"error": "signature tidak sah"})
 		return
 	}
@@ -233,7 +287,7 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 	// atau ditolak (gate baca sebelum commit, management cuba lagi
 	// lepas bayaran disahkan). Tiada senario ahli diluluskan TANPA
 	// bayaran 'succeeded' pernah wujud dalam DB.
-	_, err = h.queries.UpdateRegistrationPaymentStatusByGatewayRef(c.Request.Context(), sqlc.UpdateRegistrationPaymentStatusByGatewayRefParams{
+	updated, err := h.queries.UpdateRegistrationPaymentStatusByGatewayRef(c.Request.Context(), sqlc.UpdateRegistrationPaymentStatusByGatewayRefParams{
 		Gateway:    h.gw.Name(),
 		GatewayRef: event.GatewayRef,
 		Status:     event.Status,
@@ -247,6 +301,20 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("update registration payment status (gateway=%s, ref=%s): %v", h.gw.Name(), event.GatewayRef, err)
 		}
+	} else {
+		// `err == nil` = row BENAR-BENAR beralih (WHERE `status <>
+		// 'succeeded'` terkena), bukan replay — padanan komen di
+		// DonationHandler.Webhook.
+		amountCents := int64(updated.AmountCents)
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:      paymentlog.ModuleRegistrationFee,
+			Event:       paymentlog.EventStatusUpdated,
+			Status:      event.Status,
+			Gateway:     h.gw.Name(),
+			GatewayRef:  event.GatewayRef,
+			AmountCents: &amountCents,
+			RelatedID:   &updated.ID,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})

@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createRegistrationPayment = `-- name: CreateRegistrationPayment :one
@@ -47,6 +48,35 @@ func (q *Queries) CreateRegistrationPayment(ctx context.Context, arg CreateRegis
 	return i, err
 }
 
+const getLatestRegistrationPaymentStatus = `-- name: GetLatestRegistrationPaymentStatus :one
+select status from registration_payments
+where user_id = $1
+order by (status = 'succeeded') desc, created_at desc
+limit 1
+`
+
+// Untuk `/me` — Flutter perlukan ni supaya ahli nampak bayaran mereka
+// berjaya/gagal/menunggu, bukan senyap (gap ditemui 2026-08-15: bayaran
+// gagal/berjaya dua-dua direkod betul dalam DB tapi client tak pernah
+// baca, jadi ahli nampak "tiada apa berlaku" tak kira hasil sebenar).
+// `pgx.ErrNoRows` bermakna ahli tak pernah cuba bayar langsung — caller
+// (Go) layan tu sebagai null, bukan ralat.
+//
+// Utamakan 'succeeded' dulu (Opus verify 2026-08-15): `Checkout` cuma
+// sekat bayaran BERULANG bila dah ada baris 'succeeded' — kalau ahli
+// tekan Bayar dua kali (baris A, lepas tu B) dan bayar bil A dulu,
+// 'order by created_at desc' semata-mata akan pulang B ('pending', baris
+// LEBIH BAHARU) walhal A dah 'succeeded' — ahli nampak "sedang disahkan"
+// selama-lamanya walau dah bayar. `(status = 'succeeded') desc` letak
+// baris succeeded MANA-MANA PUN di atas dulu; `created_at desc` cuma
+// pemisah antara baris tak-succeeded (paparkan percubaan TERKINI).
+func (q *Queries) GetLatestRegistrationPaymentStatus(ctx context.Context, userID uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestRegistrationPaymentStatus, userID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
 const hasSucceededRegistrationPayment = `-- name: HasSucceededRegistrationPayment :one
 select exists(
   select 1 from registration_payments where user_id = $1 and status = 'succeeded'
@@ -58,6 +88,48 @@ func (q *Queries) HasSucceededRegistrationPayment(ctx context.Context, userID uu
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listPendingRegistrationPaymentsOlderThan = `-- name: ListPendingRegistrationPaymentsOlderThan :many
+select id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at from registration_payments
+where status = 'pending' and created_at < $1
+order by created_at
+`
+
+// Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
+// pada gateway (internal/paymentreconcile) — bukan `status <> 'succeeded'`
+// macam query UPDATE di atas, sengaja `status = 'pending'` sahaja: baris
+// 'failed' TAK perlu disemak semula (terminal jugak, sama macam
+// 'succeeded', reconcile tak sepatutnya "hidupkan semula" bayaran gagal
+// tanpa ahli cuba lagi secara eksplisit — bayaran baharu akan hasilkan
+// baris baharu).
+func (q *Queries) ListPendingRegistrationPaymentsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) ([]RegistrationPayment, error) {
+	rows, err := q.db.Query(ctx, listPendingRegistrationPaymentsOlderThan, createdAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistrationPayment
+	for rows.Next() {
+		var i RegistrationPayment
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AmountCents,
+			&i.Currency,
+			&i.Gateway,
+			&i.GatewayRef,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateRegistrationPaymentStatusByGatewayRef = `-- name: UpdateRegistrationPaymentStatusByGatewayRef :one

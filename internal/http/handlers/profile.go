@@ -51,6 +51,13 @@ type profileResponse struct {
 	Category      string  `json:"category"`
 	RoleRank      int32   `json:"role_rank"`
 	AvatarURL     *string `json:"avatar_url"`
+	// RegistrationPaymentStatus — "pending"/"succeeded"/"failed", atau
+	// null kalau ahli tak pernah cuba bayar langsung. Ditambah 2026-08-15:
+	// webhook ToyyibPay dah rekod bayaran gagal/berjaya BETUL dalam DB
+	// sejak awal, tapi client tak pernah baca — ahli nampak "tiada apa
+	// berlaku" walau hasil sebenar sentiasa betul di sisi pelayan. Cuma
+	// diisi untuk ahli `pending` (approved tak perlu, dah lepas gate).
+	RegistrationPaymentStatus *string `json:"registration_payment_status"`
 }
 
 // Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
@@ -59,24 +66,35 @@ type profileResponse struct {
 // betul.
 func (h *ProfileHandler) Me(c *gin.Context) {
 	ctx := c.Request.Context()
-	row, err := h.queries.GetProfileByUserID(ctx, middleware.UserID(c))
+	userID := middleware.UserID(c)
+	row, err := h.queries.GetProfileByUserID(ctx, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "profil tidak dijumpai"})
 		return
 	}
 
+	var paymentStatus *string
+	if row.Status != "approved" {
+		if status, err := h.queries.GetLatestRegistrationPaymentStatus(ctx, userID); err == nil {
+			paymentStatus = &status
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("baca status bayaran pendaftaran (user=%s): %v", userID, err)
+		}
+	}
+
 	c.JSON(http.StatusOK, profileResponse{
-		MemberID:      row.MemberID,
-		Email:         row.Email,
-		EmailVerified: row.EmailVerified,
-		Status:        row.Status,
-		DisplayName:   textToPtr(row.DisplayName),
-		Phone:         textToPtr(row.Phone),
-		RoleKey:       row.RoleKey,
-		RoleName:      row.RoleName,
-		Category:      row.RoleCategory,
-		RoleRank:      row.RoleRank,
-		AvatarURL:     h.avatarURL(ctx, row.AvatarR2Key),
+		MemberID:                  row.MemberID,
+		Email:                     row.Email,
+		EmailVerified:             row.EmailVerified,
+		Status:                    row.Status,
+		DisplayName:               textToPtr(row.DisplayName),
+		Phone:                     textToPtr(row.Phone),
+		RoleKey:                   row.RoleKey,
+		RoleName:                  row.RoleName,
+		Category:                  row.RoleCategory,
+		RoleRank:                  row.RoleRank,
+		AvatarURL:                 h.avatarURL(ctx, row.AvatarR2Key),
+		RegistrationPaymentStatus: paymentStatus,
 	})
 }
 

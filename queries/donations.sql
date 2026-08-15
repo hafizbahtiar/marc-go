@@ -6,6 +6,15 @@ returning *;
 -- name: GetDonationByGatewayRef :one
 select * from donations where gateway = $1 and gateway_ref = $2;
 
+-- name: ListPendingDonationsOlderThan :many
+-- Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
+-- pada gateway (internal/paymentreconcile) — padanan alasan
+-- ListPendingRegistrationPaymentsOlderThan (registration_payments.sql):
+-- cuma 'pending', bukan 'failed' (terminal, tak perlu disemak semula).
+select * from donations
+where status = 'pending' and created_at < $1
+order by created_at;
+
 -- name: UpdateDonationStatusByGatewayRef :one
 -- `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
 -- retry/replay (atau event lewat sampai tak ikut turutan) tak boleh

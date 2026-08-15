@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -56,7 +57,55 @@ func (s *StripeGateway) CreatePayment(ctx context.Context, params CreateParams) 
 		return CreateResult{}, err
 	}
 
-	return CreateResult{GatewayRef: pi.ID, ClientSecret: pi.ClientSecret}, nil
+	// RawResponse: stripe-go punya client wrapper nyahsiri terus ke `pi`,
+	// tak dedahkan byte HTTP mentah — siri SEMULA `pi` penuh ke JSON
+	// sebagai anggaran. Bukan wayar sebenar (medan yang stripe-go tak
+	// petakan takkan ada), tapi bawa SETIAP field yang Stripe pulangkan
+	// yang kita ada akses padanya — cukup untuk diagnosis. Kegagalan
+	// Marshal (patut mustahil untuk struct terjana) diabaikan senyap:
+	// checkout MESTI tetap berjaya walau raw-capture gagal.
+	//
+	// ClientSecret DIKOSONGKAN pada salinan sebelum Marshal (Opus verify
+	// 2026-08-15) — payment_logs.raw_payload simpan 90 hari, boleh dibaca
+	// sesiapa dengan akses DB; client_secret bukan sekadar PII, ia
+	// KELAYAKAN (benarkan retrieve/confirm/cancel PaymentIntent tu dari
+	// client-side). CreateResult.ClientSecret di bawah (dihantar balik ke
+	// Flutter) TAK terjejas — cuma salinan untuk log yang dikosongkan.
+	logCopy := *pi
+	logCopy.ClientSecret = ""
+	rawJSON, _ := json.Marshal(logCopy)
+
+	return CreateResult{
+		GatewayRef:   pi.ID,
+		ClientSecret: pi.ClientSecret,
+		RawResponse:  string(rawJSON),
+	}, nil
+}
+
+// CheckStatus — asas internal/paymentreconcile. Ambil PaymentIntent
+// terus dari Stripe (bukan webhook/DB tempatan) dan normalisasi ke set
+// nilai sama dengan WebhookEvent.Status + "pending". `canceled` dilayan
+// "failed" (intent ditinggalkan, takkan selesai); `succeeded` "succeeded";
+// selain tu (requires_payment_method/confirmation/action/processing)
+// "pending" — pembayar belum selesai atau masih mid-flow.
+func (s *StripeGateway) CheckStatus(ctx context.Context, paymentIntentID string) (string, error) {
+	if !s.configured {
+		return "", ErrNotConfigured
+	}
+
+	pi, err := s.client.V1PaymentIntents.Retrieve(ctx, paymentIntentID, nil)
+	if err != nil {
+		return "", fmt.Errorf("stripe retrieve payment intent: %w", err)
+	}
+
+	switch pi.Status {
+	case stripe.PaymentIntentStatusSucceeded:
+		return "succeeded", nil
+	case stripe.PaymentIntentStatusCanceled:
+		return "failed", nil
+	default:
+		return "pending", nil
+	}
 }
 
 // VerifyWebhook sahkan header `Stripe-Signature` lawan raw body, pulang

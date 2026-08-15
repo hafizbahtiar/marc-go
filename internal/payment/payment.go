@@ -45,6 +45,18 @@ type CreateResult struct {
 	GatewayRef   string
 	ClientSecret string
 	RedirectURL  string
+
+	// RawResponse — respons MENTAH gateway bagi panggilan create-payment
+	// ni (badan HTTP createBill ToyyibPay, atau PaymentIntent Stripe
+	// disiri semula ke JSON). PILIHAN — kosong kalau gateway tak isi.
+	// Simetri dengan raw_payload webhook (internal/paymentlog): sebab
+	// sama — diagnosis satu insiden checkout tak patut perlukan SSH ke
+	// produksi. Medan RATA di sini (bukan interface method baharu)
+	// sengaja kekalkan Gateway loose-coupled — caller (handler HTTP)
+	// baca medan ni secara buta tanpa tahu bentuk dalaman gateway
+	// mana pun, dan gateway yang tak nak isi tinggal biar kosong tanpa
+	// langgar kontrak.
+	RawResponse string
 }
 
 // WebhookEvent hasil generik lepas gateway verify + parse callback
@@ -77,4 +89,13 @@ type Gateway interface {
 	// Pulang ErrIgnoredEvent untuk event type yang tak relevan (bukan
 	// ralat — caller patut respond 200 OK).
 	VerifyWebhook(payload []byte, headers http.Header) (WebhookEvent, error)
+
+	// CheckStatus tanya status SEBENAR satu bayaran TERUS dari gateway
+	// (bukan daripada webhook/DB tempatan) — asas internal/paymentreconcile
+	// (2026-08-15, lepas insiden webhook ToyyibPay yang gagal senyap
+	// beberapa kali: DB boleh tersasar drpd kebenaran gateway kalau
+	// webhook tak pernah tiba/gagal parse, dan reconcile ialah cara
+	// pulih tanpa perlu perasan manual). Pulang "pending"/"succeeded"/
+	// "failed" — sama set nilai dengan WebhookEvent.Status + "pending".
+	CheckStatus(ctx context.Context, gatewayRef string) (status string, err error)
 }

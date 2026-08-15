@@ -53,6 +53,11 @@ type Config struct {
 	AuditPIIRetention        time.Duration
 	AuditRecordRetention     time.Duration
 	UploadTombstoneRetention time.Duration
+	// PaymentLogRetention — 3 bulan default (keputusan produk 2026-08-15,
+	// lihat internal/paymentlog). Boleh raw_payload bawa PII pembayar
+	// (billTo/billEmail/billPhone ToyyibPay), sama justifikasi env-configurable
+	// macam polisi lain di atas.
+	PaymentLogRetention time.Duration
 }
 
 func Load() (Config, error) {
@@ -109,6 +114,8 @@ func Load() (Config, error) {
 		AuditPIIRetention:        getEnvDays("AUDIT_PII_RETENTION_DAYS", 90),
 		AuditRecordRetention:     getEnvDays("AUDIT_RECORD_RETENTION_DAYS", 365),
 		UploadTombstoneRetention: getEnvDays("UPLOAD_TOMBSTONE_RETENTION_DAYS", 30),
+		// Default 90 hari (~3 bulan, keputusan produk 2026-08-15).
+		PaymentLogRetention: getEnvDays("PAYMENT_LOG_RETENTION_DAYS", 90),
 	}
 
 	if cfg.DatabaseURL == "" {

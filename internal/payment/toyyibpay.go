@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -144,8 +145,13 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	}
 	if err := json.Unmarshal(body, &bills); err != nil || len(bills) == 0 || bills[0].BillCode == "" {
 		snippet := string(body)
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
+		// 500, bukan 300 — padan `maxPaymentLogMessage`
+		// (paymentlog_helpers.go) supaya snippet ni tak dipotong dua kali
+		// buat sia-sia (Opus verify 2026-08-15: 300 di sini + 500 di
+		// handler bermakna 300 yang sebenarnya berkuat kuasa, buang
+		// maklumat berguna kalau ToyyibPay pulang muka HTML ralat/WAF).
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
 		}
 		return CreateResult{}, fmt.Errorf("toyyibpay createBill: respons tak dijangka: %s", snippet)
 	}
@@ -154,6 +160,7 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	return CreateResult{
 		GatewayRef:  billCode,
 		RedirectURL: t.baseURL + "/" + billCode,
+		RawResponse: string(body),
 	}, nil
 }
 
@@ -218,10 +225,19 @@ func extractBillCode(payload []byte, contentType string) string {
 	// sempat baca billcode — escape dulu, tak ubah struktur pasangan
 	// key=value yang dipisah `&`.
 	sanitized := strings.ReplaceAll(string(payload), ";", "%3B")
-	if values, err := url.ParseQuery(sanitized); err == nil {
-		if code := billCodeFromValues(values); code != "" {
-			return code
-		}
+	// Nilai ABAIKAN ralat (bukan cuma `err == nil`) — Opus verify
+	// 2026-08-15 dedah `url.ParseQuery` JUGA tolak escape peratus tak
+	// sah (cth `reason=100% off`, `%` mentah bukan diikuti hex, sangat
+	// munasabah dalam medan teks bebas ToyyibPay). `url.ParseQuery`
+	// PULANG `values` SEBAHAGIAN sekali gus `err` bila ini berlaku —
+	// billcode selalunya dah berjaya dibaca walaupun medan LAIN
+	// (yang kita tak guna pun) gagal decode. Buang gate `err == nil`
+	// tu sama kelas bug dengan `;` yang bakar staging sebelum ni: satu
+	// aksara dalam SATU medan yang kita tak baca pun tak patut jatuhkan
+	// keseluruhan parse.
+	values, _ := url.ParseQuery(sanitized)
+	if code := billCodeFromValues(values); code != "" {
+		return code
 	}
 
 	// multipart/form-data — sesetengah backend PHP hantar callback
@@ -264,6 +280,23 @@ func billCodeFromValues(values url.Values) string {
 		}
 	}
 	return ""
+}
+
+// CheckStatus — asas internal/paymentreconcile. Guna semula confirmStatus
+// (poll getBillTransactions yang sama dipakai VerifyWebhook), TIADA
+// logik baharu — reconcile dan webhook confirm MESTI baca dari laluan
+// sama supaya jawapan dua-dua konsisten.
+func (t *ToyyibPayGateway) CheckStatus(ctx context.Context, billCode string) (string, error) {
+	event, err := t.confirmStatus(ctx, billCode)
+	if errors.Is(err, ErrIgnoredEvent) {
+		// Tiada transaksi lagi = pembayar belum selesai/belum cuba bayar
+		// — pending, bukan ralat reconcile.
+		return "pending", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return event.Status, nil
 }
 
 // confirmStatus poll getBillTransactions — sumber kebenaran SEBENAR,
@@ -313,8 +346,13 @@ func (t *ToyyibPayGateway) confirmStatus(ctx context.Context, billCode string) (
 	}
 	if err := json.Unmarshal(body, &txns); err != nil {
 		snippet := string(body)
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
+		// 500, bukan 300 — padan `maxPaymentLogMessage`
+		// (paymentlog_helpers.go) supaya snippet ni tak dipotong dua kali
+		// buat sia-sia (Opus verify 2026-08-15: 300 di sini + 500 di
+		// handler bermakna 300 yang sebenarnya berkuat kuasa, buang
+		// maklumat berguna kalau ToyyibPay pulang muka HTML ralat/WAF).
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
 		}
 		return WebhookEvent{}, fmt.Errorf("toyyibpay getBillTransactions: respons tak dijangka: %s", snippet)
 	}

@@ -29,6 +29,22 @@ func TestExtractBillCodeSemicolonMentahDalamMedanLain(t *testing.T) {
 	}
 }
 
+// Opus verify 2026-08-15 jumpa kelas bug SAMA lepas fix ';' di atas:
+// url.ParseQuery JUGA tolak escape peratus tak sah (`%` mentah bukan
+// diikuti dua heksadesimal) — sangat munasabah dalam medan teks bebas
+// macam "100% off". ParseQuery pulang `values` SEBAHAGIAN + `err`
+// serentak bila ini berlaku; billcode (medan lain, tak terjejas) mesti
+// tetap dibaca daripada `values` walau `err != nil`.
+func TestExtractBillCodePeratusTakSahDalamMedanLain(t *testing.T) {
+	code := extractBillCode(
+		[]byte("billcode=abc123&status=1&reason=100% off&order_id=xyz"),
+		"application/x-www-form-urlencoded",
+	)
+	if code != "abc123" {
+		t.Fatalf("billcode = %q, mahu abc123 (payload ada '%%' tak sah)", code)
+	}
+}
+
 func TestExtractBillCodeKunciBesarKecilCampur(t *testing.T) {
 	cases := []string{
 		"BillCode=abc123&status=1",

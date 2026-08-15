@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +20,7 @@ import (
 	"marc/internal/email"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
+	"marc/internal/paymentlog"
 	"marc/internal/receipt"
 )
 
@@ -105,6 +107,13 @@ func (h *DonationHandler) Checkout(c *gin.Context) {
 	})
 	if err != nil {
 		log.Printf("%s create payment: %v", gw.Name(), err)
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:  paymentlog.ModuleDonation,
+			Event:   paymentlog.EventCheckoutFailed,
+			Status:  paymentlog.StatusError,
+			Gateway: gw.Name(),
+			Message: truncateForLog(err.Error()),
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
@@ -117,15 +126,31 @@ func (h *DonationHandler) Checkout(c *gin.Context) {
 		Gateway:     gw.Name(),
 		GatewayRef:  result.GatewayRef,
 	}
+	var userIDPtr *uuid.UUID
 	if loggedIn {
 		params.UserID = pgtype.UUID{Bytes: userID, Valid: true}
+		userIDPtr = &userID
 	}
 
-	if _, err := h.queries.CreateDonation(c.Request.Context(), params); err != nil {
+	donation, err := h.queries.CreateDonation(c.Request.Context(), params)
+	if err != nil {
 		log.Printf("create donation row: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
+
+	paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+		Module:      paymentlog.ModuleDonation,
+		Event:       paymentlog.EventCheckoutCreated,
+		Status:      paymentlog.StatusOK,
+		Gateway:     gw.Name(),
+		GatewayRef:  result.GatewayRef,
+		AmountCents: &req.AmountCents,
+		UserID:      userIDPtr,
+		RelatedID:   &donation.ID,
+		Message:     gw.Name(),
+		RawPayload:  []byte(result.RawResponse),
+	})
 
 	// Client tengok field mana terisi (client_secret vs redirect_url)
 	// untuk tentukan flow — tak perlu tahu gateway spesifik apa (lihat
@@ -155,6 +180,17 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 		return
 	}
 
+	// Rekod payload MENTAH dahulu, sebelum apa-apa parsing/pengesahan —
+	// inilah baris log paling bernilai untuk diagnosis masa hadapan (lihat
+	// komen paymentlog.go), mesti tertulis walau langkah selepas ni gagal.
+	paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+		Module:     paymentlog.ModuleDonation,
+		Event:      paymentlog.EventWebhookReceived,
+		Status:     paymentlog.StatusOK,
+		Gateway:    gw.Name(),
+		RawPayload: payload,
+	})
+
 	event, err := gw.VerifyWebhook(payload, c.Request.Header)
 	if err != nil {
 		if errors.Is(err, payment.ErrIgnoredEvent) {
@@ -172,6 +208,13 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 		// signature salah (cth mismatch API version), dan tanpa log ni
 		// 400 nampak macam masalah signing secret sedangkan bukan.
 		log.Printf("webhook %s: verify gagal: %v", gw.Name(), err)
+		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+			Module:  paymentlog.ModuleDonation,
+			Event:   paymentlog.EventWebhookVerifyFailed,
+			Status:  paymentlog.StatusError,
+			Gateway: gw.Name(),
+			Message: truncateForLog(err.Error()),
+		})
 		c.JSON(http.StatusBadRequest, gin.H{"error": "signature tidak sah"})
 		return
 	}
@@ -199,6 +242,17 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 	// resit hantar TEPAT SEKALI setiap donation berjaya, retry Stripe
 	// selepas ni akan kena `pgx.ErrNoRows` (row dah 'succeeded', tak
 	// match WHERE lagi) dan skip terus cabang ni.
+	amountCents := int64(updated.AmountCents)
+	paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
+		Module:      paymentlog.ModuleDonation,
+		Event:       paymentlog.EventStatusUpdated,
+		Status:      event.Status,
+		Gateway:     gw.Name(),
+		GatewayRef:  event.GatewayRef,
+		AmountCents: &amountCents,
+		RelatedID:   &updated.ID,
+	})
+
 	if event.Status == "succeeded" {
 		h.sendReceiptEmail(c.Request.Context(), updated, event.PaidAt)
 	}

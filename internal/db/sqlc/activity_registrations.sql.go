@@ -326,6 +326,50 @@ func (q *Queries) ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]
 	return items, nil
 }
 
+const listPendingActivityRegistrationsOlderThan = `-- name: ListPendingActivityRegistrationsOlderThan :many
+select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at from activity_registrations
+where payment_status = 'pending' and payment_ref is not null and registered_at < $1
+order by registered_at
+`
+
+// Baris 'pending' YANG DAH cuba checkout (payment_ref wujud) dan dah
+// cukup umur untuk layak disemak semula terus pada gateway
+// (internal/paymentreconcile) — padanan `CancelStaleUnpaidBills` dari
+// segi skop (payment_ref is not null), tapi cutoff jauh lebih pendek
+// (reconcile MEMBETULKAN state, bukan membatalkan secara musnah, jadi
+// semak awal selamat — lihat internal/paymentreconcile untuk alasan
+// penuh). Baris `payment_ref is null` (tak pernah cuba checkout) dilangkau
+// — tiada apa nak disemak pada gateway untuk baris begitu.
+func (q *Queries) ListPendingActivityRegistrationsOlderThan(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error) {
+	rows, err := q.db.Query(ctx, listPendingActivityRegistrationsOlderThan, registeredAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityRegistration
+	for rows.Next() {
+		var i ActivityRegistration
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActivityID,
+			&i.UserID,
+			&i.Status,
+			&i.PaymentStatus,
+			&i.PaymentRef,
+			&i.CheckinToken,
+			&i.RegisteredAt,
+			&i.CancelledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRegistrationsByActivity = `-- name: ListRegistrationsByActivity :many
 select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, pr.member_id, pr.display_name, pr.avatar_r2_key,
   coalesce(att.session_ids, '{}')::uuid[] as attended_session_ids
