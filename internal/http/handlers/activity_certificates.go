@@ -547,7 +547,7 @@ func (h *CertificateHandler) countFilesReady(ctx context.Context, activityID uui
 }
 
 type revokeCertificateRequest struct {
-	Reason string `json:"reason"`
+	Reason string `json:"reason" binding:"omitempty,max=500"`
 }
 
 // Revoke — POST /certificates/:id/revoke. Pengurusan sahaja.

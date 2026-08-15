@@ -29,6 +29,20 @@ type Config struct {
 	StripePublishableKey string
 	StripeWebhookSecret  string
 
+	// ToyyibPay — yuran ahli (Stage 12, belum wired ke handler; lihat
+	// TODO.md bahagian Payment untuk keputusan produk yang belum dibuat).
+	// Akaun BERASINGAN drpd Stripe.
+	ToyyibPayBaseURL      string
+	ToyyibPaySecretKey    string
+	ToyyibPayCategoryCode string
+
+	// RegistrationFeeCents — yuran pendaftaran ahli SEKALI BAYAR (bukan
+	// berulang), dikenakan via ToyyibPay semasa ahli baharu daftar (lihat
+	// TODO.md bahagian Payment). Default RM10 (1000 sen) — PLACEHOLDER,
+	// nilai sebenar belum diputuskan management, tukar via env sebelum
+	// production.
+	RegistrationFeeCents int
+
 	// Optional — kosong = ciri yang bergantung padanya jatuh balik kepada
 	// tingkah laku setempat (per-instance), bukan gagal.
 	RedisURL string
@@ -75,6 +89,18 @@ func Load() (Config, error) {
 		StripePublishableKey: os.Getenv("STRIPE_PUBLISHABLE_KEY"),
 		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
 
+		// Optional — kalau kosong, ToyyibPayGateway.Enabled() pulang
+		// false (sama pattern Stripe/R2 di atas). BaseURL kosong jatuh
+		// balik ke produksi (https://toyyibpay.com) di dalam
+		// NewToyyibPayGateway — set ke https://dev.toyyibpay.com untuk
+		// sandbox.
+		ToyyibPayBaseURL:      os.Getenv("TOYYIBPAY_BASE_URL"),
+		ToyyibPaySecretKey:    os.Getenv("TOYYIBPAY_SECRET_KEY"),
+		ToyyibPayCategoryCode: os.Getenv("TOYYIBPAY_CATEGORY_CODE"),
+
+		// Default RM10 (1000 sen) — placeholder, lihat komen field.
+		RegistrationFeeCents: getEnvInt("REGISTRATION_FEE_CENTS", 1000),
+
 		RedisURL: os.Getenv("REDIS_URL"),
 
 		// Default: metadata permintaan (IP/user-agent) hidup 90 hari —
@@ -109,6 +135,21 @@ func getEnvDays(key string, fallbackDays int) time.Duration {
 		return time.Duration(fallbackDays) * 24 * time.Hour
 	}
 	return time.Duration(days) * 24 * time.Hour
+}
+
+// getEnvInt padanan pola getEnvDays — nilai tak sah dilog dan default
+// digunakan, bukan gagalkan boot.
+func getEnvInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v <= 0 {
+		log.Printf("config: %s=%q tidak sah, guna default %d", key, raw, fallback)
+		return fallback
+	}
+	return v
 }
 
 func getEnv(key, fallback string) string {

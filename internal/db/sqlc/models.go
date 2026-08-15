@@ -227,6 +227,17 @@ type RefreshToken struct {
 	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
 }
 
+type RegistrationPayment struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	AmountCents int32              `json:"amount_cents"`
+	Currency    string             `json:"currency"`
+	Gateway     string             `json:"gateway"`
+	GatewayRef  string             `json:"gateway_ref"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Role struct {
 	ID        int16              `json:"id"`
 	Key       string             `json:"key"`

@@ -114,5 +114,20 @@ func (s *StripeGateway) VerifyWebhook(payload []byte, headers http.Header) (Webh
 		return WebhookEvent{}, err
 	}
 
+	// L27a: Ideally PaidAt should come from the Charge's `Created` (actual
+	// payment completion time), not PaymentIntent.Created (intent-creation
+	// time) — these diverge for delayed payment methods like DuitNow QR/FPX.
+	// `pi.LatestCharge` (`*stripe.Charge`, has its own `Created int64`) looks
+	// like the fix, BUT Stripe does NOT expand `latest_charge` in webhook
+	// payloads by default — it arrives as a bare charge ID string. stripe-go's
+	// `Charge.UnmarshalJSON` (charge.go) handles that case by only setting
+	// `c.ID` and leaving `Created` at its zero value, so reading
+	// `pi.LatestCharge.Created` here would silently produce `1970-01-01`
+	// instead of a wrong-but-plausible timestamp — worse than the current bug.
+	// Getting the real charge time would require either configuring webhook
+	// endpoint expansions for `latest_charge` (Stripe dashboard/API setting,
+	// not present in this codebase) or an extra `charge.Get` API call inside
+	// webhook processing — both out of scope here. Keeping `pi.Created` until
+	// one of those is deliberately added.
 	return WebhookEvent{GatewayRef: pi.ID, Status: status, PaidAt: time.Unix(pi.Created, 0)}, nil
 }

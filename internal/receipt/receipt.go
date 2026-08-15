@@ -263,6 +263,14 @@ func clip(pdf *fpdf.Fpdf, s string, maxW float64) string {
 	return s
 }
 
+// FormatDateTime papar `t` dalam waktu Malaysia (MYT) — diexport supaya
+// emel resit (internal/http/handlers/donations.go) boleh guna penukaran
+// zon masa yang SAMA macam PDF ni, elak emel dan lampiran PDF-nya
+// menunjukkan waktu berbeza 8 jam (UTC server vs MYT).
+func FormatDateTime(t time.Time) string {
+	return formatDateTime(t)
+}
+
 func formatDateTime(t time.Time) string {
 	if t.IsZero() {
 		return "-"

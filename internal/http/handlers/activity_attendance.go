@@ -217,7 +217,7 @@ type markAttendanceRequest struct {
 	// pengenalan (registration_id dan checkin_token) kerana pindaan ialah
 	// pembetulan kepada laluan yang SAMA, bukan endpoint lain.
 	Amend  bool   `json:"amend"`
-	Reason string `json:"reason"`
+	Reason string `json:"reason" binding:"omitempty,max=500"`
 }
 
 // memberSummary — apa yang skrin scanner perlukan untuk mengesahkan bahawa

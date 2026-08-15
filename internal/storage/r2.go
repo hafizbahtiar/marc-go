@@ -226,17 +226,34 @@ func (r *R2Client) verifyImage(ctx context.Context, key string, maxDim int) erro
 	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(r.bucket),
 		Key:    aws.String(key),
-		Range:  aws.String("bytes=0-65535"),
+		Range:  aws.String(fmt.Sprintf("bytes=0-%d", MaxImageSizeBytes-1)),
 	})
 	if err != nil {
 		return fmt.Errorf("get object: %w", err)
 	}
 	defer out.Body.Close()
 
-	// 64KB, bukan 12 bait macam dulu: cukup untuk magic number DAN untuk
-	// image.DecodeConfig membaca header dimensi. Masih cuma header —
-	// kita tak pernah muat turun atau menyahkod gambar penuh.
-	buf, err := io.ReadAll(io.LimitReader(out.Body, 64*1024))
+	// Julat = MaxImageSizeBytes (5MB), BUKAN 64KB tetap. 64KB cukup untuk
+	// PNG (IHDR sentiasa di bait 8-33) tapi TIDAK untuk JPEG — penanda
+	// SOF0/SOF2 yang bawa lebar/tinggi boleh ditolak lepas berbilang
+	// segmen APPn (EXIF/ICC/XMP, sehingga 64KB setiap satu, berbilang
+	// dibenarkan) yang sengaja dipadatkan penyerang untuk tolak SOF0
+	// keluar dari julat baca — verifyDimensions gagal-terbuka (return nil)
+	// bila DecodeConfig tak jumpa SOF0, jadi julat kecil = had dimensi
+	// terus tak terpakai untuk JPEG yang dibina khas. 5MB bukan had
+	// sewenang-wenangnya: ia MaxImageSizeBytes yang dah dikuatkuasakan di
+	// tempat lain (VerifyImageSize) — julat ni tak dedahkan apa-apa
+	// permukaan serangan baharu, cuma pastikan SOF0 sentiasa dalam julat
+	// yang dibaca untuk MANA-MANA fail yang lulus had saiz sedia ada.
+	// `io.ReadAll` di sini BACA SEHINGGA had (bukan berhenti awal bila
+	// SOF0 dijumpai) — jadi ini memang naikkan bacaan R2 drpd 64KB tetap
+	// kepada saiz fail sebenar (max 5MB). Kos diterima: R2→compute egress
+	// percuma (Cloudflare), ini jalan SEKALI semasa verify muat naik
+	// (bukan setiap kali feed ditatal), dan gambar client selalunya jauh
+	// lebih kecil drpd 5MB (client dah kecilkan ke 2048px sebelum naik).
+	// Fail yang benar-benar 5MB capai kos terburuk, tapi itu tepat had
+	// yang dia dah dibenarkan lulus — bukan kos tambahan yang tak wajar.
+	buf, err := io.ReadAll(io.LimitReader(out.Body, MaxImageSizeBytes))
 	if err != nil {
 		return fmt.Errorf("baca header: %w", err)
 	}

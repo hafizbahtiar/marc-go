@@ -47,6 +47,7 @@ type Querier interface {
 	CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateRegistration(ctx context.Context, arg CreateRegistrationParams) (ActivityRegistration, error)
+	CreateRegistrationPayment(ctx context.Context, arg CreateRegistrationPaymentParams) (RegistrationPayment, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteActivitySessions(ctx context.Context, activityID uuid.UUID) error
 	DeleteAttendance(ctx context.Context, arg DeleteAttendanceParams) (int64, error)
@@ -91,6 +92,7 @@ type Querier interface {
 	GetStatusByUserID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
 	LikeComment(ctx context.Context, arg LikeCommentParams) error
 	LikePost(ctx context.Context, arg LikePostParams) (int64, error)
@@ -217,6 +219,12 @@ type Querier interface {
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
 	UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvatarParams) (Profile, error)
 	UpdateProfileRole(ctx context.Context, arg UpdateProfileRoleParams) (Profile, error)
+	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
+	// retry/replay (atau event lewat sampai tak ikut turutan) tak boleh
+	// turunkan bayaran yang dah berjaya jadi 'failed'. Percubaan gagal yang
+	// dicuba semula pada gateway_ref yang sama tetap boleh naik
+	// 'failed' -> 'succeeded' (sebab itu bukan `status = 'pending'`).
+	UpdateRegistrationPaymentStatusByGatewayRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByGatewayRefParams) (RegistrationPayment, error)
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)
 }
 

@@ -40,6 +40,18 @@ var authRateLimit = rate.Every(12 * time.Second)
 
 const authRateBurst = 5
 
+// authSessionRateLimit — baldi berasingan drpd 'auth' untuk /refresh dan
+// /logout (L26). Kedua-dua route ni ialah penyelenggaraan sesi rutin
+// (dipanggil automatik oleh app bila token nak luput), BUKAN permukaan
+// terdedah kepada brute-force macam login/register — jadi tak patut
+// kongsi kuota ketat 12s/5 dengan route sensitif tu. Senario IP dikongsi
+// (wifi kelab, CGNAT) boleh sebabkan ramai ahli refresh serentak
+// menghabiskan baldi 'auth' yang sama, lalu login/register sah turut
+// disekat. Lebih longgar drpd 'auth' tapi masih terhad.
+var authSessionRateLimit = rate.Every(3 * time.Second)
+
+const authSessionRateBurst = 10
+
 func NewRouter(
 	pool *pgxpool.Pool,
 	jwtSvc *auth.JWT,
@@ -51,6 +63,7 @@ func NewRouter(
 	r2Client *storage.R2Client,
 	pushSvc *push.Service,
 	paymentGateways map[string]payment.Gateway,
+	registrationFeeCents int,
 	redisCli *redisclient.Client,
 ) *gin.Engine {
 	r := gin.New()
@@ -67,12 +80,13 @@ func NewRouter(
 	// yang mengasingkan baldi; tanpa itu login dan upload berkongsi kuota.
 	rateLimiter := middleware.NewRateLimiter(redisCli)
 	authRateLimiter := rateLimiter.Limit("auth", authRateLimit, authRateBurst)
+	authSessionRateLimiter := rateLimiter.Limit("auth-session", authSessionRateLimit, authSessionRateBurst)
 
 	authGroup := r.Group("/auth")
 	authGroup.POST("/register", authRateLimiter, authHandler.Register)
 	authGroup.POST("/login", authRateLimiter, authHandler.Login)
-	authGroup.POST("/refresh", authRateLimiter, authHandler.Refresh)
-	authGroup.POST("/logout", authRateLimiter, authHandler.Logout)
+	authGroup.POST("/refresh", authSessionRateLimiter, authHandler.Refresh)
+	authGroup.POST("/logout", authSessionRateLimiter, authHandler.Logout)
 	authGroup.POST("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerification)
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
 
@@ -82,9 +96,16 @@ func NewRouter(
 	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
 
+	// profileUpdateRateLimiter (L25) — /me tak ada mekanisme dedup macam
+	// like (setiap PATCH memang tindakan sah, bukan spam berulang secara
+	// semulajadi), jadi had kadar diletak pada route, bukan handler.
+	// 3s/10 — guna harian biasa (edit profil) tak kerap sangat, tapi
+	// longgar drpd 'auth'/'donation' sebab bukan permukaan sensitif.
+	profileUpdateRateLimiter := rateLimiter.Limit("profile-update", rate.Every(3*time.Second), 10)
+
 	protected := r.Group("/", middleware.RequireAuth(jwtSvc))
 	protected.GET("/me", profileHandler.Me)
-	protected.PATCH("/me", profileHandler.UpdateMe)
+	protected.PATCH("/me", profileUpdateRateLimiter, profileHandler.UpdateMe)
 	protected.POST("/auth/logout-all", authHandler.LogoutAll)
 
 	// approved (Stage 11) — /members, /device-tokens, dan approve/reject
@@ -111,9 +132,18 @@ func NewRouter(
 	notificationHandler := handlers.NewNotificationHandler(pool)
 	uploadHandler := handlers.NewUploadHandler(pool, r2Client)
 
+	// postCreateRateLimiter / commentCreateRateLimiter (L25) — like/unlike
+	// dielak spam via dedup dalam handler (tiada row baru = tiada notify);
+	// post dan comment TIADA konsep "dah wujud" macam tu — setiap create
+	// MEMANG row baru, jadi had kadar kena diletak pada route. 3s/10 —
+	// tindakan biasa harian (bukan jarang macam donation/upload) tapi
+	// tetap terhad supaya tak jadi gelung spam notifikasi/push.
+	postCreateRateLimiter := rateLimiter.Limit("post-create", rate.Every(3*time.Second), 10)
+	commentCreateRateLimiter := rateLimiter.Limit("comment-create", rate.Every(3*time.Second), 10)
+
 	verified := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)), middleware.RequireVerifiedEmail(sqlc.New(pool)))
 	verified.GET("/posts", postHandler.List)
-	verified.POST("/posts", postHandler.Create)
+	verified.POST("/posts", postCreateRateLimiter, postHandler.Create)
 	verified.GET("/posts/:id", postHandler.Get)
 	verified.PATCH("/posts/:id", postHandler.Update)
 	verified.DELETE("/posts/:id", postHandler.Delete)
@@ -121,7 +151,7 @@ func NewRouter(
 	verified.DELETE("/posts/:id/like", postHandler.Unlike)
 
 	verified.GET("/posts/:id/comments", commentHandler.List)
-	verified.POST("/posts/:id/comments", commentHandler.Create)
+	verified.POST("/posts/:id/comments", commentCreateRateLimiter, commentHandler.Create)
 	verified.PATCH("/comments/:id", commentHandler.Update)
 	verified.DELETE("/comments/:id", commentHandler.Delete)
 	verified.POST("/comments/:id/like", commentHandler.Like)
@@ -199,6 +229,28 @@ func NewRouter(
 	donationRateLimiter := rateLimiter.Limit("donation", rate.Every(6*time.Second), 5)
 	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
+
+	// Yuran pendaftaran ahli (Stage 12, ToyyibPay, SEKALI BAYAR — bukan
+	// dues berulang, bukan yuran aktiviti). Checkout duduk atas `protected`
+	// (RequireAuth SAHAJA, sama group dengan /me) sengaja: ahli `pending`
+	// yang belum diluluskan MESTI boleh bayar semasa menunggu — kalau
+	// diletak atas `approved` mereka takkan sampai ke sini langsung.
+	// Webhook AWAM, gateway dihardcode "toyyibpay" (satu-satunya gateway
+	// ciri ni guna) — lihat komen RegistrationPaymentHandler.Webhook.
+	registrationPaymentHandler := handlers.NewRegistrationPaymentHandler(pool, paymentGateways["toyyibpay"], registrationFeeCents)
+	// Had kadar (Opus verify 2026-08-15 tandakan MEDIUM tanpanya): checkout
+	// padan bucket `donation` (sama corak — tindakan pembayaran sengaja,
+	// jarang berulang secara sah). Webhook padan `verifyRateLimiter`
+	// (2s/20 burst, bukan 6s/5 macam checkout) sebab ToyyibPay sendiri
+	// yang panggil endpoint ni — VerifyWebhook buat outbound HTTP poll
+	// (getBillTransactions, 15s timeout) setiap panggilan, jadi endpoint
+	// ni lebih mahal per-request drpd webhook Stripe (sah HMAC tempatan
+	// sahaja) dan lebih terdedah kepada amplification tanpa had.
+	registrationCheckoutRateLimiter := rateLimiter.Limit("registration-payment-checkout", rate.Every(6*time.Second), 5)
+	registrationWebhookRateLimiter := rateLimiter.Limit("registration-payment-webhook", rate.Every(2*time.Second), 20)
+	protected.POST("/registration-payments/checkout", registrationCheckoutRateLimiter, registrationPaymentHandler.Checkout)
+	r.POST("/registration-payments/webhook/toyyibpay", registrationWebhookRateLimiter, registrationPaymentHandler.Webhook)
+	r.GET("/registration-payments/return/toyyibpay", registrationPaymentHandler.ReturnPage)
 
 	return r
 }

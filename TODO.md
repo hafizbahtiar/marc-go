@@ -70,10 +70,145 @@ Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
 - [ ] **Threshold RM500 belum wired** — `selectGateway` sentiasa pulang
       Stripe. SociaBuzz (<RM500) belum research: ada API/webhook rasmi untuk
       verify pembayaran, atau manual sahaja?
-- [ ] **ToyyibPay (yuran ahli)** belum start. Keputusan produk dulu:
-      - Sekali bayar atau berulang (tahunan/bulanan)?
-      - Bila gate yuran mula berkuat kuasa untuk ahli sedia ada?
-      - Gate diletak dalam middleware mana (padanan `RequireVerifiedEmail`)?
+- [x] **ToyyibPay guna kes 1 — yuran pendaftaran ahli, SEKALI BAYAR,
+      DIBINA DAN DIWIRING 2026-08-15.** Gate diletak pada langkah
+      **kelulusan management** (`ApproveMember` → `setMemberStatus`,
+      `internal/http/handlers/profile.go`), BUKAN semasa daftar — ahli
+      `pending` boleh bayar bila-bila masa semasa menunggu (sebelum atau
+      selepas management tengok permohonan). Ahli sedia ada
+      (approved sebelum ciri ni wujud) **dikecualikan automatik** — no-op
+      check `target.Status == status` yang dah sedia ada return awal
+      SEBELUM gate baharu, jadi tiada peralihan sebenar berlaku untuk
+      akaun tu, tiada semakan "bila akaun dicipta" diperlukan.
+
+      **Fail baharu**: migration
+      `20260815050000_create_registration_payments.sql` (jadual
+      berasingan, padan pola `donations` — `id`, `user_id NOT NULL`,
+      `amount_cents`, `currency`, `gateway CHECK IN ('toyyibpay')`,
+      `gateway_ref`, `status CHECK IN ('pending','succeeded','failed')`,
+      unique index `(gateway, gateway_ref)`); `queries/
+      registration_payments.sql` (`CreateRegistrationPayment`,
+      `UpdateRegistrationPaymentStatusByGatewayRef` — idempotency
+      `status <> 'succeeded'` sama pola donations,
+      `HasSucceededRegistrationPayment`); `internal/http/handlers/
+      registration_payment.go` (`Checkout`/`Webhook`/`ReturnPage`).
+
+      **Route**: `POST /registration-payments/checkout` (RequireAuth
+      SAHAJA, sama group `/me` — bukan RequireApprovedStatus, ahli
+      pending mesti boleh akses), `POST /registration-payments/webhook/
+      toyyibpay` (awam, hardcode toyyibpay bukan `:gateway` sebab cuma
+      satu gateway untuk ciri ni), `GET /registration-payments/return/
+      toyyibpay` (awam, landing page sahaja — pengesahan sebenar jalan
+      async via Webhook). `cmd/api/main.go` `callbackURL`/`returnURL`
+      dikemaskini daripada placeholder `/dues/...` ke path sebenar.
+
+      **Race webhook-vs-approve**: SELAMAT tanpa lock tambahan — dua
+      laluan sentuh baris BERBEZA (`registration_payments` vs
+      `profiles`), gate baca `HasSucceededRegistrationPayment` SEBELUM
+      buka transaksi sendiri. Kes paling teruk (confirm webhook &
+      approve serentak): salah satu menang ikut turutan read-committed
+      biasa Postgres, tiada senario ahli diluluskan TANPA baris
+      'succeeded' pernah wujud. Lihat komen penuh di
+      `registration_payment.go:158-170`.
+
+      **`REGISTRATION_FEE_CENTS`** — env baharu, default 1000 (RM10,
+      PLACEHOLDER — nilai sebenar belum diputuskan management, tukar
+      sebelum production).
+
+      **Opus verify flow penuh (backend+Flutter) 2026-08-15**: tiada bug
+      integriti kewangan atau bypass auth dijumpai — `ApproveProfile`
+      satu-satunya laluan tulis `status='approved'`, webhook tak pernah
+      percaya body callback (poll `getBillTransactions` sahaja), amount
+      selalu server-side (`Checkout` tiada request body), Flutter tiada
+      double-submit/state lapuk, validasi URL https-only ketat. SATU
+      isu MEDIUM dijumpai dan **DIBAIKI**: `/registration-payments/
+      checkout` dan `/registration-payments/webhook/toyyibpay` tiada
+      rate limit (`router.go`) — ditambah `registration-payment-checkout`
+      (6s/5, padan bucket `donation`) dan `registration-payment-webhook`
+      (2s/20, lebih longgar sebab dipanggil ToyyibPay sendiri, tapi tiap
+      panggilan buat outbound poll 15s-timeout jadi lebih mahal per-
+      request drpd webhook Stripe). `feed_page.dart` butang bayar
+      ditukar `!isRejected` → `status == 'pending'` eksplisit (drift-
+      proof kalau status baharu ditambah kelak). Komen lapuk dalam
+      `toyyibpay.go` (masih kata "belum wired"/placeholder) dibetulkan.
+
+      **Belum siap sebelum production**: `TOYYIBPAY_SECRET_KEY`/
+      `_CATEGORY_CODE` masih sandbox dalam `.env` tempatan (`Enabled()`
+      akan pulang `false` di deploy sehingga diisi akaun produksi);
+      `REGISTRATION_FEE_CENTS` masih placeholder; kes "bil berjaya
+      dibayar" `getBillTransactions` masih tak disahkan (lihat bawah);
+      `HasSucceededRegistrationPayment` tak semak `amount_cents` — kalau
+      fi dinaikkan kelak, baris lama yang lebih murah tetap lulus gate
+      (risiko rendah, `billPriceSetting=1` dah kunci amount di sisi
+      ToyyibPay); **belum ada ujian hujung-ke-hujung sebenar pada
+      peranti** — flow daftar→bayar→approve tak pernah dijalankan betul-
+      betul.
+
+      Gateway kod itu sendiri (`internal/payment/toyyibpay.go`)
+      **sengaja tak disentuh** semasa wiring ni — dah disahkan sandbox
+      sebelum ni, tiada bug dijumpai semasa integrasi. `VerifyWebhook`
+      **sengaja** tak percaya body callback: ToyyibPay tiada sah `hash`
+      yang boleh dipercayai (dua sumber sekunder bagi formula
+      bercanggah, kajian penuh di `marc_flutter/PAYMENT-TOYYIB.md`) —
+      status disahkan semula via poll `getBillTransactions`.
+      **Disahkan hujung-ke-hujung terhadap sandbox `dev.toyyibpay.com`
+      sebenar 2026-08-15** (bukan cuma unit test) — `createBill` dan poll
+      `getBillTransactions` dua-dua dipanggil betul-betul dengan akaun
+      sandbox sebenar. Dua bug DIJUMPAI dan DIBAIKI hasil verifikasi ni
+      (kod komuniti yang jadi asas awal silap/tak lengkap):
+      - `billTo` **wajib** — createBill pulang `{"status":"error","msg":
+        "billTo parameter is empty"}` kalau tiada. Dokumentasi komuniti
+        tak sebut ini. Kod sekarang ambil `params.Metadata["billTo"]`
+        (fallback "Ahli MARC" kalau kosong); `billEmail`/`billPhone`
+        turut boleh dihantar via Metadata (`billEmail`/`billPhone` keys),
+        pilihan.
+      - `getBillTransactions` bila TIADA transaksi lagi pulang teks
+        BIASA `"No data found!"` — BUKAN array JSON kosong `[]`. Kod
+        sekarang semak literal ni sebelum `json.Unmarshal`, pulang
+        `ErrIgnoredEvent` (bukan ralat parse).
+      - `createBill` respons **array satu objek dengan `BillCode`**
+        disahkan BETUL (padanan andaian asal) — `CreatePayment` diuji
+        sebenar, dapat bill code + redirect URL sah, `RedirectURL`
+        (`https://dev.toyyibpay.com/{billcode}`) dibuka boleh diakses.
+      - **Masih TAK disahkan**: bentuk respons `getBillTransactions` bila
+        bil BERJAYA DIBAYAR (`billpaymentStatus="1"`) — verifikasi setakat
+        ni cuma capai kes "belum dibayar". Perlu selesaikan satu bayaran
+        ujian sebenar (via simulator bank sandbox) untuk sahkan medan
+        `billpaymentStatus`/`billpaymentInvoiceNo` betul sebelum
+        production.
+
+      **Keputusan produk 2026-08-15**: sekali bayar (BUKAN berulang) —
+      soalan "tahunan/bulanan?" dah tak relevan, ni yuran pendaftaran
+      SATU KALI sahaja semasa daftar ahli baharu, padanan konsep dengan
+      bayaran sekali `donations` (Stripe) yang dah wujud, bukan konsep
+      "subscription" ToyyibPay pun tak sokong native (lihat
+      `marc_flutter/PAYMENT-TOYYIB.md`).
+
+      **Keputusan produk 2026-08-15 (lanjutan)**: gate diletak pada
+      langkah kelulusan management (bukan pada `POST /auth/register`) —
+      ahli boleh bayar bila-bila semasa `pending`. Ahli sedia ada
+      dikecualikan automatik (jatuh keluar daripada struktur kod, bukan
+      semakan eksplisit "bila akaun dicipta"). Skema: jadual berasingan
+      `registration_payments`, padan pola `donations`. Butiran penuh +
+      fail yang terlibat: lihat entri ToyyibPay di atas.
+
+      Masih belum diputuskan:
+      - **`REGISTRATION_FEE_CENTS` sebenar** — default kod 1000 (RM10)
+        ialah PLACEHOLDER teknikal, bukan angka yang management dah
+        setuju.
+      - **`marc_flutter`**: skrin bayar dalam aliran daftar/skrin pending
+        belum dibina — backend `Checkout`/`Webhook` sedia tapi tiada UI
+        panggil.
+      - **Yuran aktiviti** (guna kes 2, `activities.fee_cents`) — BELUM
+        dibina, keputusan berasingan diperlukan: `RegisterForActivity`
+        tolak `fee_cents != 0` sekarang (lihat "Sudah ditutup dalam
+        pusingan ini"). Bila ToyyibPay disambung di sini, kena putuskan
+        bayar SEBELUM `payment_status='paid'` ditulis (redirect → tunggu
+        webhook/poll) atau pendaftaran dicipta serta-merta dengan status
+        `pending_payment` baharu — **corak reka bentuk sama** dengan
+        guna kes 1 (gate lepas commitment, bukan gate sebelum), tapi
+        titik gate berbeza (di sini: `payment_status` pada baris
+        `activity_registrations`, bukan `profiles.status`).
 
 ## Modul Aktiviti — jurang yang tinggal
 
@@ -95,8 +230,16 @@ bawah ini **tidak** dibina, dan sebahagiannya sengaja.
       kelayakan sijil `(a.fee_cents = 0 or r.payment_status = 'paid')`
       menjadi palsu untuk **semua** pendaftar, jadi tiada seorang pun layak
       menerima sijil dan tiada ralat menjelaskan sebabnya. Sehingga gateway
-      mendarat, kekalkan `fee_cents = 0`. Bergantung pada keputusan gateway
-      yang sama dengan yuran ahli (lihat bahagian Payment).
+      mendarat, kekalkan `fee_cents = 0`.
+
+      **Gateway disahkan 2026-08-15**: `ToyyibPayGateway` (lihat bahagian
+      Payment) — guna kes kedua daripada dua yang disahkan (pertama:
+      yuran pendaftaran ahli). Reka bentuk pendaftaran aktiviti berbayar
+      masih perlu keputusan sama sifat dengan yuran pendaftaran: bila
+      `payment_status` bertukar `'paid'` (lepas redirect + webhook/poll
+      confirm, bukan serta-merta) dan sama ada `RegisterForActivity`
+      cipta baris `pending_payment` dulu atau tunggu bayaran sebelum
+      cipta baris pendaftaran langsung.
 - [ ] **Check-in `self_scan` dan `code`.** Kekangan `method` dalam
       `activity_attendances` menerima keempat-empat nilai, tetapi hanya
       `manual` dan `scan` ada pelaksanaan (lihat komen
@@ -468,6 +611,19 @@ jadi baca syarat kenaikan itu, bukan label sahaja.
   memandangkan rate limit 5/min/IP sedia ada dah hadkan enumerasi kepada
   perlahan, bukan block sepenuhnya. Semak semula kalau `authRateLimit`
   pernah dilonggarkan.
+- **L28 — access token JWT stateless kekal sah sampai 15 minit lepas
+  demote/tukar role.** `setMemberStatus` (`profile.go:712`) revoke
+  refresh token dalam transaksi, `UpdateMemberRole` tak revoke apa-apa —
+  tapi access token yang dah dikeluarkan kekal sah sampai `exp` tanpa
+  kira. **Keputusan 2026-08-15**: diterima sebagai risiko, bukan
+  dibaiki. Fix sebenar (semak status/role pada SETIAP request, cth
+  lajur `token_valid_after` pada `profiles` disemak dalam `RequireAuth`)
+  bermakna satu query DB tambahan pada SETIAP permintaan berautentikasi
+  di seluruh app — kos berterusan untuk kes yang jarang (admin demote/
+  tukar role ahli) dan tetingkap dedah dihadkan 15 minit (TTL access
+  token sedia ada). Nisbah kos-faedah tak berbaloi drpd bina token-
+  revocation infra penuh. Semak semula kalau `AccessTokenTTL` pernah
+  dipanjangkan jauh drpd 15 minit.
 - **Halaman pengesahan sijil awam mendedahkan nama ahli.** Sengaja; lihat
   bahagian "Pendedahan privasi yang disedari" dalam spec reka bentuk.
   Perlindungan yang sudah ada dan **mesti kekal**: token legap 32 aksara
@@ -496,9 +652,30 @@ di atas tidak diulang.
       20000×20000px (bawah had 5MB bait), setiap peranti yang scroll feed
       cuba nyahkod ~1.6GB piksel. Ujian `dimensions_test.go` hijau sebab ia
       panggil `verifyDimensions` terus dengan header penuh, bukan
-      `verifyImage` laluan sebenar. **Dibaiki**: `Range` ditukar ke
-      `bytes=0-65535`.
-- [ ] **L17 — tiada had panjang pada medan teks bebas** (post/comment
+      `verifyImage` laluan sebenar. **Dibaiki (pusingan 1)**: `Range`
+      ditukar ke `bytes=0-65535`.
+
+      **Verifikasi 2026-08-15 dedah pusingan 1 tak cukup untuk JPEG.**
+      64KB cukup untuk PNG (IHDR di bait 8-33) tapi JPEG boleh tolak
+      penanda SOF0/SOF2 (bawa lebar/tinggi) lepas berbilang segmen APPn
+      (EXIF/ICC/XMP, sehingga 64KB setiap satu) yang sengaja dipadatkan —
+      dibuktikan dengan bukti-konsep: JPEG 8000×8000 (750KB, bawah had
+      5MB) dengan APP1 65KB decode gagal (`unexpected EOF`),
+      `verifyDimensions` gagal-terbuka `return nil`, had dimensi terus tak
+      terpakai. Ahli approved+verified masih boleh hantar decode-bomb.
+      **Dibaiki (pusingan 2)**: `Range` dan had `io.ReadAll` ditukar ke
+      `MaxImageSizeBytes` (5MB) — padan terus had saiz yang dah
+      dikuatkuasakan di tempat lain (`VerifyImageSize`), jadi SOF0
+      sentiasa dalam julat baca untuk MANA-MANA fail yang lulus had saiz
+      sedia ada. Kos: bacaan R2 naik drpd 64KB tetap ke saiz fail sebenar
+      (max 5MB) — diterima sebab R2→compute egress percuma (Cloudflare),
+      jalan sekali semasa verify muat naik (bukan setiap tatal feed), dan
+      gambar client selalunya jauh lebih kecil (client dah kecilkan ke
+      2048px). Ujian unit (`dimensions_test.go`) lulus; **belum disahkan
+      via live test** — `TestR2LivePermissions` wujud tapi tak uji kes
+      JPEG APPn-padded khusus, pertimbang tambah kalau nak bukti hujung-
+      ke-hujung terhadap R2 sebenar.
+- [x] **L17 — tiada had panjang pada medan teks bebas** (post/comment
       content, `display_name`, `phone`, activity `title`/`location_name`,
       `onesignal_id`) — hanya had body 1MB global. `display_name` 1MB
       terbenam dalam setiap post/comment feed (`posts_common.go:263-278`)
@@ -506,7 +683,12 @@ di atas tidak diulang.
       pada halaman verify sijil **awam tanpa auth**. `donations.go:48-56`
       satu-satunya tempat yang ada had — sepatutnya jadi corak untuk yang
       lain.
-- [ ] **L18 — spam notification/push tanpa had melalui like berulang.**
+
+      **Verifikasi 2026-08-15**: had ditegakkan, `gin validator` guna
+      rune count (bukan byte). Satu bug baharu dijumpai dalam pelaksanaan
+      manual `optional[T]` PATCH — lihat **L23** di bawah. Turut dedah
+      medan yang masih terbuka (bukan dalam skop L17 asal): lihat **L24**.
+- [x] **L18 — spam notification/push tanpa had melalui like berulang.**
       `LikePost` (`queries/likes.sql`) `on conflict do nothing`, tapi
       handler post panggil `notifyOwner` tanpa syarat selepas SETIAP
       panggilan (tak boleh bezakan insert baharu vs conflict). Tiada rate
@@ -515,7 +697,13 @@ di atas tidak diulang.
       `notifications` tanpa had. `CommentHandler.Like` betul (tak
       notify). Fix: `LikePost` jadi `:execrows`/`returning`, notify hanya
       bila baris benar-benar masuk.
-- [ ] **L19 — draft activity boleh dibaca ahli biasa melalui ID.**
+
+      **Verifikasi 2026-08-15**: `likes.sql.go` disahkan sync dengan
+      `queries/likes.sql` (`sqlc generate` tiada drift), `posts.go` satu-
+      satunya caller `LikePost` seluruh repo, `CommentHandler.Like` tak
+      tersentuh. Corak sama masih terbuka pada comment create — lihat
+      **L25**.
+- [x] **L19 — draft activity boleh dibaca ahli biasa melalui ID.**
       `ActivityHandler.List` gate `status=draft` di belakang
       `requireManagement` (`activities.go:352-359`) tapi
       `ActivityHandler.Get` (`activities.go:451`) tiada semakan status
@@ -523,19 +711,110 @@ di atas tidak diulang.
       Ahli lulus dengan UUID aktiviti boleh baca draf penuh (tajuk,
       kapasiti, yuran, sesi, bilangan pendaftaran). Terhad oleh
       ketidaktekaan UUIDv4, tapi peraturan kebenaran yang `List`
-      kuatkuasakan langsung tak wujud pada laluan by-id.
-- [ ] **L20 — `/auth/refresh` dan `/auth/logout` tiada rate limit.**
+      kuatkuasakan langsung tak wujud pada laluan by-id. **Sebenarnya
+      sudah dibaiki dalam kod sedia ada sebelum audit ni** (bukan hasil
+      `aa0e6c5`) — `activities.go:463-473` semak `statusDraft` +
+      `authz.IsManagement`, pulang 404. Disahkan semula 2026-08-15, masih
+      betul.
+- [x] **L20 — `/auth/refresh` dan `/auth/logout` tiada rate limit.**
       Satu-satunya laluan auth tanpa auth yang tak kena `authRateLimiter`
       (register/login/verify semua kena). Bukan risiko teka token (opaque
       256-bit), tapi laluan miss `Refresh` buat SHA-256 + `UPDATE
       ... RETURNING` + `GetRefreshTokenByHash` kedua + mungkin `DELETE
       ... where family_id` (`auth.go:277-296`) — write-path amplifier
       Postgres tanpa had kadar.
-- [ ] **L22 — resit donation PDF cetak tarikh salah.** `donations.go:248`
+
+      **Verifikasi 2026-08-15 dedah kesan sampingan sebenar** — lihat
+      **L26**.
+- [x] **L22 — resit donation PDF cetak tarikh salah.** `donations.go:248`
       set `paidAt := time.Now()` semasa proses webhook, bukan baca
       timestamp PaymentIntent Stripe sebenar. Stripe retry/kelewatan
       penghantaran webhook = tarikh salah pada dokumen kewangan yang
       dihantar email kepada penderma, tak boleh dibetulkan selepas fakta.
+
+      **Verifikasi 2026-08-15**: plumbing `WebhookEvent.PaidAt` betul,
+      satu-satunya tapak binaan (`stripe.go:117`), sampai PDF+emel dengan
+      betul. Dua residual LOW dijumpai — lihat **L27**.
+
+### Audit lanjutan — verifikasi + penemuan baharu (2026-08-15)
+
+Pusingan kedua: Opus disuruh sahkan L16-L20/L22 di atas SEKALI GUS cari
+baharu, dengan arahan eksplisit fix terus HANYA kalau CRITICAL (boleh
+eksploit sekarang, oleh aktor tanpa/rendah keistimewaan, laluan jelas ke
+kebocoran data/eskalasi/kerugian kewangan/auth bypass penuh). Tiada satu
+pun penemuan capai bar tu — L16 (pusingan 2, JPEG) dibaiki terus sebab
+ia HIGH security gap yang jelas walau bawah bar CRITICAL ketat; yang lain
+direkod sahaja.
+
+- [x] **L23 — regresi PATCH activity title/location: byte vs rune count
+      (MEDIUM, DIBAIKI).** `activities.go:918/922` guna `len()` (BAIT)
+      untuk had manual PATCH `optional[T]`, sedangkan POST (`max=200`/
+      `max=300`) guna gin validator yang kira RUNE. Title dicipta via POST
+      dengan 200 aksara Melayu/emoji/CJK (sampai 800 bait) sah — tapi
+      SETIAP `PATCH /activities/:id` seterusnya 400, TERMASUK PATCH yang
+      tak sentuh title langsung (`merge` salin balik `before.Title`).
+      Baris jadi tak boleh di-PATCH selama-lamanya. Ini regresi `aa0e6c5`
+      sendiri, bukan gap lama. Fix: `utf8.RuneCountInString`.
+- [ ] **L24 — medan lain masih tiada had panjang** (di luar skop L17
+      asal): `activityRequest.Description`/`LocationAddress`
+      (`activities.go:526,528`, POST DAN PATCH), `Cancel.Reason`
+      (`activities.go:1053` — **turut disuntik terus ke body push
+      notification yang di-fanout ke setiap pendaftar**,
+      `activities.go:1125`), `revokeCertificateRequest.Reason`
+      (`activity_certificates.go:550`), `markAttendanceRequest.Reason`
+      (`activity_attendance.go:220`).
+- [ ] **L25 — spam notification/push tanpa had melalui comment create**
+      (corak sama L18, terbuka pada laluan berimpak lebih tinggi).
+      `comments.go:99-103` panggil `notifyOwner` pada SETIAP
+      `POST /posts/:id/comments`, route ni **tiada rate limiter**
+      (`router.go:124`). Gelung = harassment bersasar + pertumbuhan
+      `notifications`/`comments` tanpa had. `POST /posts` dan `PATCH /me`
+      turut tak dihad kadar.
+- [ ] **L26 — bucket rate-limit auth kini dikongsi 7 route, IP-only.**
+      `authRateLimiter` (`router.go:69`) satu instance dikongsi
+      register/login/refresh/logout/verify-email (confirm+request), had
+      5 burst/1 setiap 12s, kunci `c.ClientIP()` sahaja. Risiko IP
+      dikongsi (wifi kelab/CGNAT operator): ~20 ahli buka app serentak
+      lepas idle = ~20 refresh serentak dalam satu burst, 15 kena 429
+      daripada bucket yang login turut ambil. **Semak** apa `marc_flutter`
+      buat dengan 429 pada `/auth/refresh` — kalau ia treat macam token
+      tak sah, ini mass forced-logout. `/auth/logout` boleh 429 juga,
+      tinggalkan refresh token hidup. Turut lemahkan andaian L21 (5/min
+      diandaikan khusus untuk enumerasi Register). Cadangan: bucket
+      bernama berasingan (lebih longgar) untuk refresh/logout.
+- [ ] **L27 — dua residual tarikh LOW pada resit donation.**
+      (a) `pi.Created` (`stripe.go:117`) ialah masa PaymentIntent
+      **dicipta**, bukan masa bayar sebenar — untuk DuitNow QR/FPX
+      pembayar mungkin bayar minit kemudian; `LatestCharge.Created` lebih
+      tepat. (b) `donations.go:348` format `paidAt` dalam server-local
+      (UTC) manakala PDF lampiran cetak MYT — badan emel dan lampirannya
+      sendiri kini lari 8 jam.
+
+### Nota reka bentuk keselamatan — yuran pendaftaran ToyyibPay (belum dibina, rujukan awal)
+
+Bukan kelemahan hidup (ciri belum wujud) — direkod SEKARANG supaya tak
+terlepas pandang bila skema/gate sebenar dibina (lihat bahagian Payment
+untuk keputusan produk yang masih terbuka):
+
+- **Status `approved` MESTI tak boleh diberi tanpa bayaran disahkan.**
+  Kalau gate diletak selepas kelulusan management (opsyen dalam bahagian
+  Payment), pastikan tiada laluan (termasuk endpoint pentadbiran sedia
+  ada, `setMemberStatus`/`UpdateMemberRole`) boleh set `status='approved'`
+  terus tanpa semak medan bayaran — atau management akan boleh (secara
+  tak sengaja) meluluskan ahli yang belum bayar melalui laluan lama yang
+  tak tahu pasal syarat baharu ni.
+- **Race: webhook/poll confirm vs proses kelulusan serentak.** Kalau
+  bayaran disahkan (async, poll `getBillTransactions`) SEMASA management
+  tengah proses kelulusan manual pada masa yang sama, pastikan kedua-dua
+  laluan tulis medan bayaran/status dalam transaksi yang kunci baris
+  (padanan pola `LockActivityForRegistration` sedia ada), bukan dua
+  `UPDATE` bebas yang boleh berlumba.
+- **`VerifyWebhook` ToyyibPay buat panggilan rangkaian keluar** (poll
+  `getBillTransactions`, lihat bahagian Payment) — endpoint webhook jadi
+  bergantung latency ToyyibPay sendiri. Pastikan endpoint webhook tetap
+  pulang cepat kepada ToyyibPay (guna goroutine/queue kalau perlu) supaya
+  ToyyibPay tak retry berulang atas timeout, bukan proses segala-galanya
+  synchronous dalam satu request HTTP.
 
 **Informational (bukan kerja tertunggak, tapi corak sama L12):**
 `queries/comments.sql` dan `queries/posts.sql` select `u.email as

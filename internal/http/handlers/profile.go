@@ -649,6 +649,27 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 		return
 	}
 
+	// Gate: pending -> approved MESTI ada bayaran yuran pendaftaran
+	// 'succeeded' (Stage 12, ToyyibPay — lihat TODO.md bahagian Payment).
+	// Ahli sedia ada yang dah approved sebelum ciri ni wujud tak pernah
+	// sampai sini (no-op di atas dah return awal), jadi grandfathered
+	// SECARA AUTOMATIK tanpa perlu semakan "bila akaun dicipta" — hanya
+	// peralihan SEBENAR pending->approved kena gate. RejectMember tak
+	// disentuh — penolakan mesti berfungsi tanpa kira status bayaran.
+	// Diletak SEBELUM tx.Begin sengaja: kalau tak lulus, tiada transaksi
+	// untuk dibuka langsung.
+	if status == "approved" {
+		paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+			return
+		}
+		if !paid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
+			return
+		}
+	}
+
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})

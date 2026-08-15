@@ -345,5 +345,5 @@ func donationReceiptHTML(name, amount, ref string, paidAt time.Time) string {
     </td></tr>
   </table>
 </body>
-</html>`, safeName, amount, ref, paidAt.Format("2 January 2006, 3:04 PM"))
+</html>`, safeName, amount, ref, receipt.FormatDateTime(paidAt))
 }

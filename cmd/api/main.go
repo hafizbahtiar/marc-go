@@ -92,10 +92,24 @@ func main() {
 	onesignalClient := onesignal.NewClient(cfg.OneSignalAppID, cfg.OneSignalAPIKey)
 	pushSvc := push.NewService(sqlc.New(pool), onesignalClient)
 
-	// Payment gateway registry (Stage 12) — tambah ToyyibPay/SociaBuzz
-	// sini bila siap, satu baris setiap satu, tiada perubahan lain.
+	// Payment gateway registry (Stage 12) — tambah SociaBuzz sini bila
+	// siap, satu baris, tiada perubahan lain.
+	//
+	// "toyyibpay" kini diwiring ke RegistrationPaymentHandler (yuran
+	// pendaftaran ahli SEKALI BAYAR — lihat TODO.md bahagian Payment).
+	// Enabled() pulang false sehingga TOYYIBPAY_SECRET_KEY/
+	// TOYYIBPAY_CATEGORY_CODE diisi. callbackURL/returnURL kini route
+	// SEBENAR yang berdaftar dalam router.go (bukan placeholder /dues/...
+	// lagi).
 	paymentGateways := map[string]payment.Gateway{
 		"stripe": payment.NewStripeGateway(cfg.StripeSecretKey, cfg.StripeWebhookSecret),
+		"toyyibpay": payment.NewToyyibPayGateway(
+			cfg.ToyyibPayBaseURL,
+			cfg.ToyyibPaySecretKey,
+			cfg.ToyyibPayCategoryCode,
+			cfg.PublicBaseURL+"/registration-payments/webhook/toyyibpay",
+			cfg.PublicBaseURL+"/registration-payments/return/toyyibpay",
+		),
 	}
 
 	// Pembersih storan (Stage 10 lanjutan) — gambar post yang dipadam dan
@@ -109,7 +123,7 @@ func main() {
 		UploadTombstone: cfg.UploadTombstoneRetention,
 	}, 24*time.Hour).Start(ctx)
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, redisCli)
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

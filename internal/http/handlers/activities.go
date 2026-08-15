@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -523,9 +524,9 @@ func (h *ActivityHandler) buildActivityDetail(
 type activityRequest struct {
 	CategoryID             uuid.UUID `json:"category_id" binding:"required"`
 	Title                  string    `json:"title" binding:"required,max=200"`
-	Description            string    `json:"description"`
+	Description            string    `json:"description" binding:"max=2000"`
 	LocationName           string    `json:"location_name" binding:"required,max=300"`
-	LocationAddress        string    `json:"location_address"`
+	LocationAddress        string    `json:"location_address" binding:"max=500"`
 	RegistrationOpensAt    time.Time `json:"registration_opens_at"`
 	RegistrationClosesAt   time.Time `json:"registration_closes_at" binding:"required"`
 	Capacity               *int32    `json:"capacity"`
@@ -914,13 +915,27 @@ func (h *ActivityHandler) Update(c *gin.Context) {
 	// optional[string] bypasses gin's `binding` validator entirely (custom
 	// UnmarshalJSON, no struct tags for the validator to act on), so the
 	// same length limits enforced on POST (activityRequest) are checked
-	// manually here on the merged output.
-	if len(params.Title) > 200 {
+	// manually here on the merged output. MESTI kira RUNE (utf8.RuneCount),
+	// bukan bait (len()) — go-playground/validator punya `max` pada POST
+	// kira rune. Title 200 aksara Melayu/emoji/CJK boleh sampai 800 bait;
+	// kalau semakan ni guna len() bait, title yang LULUS di POST akan
+	// GAGAL di sini pada SETIAP PATCH akan datang (termasuk PATCH yang tak
+	// sentuh title — `merge` salin balik nilai lama), kunci baris tu
+	// kekal tak boleh di-PATCH selama-lamanya.
+	if utf8.RuneCountInString(params.Title) > 200 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tajuk terlalu panjang (maksimum 200 aksara)"})
 		return
 	}
-	if len(params.LocationName) > 300 {
+	if utf8.RuneCountInString(params.LocationName) > 300 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "nama lokasi terlalu panjang (maksimum 300 aksara)"})
+		return
+	}
+	if utf8.RuneCountInString(params.Description) > 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "keterangan terlalu panjang (maksimum 2000 aksara)"})
+		return
+	}
+	if utf8.RuneCountInString(params.LocationAddress) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "alamat lokasi terlalu panjang (maksimum 500 aksara)"})
 		return
 	}
 
@@ -1050,7 +1065,7 @@ func (h *ActivityHandler) Cancel(c *gin.Context) {
 	}
 
 	var req struct {
-		Reason string `json:"reason" binding:"required"`
+		Reason string `json:"reason" binding:"required,max=500"`
 	}
 	if !bindJSON(c, &req) {
 		return
