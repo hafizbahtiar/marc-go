@@ -440,10 +440,19 @@ hantar terus mesej ralat backend ke `MySnackBar.error`.
   export `disposableemail.IsAllowed`, auth.go semak semula sebelum
   panggil DB. Ujian baharu (`TestIsAllowed`) tutup gap ni.
 
+- [x] **Skrin Flutter DIBINA 2026-08-15** — `lib/features/admin/
+      blocked_email_domains_page.dart` (senarai + tambah/buang, mengikut
+      corak `activity_categories_page.dart`). **Gate dinaikkan ke
+      SUPERADMIN sahaja** (bukan management umum) — permintaan eksplisit
+      pengguna: "superadmin saja ada access untuk root system macam ni".
+      Backend (`requireManagement` → `requireSuperAdmin`,
+      `blocked_email_domains.go`) dan Flutter (kad "Sistem" berasingan
+      drpd "Pengurusan" dalam profile page, gate
+      `isSuperAdminProvider`) dua-dua dikemas kini. `isSuperAdminProvider`
+      DIALIH drpd `payment_providers.dart` ke `profile_providers.dart`
+      (skop am — beberapa ciri root-system perlukan siling yg sama).
+
 **Belum dibuat**:
-- [ ] Flutter: tiada skrin management utk urus `blocked_email_domains`
-      (endpoint backend sedia, tiada UI panggil — kalau perlu, CRUD
-      ringkas boleh cepat, padanan skrin kategori aktiviti).
 - [ ] Semakan cuma pada `/auth/register` — kalau ada laluan cipta akaun
       lain kelak (cth import pukal), kena panggil semakan yg sama.
 
