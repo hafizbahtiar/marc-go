@@ -9,6 +9,135 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Activity struct {
+	ID                     uuid.UUID          `json:"id"`
+	CategoryID             uuid.UUID          `json:"category_id"`
+	Title                  string             `json:"title"`
+	Description            string             `json:"description"`
+	LocationName           string             `json:"location_name"`
+	LocationAddress        string             `json:"location_address"`
+	StartsAt               pgtype.Timestamptz `json:"starts_at"`
+	EndsAt                 pgtype.Timestamptz `json:"ends_at"`
+	RegistrationOpensAt    pgtype.Timestamptz `json:"registration_opens_at"`
+	RegistrationClosesAt   pgtype.Timestamptz `json:"registration_closes_at"`
+	Capacity               pgtype.Int4        `json:"capacity"`
+	FeeCents               int32              `json:"fee_cents"`
+	Currency               string             `json:"currency"`
+	AttendanceThresholdPct int16              `json:"attendance_threshold_pct"`
+	Status                 string             `json:"status"`
+	CancelledReason        pgtype.Text        `json:"cancelled_reason"`
+	CertificatesIssuedAt   pgtype.Timestamptz `json:"certificates_issued_at"`
+	CreatedBy              pgtype.UUID        `json:"created_by"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	ReminderSentAt         pgtype.Timestamptz `json:"reminder_sent_at"`
+}
+
+type ActivityAttendance struct {
+	ID             uuid.UUID          `json:"id"`
+	RegistrationID uuid.UUID          `json:"registration_id"`
+	SessionID      uuid.UUID          `json:"session_id"`
+	Method         string             `json:"method"`
+	MarkedBy       pgtype.UUID        `json:"marked_by"`
+	CheckedInAt    pgtype.Timestamptz `json:"checked_in_at"`
+}
+
+type ActivityCategory struct {
+	ID        uuid.UUID          `json:"id"`
+	Key       string             `json:"key"`
+	Name      string             `json:"name"`
+	SortOrder int32              `json:"sort_order"`
+	IsActive  bool               `json:"is_active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type ActivityCertificate struct {
+	ID            uuid.UUID          `json:"id"`
+	ActivityID    uuid.UUID          `json:"activity_id"`
+	UserID        uuid.UUID          `json:"user_id"`
+	Serial        string             `json:"serial"`
+	VerifyToken   string             `json:"verify_token"`
+	RecipientName string             `json:"recipient_name"`
+	ActivityTitle string             `json:"activity_title"`
+	ActivityDate  pgtype.Date        `json:"activity_date"`
+	IssuedAt      pgtype.Timestamptz `json:"issued_at"`
+	R2Key         pgtype.Text        `json:"r2_key"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason pgtype.Text        `json:"revoked_reason"`
+}
+
+type ActivityRegistration struct {
+	ID            uuid.UUID          `json:"id"`
+	ActivityID    uuid.UUID          `json:"activity_id"`
+	UserID        uuid.UUID          `json:"user_id"`
+	Status        string             `json:"status"`
+	PaymentStatus string             `json:"payment_status"`
+	PaymentRef    pgtype.Text        `json:"payment_ref"`
+	CheckinToken  string             `json:"checkin_token"`
+	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
+	CancelledAt   pgtype.Timestamptz `json:"cancelled_at"`
+	FeeCentsPaid  pgtype.Int4        `json:"fee_cents_paid"`
+}
+
+type ActivitySession struct {
+	ID         uuid.UUID          `json:"id"`
+	ActivityID uuid.UUID          `json:"activity_id"`
+	Seq        int32              `json:"seq"`
+	Title      string             `json:"title"`
+	StartsAt   pgtype.Timestamptz `json:"starts_at"`
+	EndsAt     pgtype.Timestamptz `json:"ends_at"`
+}
+
+type AuditLog struct {
+	ID            int64              `json:"id"`
+	EntityType    string             `json:"entity_type"`
+	EntityID      uuid.UUID          `json:"entity_id"`
+	Action        string             `json:"action"`
+	ActorID       pgtype.UUID        `json:"actor_id"`
+	ActorMemberID pgtype.Text        `json:"actor_member_id"`
+	ActorRoleKey  pgtype.Text        `json:"actor_role_key"`
+	ChangedFields []string           `json:"changed_fields"`
+	OldValues     []byte             `json:"old_values"`
+	NewValues     []byte             `json:"new_values"`
+	IpAddress     pgtype.Text        `json:"ip_address"`
+	UserAgent     pgtype.Text        `json:"user_agent"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type BlockedEmailDomain struct {
+	Domain    string             `json:"domain"`
+	AddedBy   pgtype.UUID        `json:"added_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type Comment struct {
+	ID              uuid.UUID          `json:"id"`
+	PostID          uuid.UUID          `json:"post_id"`
+	ParentCommentID pgtype.UUID        `json:"parent_comment_id"`
+	AuthorID        uuid.UUID          `json:"author_id"`
+	Content         string             `json:"content"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	EditedAt        pgtype.Timestamptz `json:"edited_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type CommentLike struct {
+	CommentID uuid.UUID          `json:"comment_id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type DeletedUpload struct {
+	R2Key         string             `json:"r2_key"`
+	Reason        string             `json:"reason"`
+	Attempts      int32              `json:"attempts"`
+	LastError     pgtype.Text        `json:"last_error"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type DeviceToken struct {
 	ID          uuid.UUID          `json:"id"`
 	UserID      uuid.UUID          `json:"user_id"`
@@ -18,11 +147,81 @@ type DeviceToken struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Donation struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	DonorName   pgtype.Text        `json:"donor_name"`
+	DonorEmail  pgtype.Text        `json:"donor_email"`
+	AmountCents int32              `json:"amount_cents"`
+	Currency    string             `json:"currency"`
+	Gateway     string             `json:"gateway"`
+	GatewayRef  string             `json:"gateway_ref"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type EmailVerificationToken struct {
 	ID        uuid.UUID          `json:"id"`
 	UserID    uuid.UUID          `json:"user_id"`
 	TokenHash string             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type Notification struct {
+	ID            uuid.UUID          `json:"id"`
+	RecipientID   uuid.UUID          `json:"recipient_id"`
+	ActorID       uuid.UUID          `json:"actor_id"`
+	Type          string             `json:"type"`
+	PostID        pgtype.UUID        `json:"post_id"`
+	CommentID     pgtype.UUID        `json:"comment_id"`
+	ReadAt        pgtype.Timestamptz `json:"read_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ActivityID    pgtype.UUID        `json:"activity_id"`
+	CertificateID pgtype.UUID        `json:"certificate_id"`
+}
+
+type PaymentLog struct {
+	ID          int64              `json:"id"`
+	Module      string             `json:"module"`
+	Event       string             `json:"event"`
+	Status      string             `json:"status"`
+	Gateway     string             `json:"gateway"`
+	GatewayRef  pgtype.Text        `json:"gateway_ref"`
+	AmountCents pgtype.Int4        `json:"amount_cents"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	RelatedID   pgtype.UUID        `json:"related_id"`
+	Message     pgtype.Text        `json:"message"`
+	RawPayload  pgtype.Text        `json:"raw_payload"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type PendingUpload struct {
+	R2Key     string             `json:"r2_key"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type Post struct {
+	ID        uuid.UUID          `json:"id"`
+	AuthorID  uuid.UUID          `json:"author_id"`
+	Type      string             `json:"type"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	EditedAt  pgtype.Timestamptz `json:"edited_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type PostImage struct {
+	ID       uuid.UUID `json:"id"`
+	PostID   uuid.UUID `json:"post_id"`
+	R2Key    string    `json:"r2_key"`
+	Position int16     `json:"position"`
+}
+
+type PostLike struct {
+	PostID    uuid.UUID          `json:"post_id"`
+	UserID    uuid.UUID          `json:"user_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -35,14 +234,31 @@ type Profile struct {
 	RoleID        int16              `json:"role_id"`
 	EmailVerified bool               `json:"email_verified"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Status        string             `json:"status"`
+	ApprovedBy    pgtype.UUID        `json:"approved_by"`
+	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key   pgtype.Text        `json:"avatar_r2_key"`
 }
 
 type RefreshToken struct {
-	ID        uuid.UUID          `json:"id"`
-	UserID    uuid.UUID          `json:"user_id"`
-	TokenHash string             `json:"token_hash"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID         uuid.UUID          `json:"id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	TokenHash  string             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	FamilyID   uuid.UUID          `json:"family_id"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+}
+
+type RegistrationPayment struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	AmountCents int32              `json:"amount_cents"`
+	Currency    string             `json:"currency"`
+	Gateway     string             `json:"gateway"`
+	GatewayRef  string             `json:"gateway_ref"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type Role struct {

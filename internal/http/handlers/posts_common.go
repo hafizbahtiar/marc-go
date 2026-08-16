@@ -1,0 +1,282 @@
+package handlers
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"marc/internal/authz"
+	"marc/internal/db/sqlc"
+	"marc/internal/push"
+	"marc/internal/storage"
+)
+
+const defaultPageLimit = 20
+
+type authorResponse struct {
+	MemberID    string  `json:"member_id"`
+	DisplayName *string `json:"display_name"`
+
+	// Disertakan dalam SETIAP post/comment supaya feed tak perlu N+1
+	// lookup semata-mata untuk melukis avatar. null = tiada gambar.
+	AvatarURL *string `json:"avatar_url"`
+}
+
+type postResponse struct {
+	ID           string         `json:"id"`
+	Type         string         `json:"type"`
+	Content      string         `json:"content"`
+	CreatedAt    string         `json:"created_at"`
+	EditedAt     *string        `json:"edited_at"`
+	Author       authorResponse `json:"author"`
+	Images       []string       `json:"images"`
+	LikeCount    int64          `json:"like_count"`
+	CommentCount int64          `json:"comment_count"`
+	LikedByMe    bool           `json:"liked_by_me"`
+}
+
+type commentResponse struct {
+	ID              string         `json:"id"`
+	ParentCommentID *string        `json:"parent_comment_id"`
+	Content         string         `json:"content"`
+	CreatedAt       string         `json:"created_at"`
+	EditedAt        *string        `json:"edited_at"`
+	Author          authorResponse `json:"author"`
+	LikeCount       int64          `json:"like_count"`
+	LikedByMe       bool           `json:"liked_by_me"`
+}
+
+// avatarURLFor bina URL awam avatar penulis, atau nil. Dikongsi oleh
+// laluan post dan comment supaya ketiga-tiga tapak tak berbeza cara.
+func avatarURLFor(ctx context.Context, r2 *storage.R2Client, key pgtype.Text) *string {
+	if !key.Valid || key.String == "" {
+		return nil
+	}
+	url := r2.SignedURL(ctx, key.String)
+	if url == "" {
+		return nil
+	}
+	return &url
+}
+
+func formatTime(t pgtype.Timestamptz) string {
+	return t.Time.Format(time.RFC3339)
+}
+
+func formatTimeNullable(t pgtype.Timestamptz) *string {
+	if !t.Valid {
+		return nil
+	}
+	s := t.Time.Format(time.RFC3339)
+	return &s
+}
+
+func nullableUUIDString(id pgtype.UUID) *string {
+	if !id.Valid {
+		return nil
+	}
+	s := uuid.UUID(id.Bytes).String()
+	return &s
+}
+
+// encodeCursor/decodeCursor — keyset pagination cursor atas (created_at,
+// id), format "<rfc3339nano>|<uuid>". Client (Flutter) rawat cursor ni
+// sebagai opaque string (simpan & echo balik je), so format dalaman boleh
+// tukar bila-bila tanpa perlu ubah frontend.
+func encodeCursor(t time.Time, id uuid.UUID) string {
+	return t.Format(time.RFC3339Nano) + "|" + id.String()
+}
+
+func decodeCursor(s string) (time.Time, uuid.UUID, error) {
+	idx := strings.LastIndex(s, "|")
+	if idx < 0 {
+		return time.Time{}, uuid.UUID{}, fmt.Errorf("cursor tidak sah")
+	}
+	t, err := time.Parse(time.RFC3339Nano, s[:idx])
+	if err != nil {
+		return time.Time{}, uuid.UUID{}, err
+	}
+	id, err := uuid.Parse(s[idx+1:])
+	if err != nil {
+		return time.Time{}, uuid.UUID{}, err
+	}
+	return t, id, nil
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+}
+
+// canModify — pattern ownership (Stage 3) + moderation (Stage 10): pemilik
+// resource sendiri, ATAU management, boleh edit/padam.
+func canModify(ctx context.Context, q *sqlc.Queries, userID, resourceAuthorID uuid.UUID) (bool, error) {
+	if userID == resourceAuthorID {
+		return true, nil
+	}
+	return authz.IsManagement(ctx, q, userID)
+}
+
+// notifyOwner rekod notification dalam DB + hantar push, untuk like/comment
+// pada content sendiri (bukan self-notify kalau actor == recipient — cth
+// like post sendiri). Kegagalan sini tak patut gagalkan request utama
+// (like/comment dah berjaya di DB), so cuma log.
+func notifyOwner(
+	ctx context.Context,
+	q *sqlc.Queries,
+	pushSvc *push.Service,
+	recipientID, actorID uuid.UUID,
+	notifType string,
+	postID pgtype.UUID,
+	commentID pgtype.UUID,
+	title, message string,
+) {
+	if recipientID == actorID {
+		return
+	}
+
+	if _, err := q.CreateNotification(ctx, sqlc.CreateNotificationParams{
+		RecipientID: recipientID,
+		ActorID:     actorID,
+		Type:        notifType,
+		PostID:      postID,
+		CommentID:   commentID,
+	}); err != nil {
+		log.Printf("gagal cipta notification: %v", err)
+	}
+
+	if err := pushSvc.NotifyUser(ctx, recipientID, title, message); err != nil {
+		log.Printf("gagal hantar push notification: %v", err)
+	}
+}
+
+// postCore — field sepunya antara GetPostByIDRow dan ListPostsRow (dua
+// sqlc row type berlainan tapi shape sama), supaya buildPostResponses
+// boleh kongsi logic untuk single post & list.
+type postCore struct {
+	ID                uuid.UUID
+	AuthorID          uuid.UUID
+	Type              string
+	Content           string
+	CreatedAt         pgtype.Timestamptz
+	EditedAt          pgtype.Timestamptz
+	AuthorMemberID    string
+	AuthorDisplayName pgtype.Text
+	AuthorAvatarR2Key pgtype.Text
+}
+
+func coreFromGetPostByIDRow(r sqlc.GetPostByIDRow) postCore {
+	return postCore{
+		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
+		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
+		AuthorMemberID: r.AuthorMemberID, AuthorDisplayName: r.AuthorDisplayName,
+		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
+	}
+}
+
+func coreFromListPostsRow(r sqlc.ListPostsRow) postCore {
+	return postCore{
+		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
+		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
+		AuthorMemberID: r.AuthorMemberID, AuthorDisplayName: r.AuthorDisplayName,
+		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
+	}
+}
+
+// buildPostResponses batch semua data tambahan (like count, comment count,
+// liked-by-me, images) untuk senarai post sekali gus — elak N+1 query.
+func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID, cores []postCore) ([]postResponse, error) {
+	if len(cores) == 0 {
+		return []postResponse{}, nil
+	}
+
+	postIDs := make([]uuid.UUID, len(cores))
+	for i, c := range cores {
+		postIDs[i] = c.ID
+	}
+
+	likeCounts, err := h.queries.CountPostLikesByPostIDs(ctx, postIDs)
+	if err != nil {
+		return nil, err
+	}
+	likeCountByPost := make(map[uuid.UUID]int64, len(likeCounts))
+	for _, lc := range likeCounts {
+		likeCountByPost[lc.PostID] = lc.LikeCount
+	}
+
+	commentCounts, err := h.queries.CountCommentsByPostIDs(ctx, postIDs)
+	if err != nil {
+		return nil, err
+	}
+	commentCountByPost := make(map[uuid.UUID]int64, len(commentCounts))
+	for _, cc := range commentCounts {
+		commentCountByPost[cc.PostID] = cc.CommentCount
+	}
+
+	likedPostIDs, err := h.queries.PostsLikedByUser(ctx, sqlc.PostsLikedByUserParams{
+		UserID: viewerID, PostIds: postIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	likedByMe := make(map[uuid.UUID]bool, len(likedPostIDs))
+	for _, id := range likedPostIDs {
+		likedByMe[id] = true
+	}
+
+	images, err := h.queries.ListPostImagesByPostIDs(ctx, postIDs)
+	if err != nil {
+		return nil, err
+	}
+	imagesByPost := make(map[uuid.UUID][]string)
+	for _, img := range images {
+		url := h.r2.SignedURL(ctx, img.R2Key)
+		if url == "" {
+			// R2 tak dikonfigur atau penandatanganan gagal. Langkau,
+			// jangan hantar "" kepada client: string kosong cuma jadi
+			// kotak "broken image" dan menyembunyikan fakta bahawa ini
+			// masalah konfigurasi, bukan gambar rosak.
+			log.Printf("gagal tandatangan URL gambar %s", img.R2Key)
+			continue
+		}
+		imagesByPost[img.PostID] = append(imagesByPost[img.PostID], url)
+	}
+
+	responses := make([]postResponse, len(cores))
+	for i, c := range cores {
+		var displayName *string
+		if c.AuthorDisplayName.Valid {
+			s := c.AuthorDisplayName.String
+			displayName = &s
+		}
+		images := imagesByPost[c.ID]
+		if images == nil {
+			images = []string{}
+		}
+		responses[i] = postResponse{
+			ID:        c.ID.String(),
+			Type:      c.Type,
+			Content:   c.Content,
+			CreatedAt: formatTime(c.CreatedAt),
+			EditedAt:  formatTimeNullable(c.EditedAt),
+			Author: authorResponse{
+				MemberID:    c.AuthorMemberID,
+				DisplayName: displayName,
+				AvatarURL:   avatarURLFor(ctx, h.r2, c.AuthorAvatarR2Key),
+			},
+			Images:       images,
+			LikeCount:    likeCountByPost[c.ID],
+			CommentCount: commentCountByPost[c.ID],
+			LikedByMe:    likedByMe[c.ID],
+		}
+	}
+
+	return responses, nil
+}

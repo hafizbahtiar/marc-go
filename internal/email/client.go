@@ -6,6 +6,7 @@ package email
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -42,20 +43,47 @@ func (c *Client) Enabled() bool {
 	return c.apiKey != "" && c.from != ""
 }
 
+// Attachment — fail dilampirkan pada emel (cth PDF resit donation).
+// Resend terima kandungan sebagai base64 dlm body JSON (bukan
+// multipart) — `resendAttachment.Content` bawah handle encoding tu.
+type Attachment struct {
+	Filename string
+	Content  []byte
+}
+
+type resendAttachment struct {
+	Filename string `json:"filename"`
+	Content  string `json:"content"` // base64
+}
+
 type sendPayload struct {
-	From    string   `json:"from"`
-	To      []string `json:"to"`
-	Subject string   `json:"subject"`
-	HTML    string   `json:"html"`
+	From        string             `json:"from"`
+	To          []string           `json:"to"`
+	Subject     string             `json:"subject"`
+	HTML        string             `json:"html"`
+	Attachments []resendAttachment `json:"attachments,omitempty"`
 }
 
 // Send hantar satu email HTML kepada satu penerima.
 func (c *Client) Send(ctx context.Context, to, subject, html string) error {
+	return c.SendWithAttachments(ctx, to, subject, html, nil)
+}
+
+// SendWithAttachments — sama macam Send, tapi boleh lampir fail (cth
+// PDF resit). Attachments kosong/nil = sama perilaku dgn Send biasa.
+func (c *Client) SendWithAttachments(ctx context.Context, to, subject, html string, attachments []Attachment) error {
 	if !c.Enabled() {
 		return nil
 	}
 
 	payload := sendPayload{From: c.from, To: []string{to}, Subject: subject, HTML: html}
+	for _, a := range attachments {
+		payload.Attachments = append(payload.Attachments, resendAttachment{
+			Filename: a.Filename,
+			Content:  base64.StdEncoding.EncodeToString(a.Content),
+		})
+	}
+
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("encode payload: %w", err)

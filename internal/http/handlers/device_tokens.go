@@ -20,25 +20,31 @@ func NewDeviceTokenHandler(pool *pgxpool.Pool) *DeviceTokenHandler {
 }
 
 type upsertDeviceTokenRequest struct {
-	OnesignalID string `json:"onesignal_id" binding:"required"`
+	OnesignalID string `json:"onesignal_id" binding:"required,max=200"`
 	Platform    string `json:"platform"`
 }
 
 // Upsert setara RPC `upsert_device_token` — daftar/kemas kini push
-// subscription id peranti untuk user semasa.
+// subscription id peranti untuk user semasa. Kalau onesignal_id ni dah
+// wujud dan kepunyaan USER LAIN, tolak (409) — elak hijack push
+// notification orang lain dengan cuma tahu onesignal_id mereka.
 func (h *DeviceTokenHandler) Upsert(c *gin.Context) {
 	var req upsertDeviceTokenRequest
 	if !bindJSON(c, &req) {
 		return
 	}
 
-	err := h.queries.UpsertDeviceToken(c.Request.Context(), sqlc.UpsertDeviceTokenParams{
+	rows, err := h.queries.UpsertDeviceToken(c.Request.Context(), sqlc.UpsertDeviceTokenParams{
 		UserID:      middleware.UserID(c),
 		OnesignalID: req.OnesignalID,
 		Platform:    ptrToText(req.Platform),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal simpan device token"})
+		return
+	}
+	if rows == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "peranti ini sudah didaftarkan pada akaun lain"})
 		return
 	}
 
@@ -57,6 +63,28 @@ func (h *DeviceTokenHandler) Delete(c *gin.Context) {
 	if err := h.queries.DeleteDeviceToken(c.Request.Context(), sqlc.DeleteDeviceTokenParams{
 		ID:     id,
 		UserID: middleware.UserID(c),
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal buang device token"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// DeleteByOnesignalID — sama macam Delete, tapi discope guna onesignal_id
+// (bukan row id Postgres). Dipakai waktu logout: Flutter tahu
+// `OneSignal.User.pushSubscription.id` terus dari SDK, tak perlu simpan/
+// query row id balik daripada POST /device-tokens (yang cuma pulang 204).
+func (h *DeviceTokenHandler) DeleteByOnesignalID(c *gin.Context) {
+	onesignalID := c.Param("onesignalId")
+	if onesignalID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "onesignal id diperlukan"})
+		return
+	}
+
+	if err := h.queries.DeleteDeviceTokenByOnesignalID(c.Request.Context(), sqlc.DeleteDeviceTokenByOnesignalIDParams{
+		OnesignalID: onesignalID,
+		UserID:      middleware.UserID(c),
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal buang device token"})
 		return

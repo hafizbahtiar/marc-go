@@ -12,20 +12,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createProfile = `-- name: CreateProfile :one
-insert into profiles (user_id, member_id, role_id)
-values ($1, $2, $3)
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at
+const approveProfile = `-- name: ApproveProfile :one
+update profiles
+set status = 'approved', approved_by = $2, approved_at = now()
+where user_id = $1 and status <> 'approved'
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
 `
 
-type CreateProfileParams struct {
-	UserID   uuid.UUID `json:"user_id"`
-	MemberID string    `json:"member_id"`
-	RoleID   int16     `json:"role_id"`
+type ApproveProfileParams struct {
+	UserID     uuid.UUID   `json:"user_id"`
+	ApprovedBy pgtype.UUID `json:"approved_by"`
 }
 
-func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, createProfile, arg.UserID, arg.MemberID, arg.RoleID)
+func (q *Queries) ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, approveProfile, arg.UserID, arg.ApprovedBy)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
@@ -36,17 +36,71 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.RoleID,
 		&i.EmailVerified,
 		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
 	)
 	return i, err
 }
 
+const createProfile = `-- name: CreateProfile :one
+insert into profiles (user_id, member_id, role_id, phone)
+values ($1, $2, $3, $4)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+`
+
+type CreateProfileParams struct {
+	UserID   uuid.UUID   `json:"user_id"`
+	MemberID string      `json:"member_id"`
+	RoleID   int16       `json:"role_id"`
+	Phone    pgtype.Text `json:"phone"`
+}
+
+func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, createProfile,
+		arg.UserID,
+		arg.MemberID,
+		arg.RoleID,
+		arg.Phone,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
+	)
+	return i, err
+}
+
+const getEmailVerifiedByUserID = `-- name: GetEmailVerifiedByUserID :one
+select email_verified from profiles where user_id = $1
+`
+
+func (q *Queries) GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getEmailVerifiedByUserID, userID)
+	var email_verified bool
+	err := row.Scan(&email_verified)
+	return email_verified, err
+}
+
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
-  r.category as role_category
+  r.category as role_category,
+  r.rank as role_rank
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
@@ -62,10 +116,15 @@ type GetProfileByUserIDRow struct {
 	RoleID        int16              `json:"role_id"`
 	EmailVerified bool               `json:"email_verified"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Status        string             `json:"status"`
+	ApprovedBy    pgtype.UUID        `json:"approved_by"`
+	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key   pgtype.Text        `json:"avatar_r2_key"`
 	Email         string             `json:"email"`
 	RoleKey       string             `json:"role_key"`
 	RoleName      string             `json:"role_name"`
 	RoleCategory  string             `json:"role_category"`
+	RoleRank      int32              `json:"role_rank"`
 }
 
 func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error) {
@@ -80,10 +139,15 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (Get
 		&i.RoleID,
 		&i.EmailVerified,
 		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
 		&i.Email,
 		&i.RoleKey,
 		&i.RoleName,
 		&i.RoleCategory,
+		&i.RoleRank,
 	)
 	return i, err
 }
@@ -102,40 +166,178 @@ func (q *Queries) GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID)
 	return category, err
 }
 
-const listProfiles = `-- name: ListProfiles :many
-select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at,
-  r.key as role_key,
-  r.name as role_name,
-  r.category as role_category
+const getRoleKeyByUserID = `-- name: GetRoleKeyByUserID :one
+select r.key
 from profiles p
 join roles r on r.id = p.role_id
-order by p.member_id
+where p.user_id = $1
 `
 
-type ListProfilesRow struct {
-	ID            uuid.UUID          `json:"id"`
-	UserID        uuid.UUID          `json:"user_id"`
-	MemberID      string             `json:"member_id"`
-	DisplayName   pgtype.Text        `json:"display_name"`
-	Phone         pgtype.Text        `json:"phone"`
-	RoleID        int16              `json:"role_id"`
-	EmailVerified bool               `json:"email_verified"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	RoleKey       string             `json:"role_key"`
-	RoleName      string             `json:"role_name"`
-	RoleCategory  string             `json:"role_category"`
+// Utk semakan berasaskan role SPESIFIK (bukan kategori umum) — cth
+// middleware.BlockTesterWrites, yang perlu tahu role 'tester' tepat
+// (category 'ahli' sengaja sama dengan ahli biasa, jadi
+// GetRoleCategoryByUserID tak boleh bezakan dua-dua).
+func (q *Queries) GetRoleKeyByUserID(ctx context.Context, userID uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getRoleKeyByUserID, userID)
+	var key string
+	err := row.Scan(&key)
+	return key, err
 }
 
-func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
-	rows, err := q.db.Query(ctx, listProfiles)
+const getStatusByUserID = `-- name: GetStatusByUserID :one
+select status from profiles where user_id = $1
+`
+
+func (q *Queries) GetStatusByUserID(ctx context.Context, userID uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getStatusByUserID, userID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const listApprovedUserIDs = `-- name: ListApprovedUserIDs :many
+select user_id from profiles where status = 'approved'
+`
+
+// Penerima siaran seluruh kelab (cth aktiviti baharu diterbitkan).
+func (q *Queries) ListApprovedUserIDs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listApprovedUserIDs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListProfilesRow
+	var items []uuid.UUID
 	for rows.Next() {
-		var i ListProfilesRow
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listManagementUserIDs = `-- name: ListManagementUserIDs :many
+select p.user_id
+from profiles p
+join roles r on r.id = p.role_id
+where r.category = $1
+`
+
+func (q *Queries) ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listManagementUserIDs, category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisibleProfiles = `-- name: ListVisibleProfiles :many
+select
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key,
+  u.email as email,
+  r.key as role_key,
+  r.name as role_name,
+  r.category as role_category,
+  r.rank as role_rank,
+  -- Status bayaran yuran pendaftaran TERKINI (utamakan 'succeeded' —
+  -- padanan ` + "`" + `GetLatestRegistrationPaymentStatus` + "`" + `, sebab sama: checkout
+  -- berulang boleh cipta >1 baris). String KOSONG = ahli tak pernah
+  -- cuba bayar (coalesce, BUKAN NULL — sqlc infer tak konsisten
+  -- nullability keputusan LEFT JOIN LATERAL, string kosong lebih
+  -- selamat drpd risiko crash scan NULL->string). Ditambah 2026-08-15
+  -- supaya management NAMPAK siapa dah bayar SEBELUM tekan Luluskan,
+  -- bukan dapat ralat lepas fakta (gate ` + "`" + `ApproveMember` + "`" + ` sedia ada sejak
+  -- awal, cuma tak kelihatan di sini).
+  coalesce(latest_payment.status, '') as registration_payment_status
+from profiles p
+join users u on u.id = p.user_id
+join roles r on r.id = p.role_id
+left join lateral (
+  select rp.status
+  from registration_payments rp
+  where rp.user_id = p.user_id
+  order by (rp.status = 'succeeded') desc, rp.created_at desc
+  limit 1
+) latest_payment on true
+where r.rank <= $1::int
+  and ($2::text is null or p.status = $2::text)
+  and (
+    $3::boolean
+    or p.status = 'approved'
+    or p.user_id = $4
+  )
+order by p.member_id
+`
+
+type ListVisibleProfilesParams struct {
+	MaxRank            int32       `json:"max_rank"`
+	Status             pgtype.Text `json:"status"`
+	IncludeAllStatuses bool        `json:"include_all_statuses"`
+	ViewerID           uuid.UUID   `json:"viewer_id"`
+}
+
+type ListVisibleProfilesRow struct {
+	ID                        uuid.UUID          `json:"id"`
+	UserID                    uuid.UUID          `json:"user_id"`
+	MemberID                  string             `json:"member_id"`
+	DisplayName               pgtype.Text        `json:"display_name"`
+	Phone                     pgtype.Text        `json:"phone"`
+	RoleID                    int16              `json:"role_id"`
+	EmailVerified             bool               `json:"email_verified"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	Status                    string             `json:"status"`
+	ApprovedBy                pgtype.UUID        `json:"approved_by"`
+	ApprovedAt                pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key               pgtype.Text        `json:"avatar_r2_key"`
+	Email                     string             `json:"email"`
+	RoleKey                   string             `json:"role_key"`
+	RoleName                  string             `json:"role_name"`
+	RoleCategory              string             `json:"role_category"`
+	RoleRank                  int32              `json:"role_rank"`
+	RegistrationPaymentStatus string             `json:"registration_payment_status"`
+}
+
+// Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
+// dibuat di peringkat SQL (bukan dalam Go) supaya baris yang viewer tak
+// layak tengok tak pernah pun keluar dari DB:
+//
+//	max_rank             — siling hierarki keterlihatan; lihat
+//	                       `visibleRankCeiling` di handlers/profile.go
+//	status               — penapis pilihan (cth 'pending' utk barisan
+//	                       kelulusan management)
+//	include_all_statuses — management sahaja. Ahli biasa cuma nampak ahli
+//	                       berstatus 'approved' (+ baris dia sendiri,
+//	                       apa pun statusnya)
+func (q *Queries) ListVisibleProfiles(ctx context.Context, arg ListVisibleProfilesParams) ([]ListVisibleProfilesRow, error) {
+	rows, err := q.db.Query(ctx, listVisibleProfiles,
+		arg.MaxRank,
+		arg.Status,
+		arg.IncludeAllStatuses,
+		arg.ViewerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVisibleProfilesRow
+	for rows.Next() {
+		var i ListVisibleProfilesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -145,9 +347,16 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]ListProfilesRow, error) {
 			&i.RoleID,
 			&i.EmailVerified,
 			&i.CreatedAt,
+			&i.Status,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.AvatarR2Key,
+			&i.Email,
 			&i.RoleKey,
 			&i.RoleName,
 			&i.RoleCategory,
+			&i.RoleRank,
+			&i.RegistrationPaymentStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -168,11 +377,45 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
 	return err
 }
 
+const rejectProfile = `-- name: RejectProfile :one
+update profiles
+set status = 'rejected', approved_by = $2, approved_at = now()
+where user_id = $1 and status <> 'rejected'
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+`
+
+type RejectProfileParams struct {
+	UserID     uuid.UUID   `json:"user_id"`
+	ApprovedBy pgtype.UUID `json:"approved_by"`
+}
+
+func (q *Queries) RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, rejectProfile, arg.UserID, arg.ApprovedBy)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
+	)
+	return i, err
+}
+
 const updateProfile = `-- name: UpdateProfile :one
 update profiles
-set display_name = $2, phone = $3
+set
+  display_name = coalesce($2::text, display_name),
+  phone = coalesce($3::text, phone)
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
 `
 
 type UpdateProfileParams struct {
@@ -193,6 +436,73 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		&i.RoleID,
 		&i.EmailVerified,
 		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
+	)
+	return i, err
+}
+
+const updateProfileAvatar = `-- name: UpdateProfileAvatar :one
+update profiles set avatar_r2_key = $2::text
+where user_id = $1
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+`
+
+type UpdateProfileAvatarParams struct {
+	UserID      uuid.UUID   `json:"user_id"`
+	AvatarR2Key pgtype.Text `json:"avatar_r2_key"`
+}
+
+func (q *Queries) UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvatarParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, updateProfileAvatar, arg.UserID, arg.AvatarR2Key)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
+	)
+	return i, err
+}
+
+const updateProfileRole = `-- name: UpdateProfileRole :one
+update profiles
+set role_id = $2
+where user_id = $1
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+`
+
+type UpdateProfileRoleParams struct {
+	UserID uuid.UUID `json:"user_id"`
+	RoleID int16     `json:"role_id"`
+}
+
+func (q *Queries) UpdateProfileRole(ctx context.Context, arg UpdateProfileRoleParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, updateProfileRole, arg.UserID, arg.RoleID)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
 	)
 	return i, err
 }

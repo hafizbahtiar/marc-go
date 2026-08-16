@@ -171,18 +171,89 @@ di-generate sebagai `github.com/google/uuid.UUID` (bukan default
 
 ## Schema semasa
 
+### Identiti & akses
+
 | Table | Tujuan |
 |---|---|
-| `users` | akaun (email, password_hash) — gantian `auth.users` Supabase |
-| `roles` | `ahli`/`supervisor`/`manager`/`superadmin`, kategori `ahli`/`management` |
-| `profiles` | member_id (`MARC{YYYY}/{MM}/{0000}`), display_name, phone, role_id, email_verified |
-| `device_tokens` | OneSignal subscription id per user (push notification) |
-| `sequences` | counter generic — dipakai jana `member_id` atomic |
-| `refresh_tokens` | hash refresh token (single-use, dipadam lepas consume) |
-| `email_verification_tokens` | hash token pengesahan email (TTL 1 jam) |
+| `users` | akaun (email lowercase-unique, password_hash) |
+| `roles` | `ahli`(10)/`supervisor`(50)/`manager`(60)/`superadmin`(100); lajur `rank` yang memacu keterlihatan & hierarki edit |
+| `profiles` | member_id (`MARC{YYYY}/{MM}/{0000}`), display_name, phone, role_id, email_verified, status (`pending`/`approved`/`rejected`), approved_by/at |
+| `sequences` | counter generic — jana `member_id` secara atomic |
+| `refresh_tokens` | SHA-256 hash + family_id (single-use, dipadam bila consume) |
+| `email_verification_tokens` | hash token pengesahan (TTL 1 jam) |
+| `device_tokens` | OneSignal subscription id per user |
 
-Migration penuh (order): `internal/db/migrations/2026...sql` — baca terus
-kalau nak schema DDL tepat.
+### Kandungan
+
+| Table | Tujuan |
+|---|---|
+| `posts` | type (`normal`/`announcement`), content, edited_at, **deleted_at (soft delete)** |
+| `post_images` | r2_key + position (maks 4 setiap post) |
+| `post_likes` | PK komposit (post_id, user_id) — toggle |
+| `comments` | parent_comment_id (depth di-cap 2), edited_at, deleted_at |
+| `comment_likes` | PK komposit (comment_id, user_id) |
+| `notifications` | recipient/actor/type, read_at |
+
+### Upload & storan
+
+| Table | Tujuan |
+|---|---|
+| `pending_uploads` | kunci R2 yang dah dipresign tapi belum dilekatkan pada post. Disapu pada 6 jam (karangan ditinggalkan) |
+| `deleted_uploads` | gilir padam R2 dengan backoff. `deleted_at` ialah **batu nisan**, bukan padam baris — tanpanya penyapu yatim menggilir semula kunci yang sama selamanya |
+
+### Aktiviti
+
+| Table | Tujuan |
+|---|---|
+| `activity_categories` | key/name/sort_order/is_active. Di-seed dalam migration (badminton, futsal, bola tampar, larian, ping pong, lain-lain) mengikut corak `seed_roles` |
+| `activities` | tajuk, lokasi, tetingkap pendaftaran, capacity, `fee_cents`+`currency`, `attendance_threshold_pct`, status (`draft`/`published`/`cancelled`/`completed`), `certificates_issued_at`, **deleted_at (soft delete)**. `category_id` ialah `on delete restrict` |
+| `activity_sessions` | satu baris per sesi; `seq` unik dalam aktiviti, `check (ends_at > starts_at)`. **Sumber kebenaran** bagi tetingkap masa aktiviti |
+| `activity_registrations` | status (`pending_payment`/`registered`/`cancelled`), `payment_status`+`payment_ref` (cangkuk payment, belum disambung), `checkin_token` unik. Indeks unik **separa** atas `(activity_id, user_id) where status <> 'cancelled'` — halang pendaftaran berganda tapi benarkan daftar semula selepas batal |
+| `activity_attendances` | `(registration_id, session_id)` unik. `method` ∈ `manual`/`scan`/`self_scan`/`code` — keempat-empatnya hasilkan baris yang SAMA, hanya `method` + `marked_by` berbeza, jadi menambah kaedah nanti tidak perlukan migration (hanya `manual` dan `scan` ada pelaksanaan). **Bukan bermakna ia murah**: `self_scan` perlukan `checkin_token` BERPUTAR di sisi pelayan — lihat `TODO.md`, bahagian Modul Aktiviti |
+| `activity_certificates` | `serial` unik + `verify_token` unik **berasingan** (serial berjujukan; kalau ia juga kunci pengesahan awam, sesiapa boleh tambah satu dan menuai nama semua ahli). `recipient_name`/`activity_title`/`activity_date` ialah **snapshot** — PDF tak berubah selepas dijana, jadi halaman pengesahan mesti menunjukkan apa yang TERCETAK. `activity_id` `on delete restrict`. Unik `(activity_id, user_id)` |
+
+Dua migration `notifications` datang bersama modul ni:
+
+| Migration | Kesan |
+|---|---|
+| `20260810100600_widen_notifications_activity` | luaskan `notifications_type_check` dengan `activity_published`, `activity_cancelled`, `certificate_ready`. Down akan **gagal** kalau baris jenis baharu sudah wujud — sama seperti `20260807120100`, dijangka untuk rollback dev |
+| `20260810100700_add_notifications_activity_links` | tambah `activity_id` + `certificate_id` (nullable, `on delete cascade`). Tanpanya notifikasi aktiviti ialah satu-satunya jenis yang tak boleh diketuk — setiap jenis lain deep-link melalui `post_id` |
+
+#### Invarian: `activities.starts_at`/`ends_at` DIDENORMALISASI
+
+**Sesi ialah sumber kebenaran.** Dua lajur itu ialah `min(starts_at)` dan
+`max(ends_at)` bagi `activity_sessions` aktiviti berkenaan, dikira semula
+oleh `RecomputeActivityWindow` **dalam transaksi yang sama** dengan
+sebarang perubahan set sesi (`ReplaceActivitySessions`, dan juga laluan
+cipta — ada DUA penulis kepada invarian ni). Sebab denormalisasi: senarai
+aktiviti perlu isih dan tapis ikut tarikh menggunakan indeks, dan `min()`
+atas join pada setiap senarai terlalu mahal.
+
+**Perangkap:** `RecomputeActivityWindow` ada guard `min_start is not null`,
+jadi set sesi **kosong** meninggalkan tetingkap lama sebagai nilai basi
+**tanpa ralat** — ia gagal senyap. Itulah sebabnya handler menolak senarai
+sesi kosong pada peringkat permintaan. Kalau kau menambah laluan tulis
+sesi yang baharu, laluan itu mesti menolak set kosong juga; DB tidak akan
+menangkapnya untuk kau.
+
+Nota berkaitan: tiada `check (ends_at >= starts_at)` pada `activities`
+(sengaja — lajurnya didenormalisasi dan dijaga app), walaupun
+`activity_sessions` ADA check itu. Tiada juga check `currency = 'MYR'`.
+
+### Duit & jejak
+
+| Table | Tujuan |
+|---|---|
+| `donations` | amount_cents, gateway, gateway_ref, status. Unik `(gateway, gateway_ref)` supaya webhook retry tak cipta baris pendua. Constraint `donations_traceable`: user_id ATAU donor_email mesti ada |
+| `audit_logs` | siapa ubah apa. Delta jsonb + changed_fields, snapshot pelaku (member_id/role sebagai teks). **Append-only dikuatkuasakan trigger** |
+
+Nota `audit_logs`: trigger `audit_logs_no_update` tolak semua UPDATE KECUALI
+satu bentuk — menetapkan `ip_address` dan `user_agent` kepada NULL sambil
+setiap lajur lain kekal `is not distinct from` nilai lama. Itu membenarkan
+redaksi PDPA tanpa membenarkan sejarah ditulis semula. DELETE dibiar terbuka
+supaya pruning simpanan mungkin.
+
+Migration penuh (ikut order): `internal/db/migrations/*.sql`.
 
 ## Local dev — cycle biasa
 
@@ -203,6 +274,10 @@ go run ./cmd/api
 - **`goose: no migrations to run`** — normal, bermaksud DB dah up-to-date.
 - **`command not found: goose`** — CLI tak dalam PATH, guna
   `$(go env GOPATH)/bin/goose` terus atau tambah ke `PATH`.
+- **Migration ada `create function` / plpgsql gagal parse** — bungkus blok
+  tu dengan `-- +goose StatementBegin` / `-- +goose StatementEnd`. goose
+  pecahkan fail ikut `;`, jadi tanpa penanda ni badan function terpotong
+  di tengah.
 - **Migration baru tak ter-apply bila `go run ./cmd/api`** — pastikan fail
   migration ada extension `.sql` dan format nama `{timestamp}_name.sql`
   (goose skip fail yang tak match pattern ni), dan **fail tu wujud SEBELUM

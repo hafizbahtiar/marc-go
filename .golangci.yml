@@ -1,0 +1,18 @@
+version: "2"
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+  exclusions:
+    rules:
+      # defer x.Close() / defer tx.Rollback() lepas Commit berjaya — error
+      # dia tak actionable pada titik ni (resource dah nak exit function
+      # lagipun). Pattern standard, bukan tertinggal check error dengan
+      # sengaja untuk logic yang penting.
+      - path: '.*\.go'
+        linters:
+          - errcheck
+        text: 'Error return value of .*\.(Close|Rollback)`? is not checked'

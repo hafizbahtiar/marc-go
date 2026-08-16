@@ -1,0 +1,358 @@
+// Package storage bina presigned URL untuk upload terus ke Cloudflare R2
+// (S3-compatible) — client upload gambar terus ke R2, Go backend tak
+// pernah sentuh bytes gambar tu langsung (elak jadi bottleneck bandwidth).
+package storage
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"image"
+	_ "image/jpeg" // daftar decoder untuk image.DecodeConfig
+	_ "image/png"
+	"io"
+	"log"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
+)
+
+const (
+	presignExpiry = 5 * time.Minute
+
+	// signedGetExpiry — tempoh sah URL GET yang ditandatangani.
+	//
+	// Perlu cukup panjang supaya feed yang dicache pada peranti tak
+	// menunjuk kepada URL mati, tapi cukup pendek supaya URL yang bocor
+	// tak kekal berguna selamanya. Dua jam ialah kompromi.
+	signedGetExpiry = 2 * time.Hour
+
+	// signedGetCacheTTL — berapa lama URL yang sama diguna semula.
+	//
+	// SEPARUH daripada tempoh sah, sengaja: klien yang menerima URL pada
+	// saat terakhir tetingkap cache masih dapat sekurang-kurangnya satu
+	// jam kesahan. Kalau TTL sama dgn tempoh sah, klien boleh terima URL
+	// yang luput sekelip mata kemudian.
+	signedGetCacheTTL = 1 * time.Hour
+
+	// MaxImageSizeBytes — had saiz setiap gambar post (5 MB, padanan had
+	// klasik Twitter — munasabah untuk upload mobile).
+	//
+	// Nota: R2 TAK support presigned POST (`content-length-range` policy
+	// condition macam S3 sebenar) — verified terus: "Presigned post
+	// requests are not yet implemented" (501) bila cuba. Jadi had ni
+	// dikuatkuasakan LEPAS upload via HeadObject (VerifyImageSize), bukan
+	// dihalang di peringkat presign macam yang dirancang asalnya.
+	MaxImageSizeBytes = 5 * 1024 * 1024
+
+	// MaxImageDimension — had piksel sisi panjang untuk gambar yang
+	// diterima masuk post.
+	//
+	// Client mengecilkan kepada 2048 sebelum naik, tapi had ni BUKAN
+	// pendua semakan tu: presigned URL membenarkan client menaikkan
+	// APA-APA sahaja terus ke R2 tanpa melalui server ni. Tanpa semakan
+	// sisi-server, sesiapa yang ada satu URL presign boleh menyimpan
+	// "bom nyahmampat" 20000x20000 — bait kecil, tapi berpuluh gigabait
+	// bila dinyahkod, dan setiap peranti ahli yang menatal feed akan cuba
+	// menyahkodnya.
+	//
+	// 4096 (bukan 2048) sengaja longgar: client sepatutnya dah kecilkan,
+	// jadi apa-apa antara 2048–4096 mungkin cuma perbezaan pembundaran
+	// atau client lama. Apa-apa di atas tu bukan lagi kecuaian.
+	MaxImageDimension = 4096
+
+	// MaxAvatarDimension — had khusus gambar profil.
+	//
+	// Jauh lebih ketat drpd gambar post sebab avatar dipapar dalam bulatan
+	// 28–80dp. Menyimpan 2048px untuk itu membazir storan dan memaksa
+	// setiap peranti menyahkod jauh lebih banyak piksel drpd yang dilukis.
+	// Client hadkan kepada 512; 1024 di sini beri kelonggaran yang sama
+	// (2x) macam pasangan 2048/4096 untuk gambar post.
+	MaxAvatarDimension = 1024
+
+	// MaxImagesPerPost — had bilangan gambar setiap post.
+	MaxImagesPerPost = 4
+)
+
+var ErrImageTooLarge = errors.New("gambar melebihi had saiz")
+var ErrImageInvalidFormat = errors.New("format gambar tidak sah")
+var ErrImageTooManyPixels = errors.New("dimensi gambar melebihi had")
+
+type R2Client struct {
+	client     *s3.Client
+	presigner  *s3.PresignClient
+	bucket     string
+	publicURL  string
+	configured bool
+	urlCache   URLCache
+}
+
+// SetURLCache tukar cache URL yang ditandatangani. Lalai ialah cache
+// dalam-memori per-instance; hantar cache bersandar-Redis supaya semua
+// replika memulangkan URL yang sama (kalau tidak klien terlepas cache
+// setiap kali ia mencapai instance berlainan).
+func (r *R2Client) SetURLCache(c URLCache) {
+	if c != nil {
+		r.urlCache = c
+	}
+}
+
+func NewR2Client(accountID, accessKeyID, secretAccessKey, bucket, publicURL string) *R2Client {
+	if accountID == "" || accessKeyID == "" || secretAccessKey == "" || bucket == "" {
+		return &R2Client{configured: false}
+	}
+
+	endpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
+
+	client := s3.New(s3.Options{
+		Region:       "auto",
+		BaseEndpoint: aws.String(endpoint),
+		Credentials:  credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
+		// aws-sdk-go-v2 default (WhenSupported) auto-tambah checksum
+		// CRC32 pada setiap request S3, termasuk presigned URL — R2
+		// tak fully compatible dgn ni, signature jadi tak sah, PUT
+		// client dapat 403 AccessDenied walaupun presign sendiri
+		// (langkah GENERATE URL) nampak berjaya. Verified: tanpa
+		// override ni, upload sebenar ke R2 gagal 403; dengan ni, OK.
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
+	})
+
+	return &R2Client{
+		client:     client,
+		presigner:  s3.NewPresignClient(client),
+		bucket:     bucket,
+		publicURL:  publicURL,
+		configured: true,
+		urlCache:   NewMemoryURLCache(),
+	}
+}
+
+func (r *R2Client) Enabled() bool {
+	return r.configured
+}
+
+// PresignUpload jana key unik + URL PUT presigned (expire 5 minit) untuk
+// client upload terus ke R2.
+func (r *R2Client) PresignUpload(ctx context.Context, contentType string) (uploadURL, key string, err error) {
+	if !r.configured {
+		return "", "", fmt.Errorf("R2 belum configure")
+	}
+
+	key = fmt.Sprintf("posts/%s", uuid.New().String())
+
+	req, err := r.presigner.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(r.bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String(contentType),
+	}, s3.WithPresignExpires(presignExpiry))
+	if err != nil {
+		return "", "", fmt.Errorf("presign: %w", err)
+	}
+
+	return req.URL, key, nil
+}
+
+// PutObject muat naik bait terus dari server ke R2.
+//
+// Berbeza daripada PresignUpload (klien memuat naik sendiri), ini untuk
+// kandungan yang DIJANA server dan tidak pernah menyentuh peranti — PDF
+// sijil. Tiada semakan dimensi imej di sini; pemanggil yang tahu apa yang
+// dihantarnya.
+func (r *R2Client) PutObject(ctx context.Context, key, contentType string, body []byte) error {
+	if !r.Enabled() {
+		return fmt.Errorf("R2 belum configure")
+	}
+	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(r.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(body),
+		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		return fmt.Errorf("muat naik %s: %w", key, err)
+	}
+	return nil
+}
+
+// VerifyImageSize semak saiz objek yang DAH diupload (HeadObject) tak
+// melebihi MaxImageSizeBytes. Dipanggil dari CreatePost sebelum r2_key
+// diterima masuk post — R2 tak support content-length-range di presign
+// PUT, jadi ni satu-satunya titik enforcement sebenar (client-side check
+// pun ada, tapi cuma UX, bukan security boundary).
+func (r *R2Client) VerifyImageSize(ctx context.Context, key string) error {
+	if !r.configured {
+		return fmt.Errorf("R2 belum configure")
+	}
+
+	out, err := r.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("head object: %w", err)
+	}
+
+	if out.ContentLength != nil && *out.ContentLength > MaxImageSizeBytes {
+		return ErrImageTooLarge
+	}
+
+	return nil
+}
+
+// VerifyImageFormat semak byte pertama objek (magic number) padan
+// dengan salah satu format imej dibenarkan (JPEG/PNG/WEBP) — Content-
+// Type di header PUT boleh dipalsukan client, byte sebenar tak boleh.
+// Dipanggil sekali gus dengan VerifyImageSize sebelum r2_key diterima
+// masuk post.
+func (r *R2Client) VerifyImageFormat(ctx context.Context, key string) error {
+	return r.verifyImage(ctx, key, MaxImageDimension)
+}
+
+// VerifyAvatar sama macam VerifyImageFormat tapi dengan had dimensi
+// avatar yang lebih ketat.
+func (r *R2Client) VerifyAvatar(ctx context.Context, key string) error {
+	return r.verifyImage(ctx, key, MaxAvatarDimension)
+}
+
+func (r *R2Client) verifyImage(ctx context.Context, key string, maxDim int) error {
+	if !r.configured {
+		return fmt.Errorf("R2 belum configure")
+	}
+
+	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+		Range:  aws.String(fmt.Sprintf("bytes=0-%d", MaxImageSizeBytes-1)),
+	})
+	if err != nil {
+		return fmt.Errorf("get object: %w", err)
+	}
+	defer out.Body.Close()
+
+	// Julat = MaxImageSizeBytes (5MB), BUKAN 64KB tetap. 64KB cukup untuk
+	// PNG (IHDR sentiasa di bait 8-33) tapi TIDAK untuk JPEG — penanda
+	// SOF0/SOF2 yang bawa lebar/tinggi boleh ditolak lepas berbilang
+	// segmen APPn (EXIF/ICC/XMP, sehingga 64KB setiap satu, berbilang
+	// dibenarkan) yang sengaja dipadatkan penyerang untuk tolak SOF0
+	// keluar dari julat baca — verifyDimensions gagal-terbuka (return nil)
+	// bila DecodeConfig tak jumpa SOF0, jadi julat kecil = had dimensi
+	// terus tak terpakai untuk JPEG yang dibina khas. 5MB bukan had
+	// sewenang-wenangnya: ia MaxImageSizeBytes yang dah dikuatkuasakan di
+	// tempat lain (VerifyImageSize) — julat ni tak dedahkan apa-apa
+	// permukaan serangan baharu, cuma pastikan SOF0 sentiasa dalam julat
+	// yang dibaca untuk MANA-MANA fail yang lulus had saiz sedia ada.
+	// `io.ReadAll` di sini BACA SEHINGGA had (bukan berhenti awal bila
+	// SOF0 dijumpai) — jadi ini memang naikkan bacaan R2 drpd 64KB tetap
+	// kepada saiz fail sebenar (max 5MB). Kos diterima: R2→compute egress
+	// percuma (Cloudflare), ini jalan SEKALI semasa verify muat naik
+	// (bukan setiap kali feed ditatal), dan gambar client selalunya jauh
+	// lebih kecil drpd 5MB (client dah kecilkan ke 2048px sebelum naik).
+	// Fail yang benar-benar 5MB capai kos terburuk, tapi itu tepat had
+	// yang dia dah dibenarkan lulus — bukan kos tambahan yang tak wajar.
+	buf, err := io.ReadAll(io.LimitReader(out.Body, MaxImageSizeBytes))
+	if err != nil {
+		return fmt.Errorf("baca header: %w", err)
+	}
+
+	switch {
+	case bytes.HasPrefix(buf, []byte{0xFF, 0xD8, 0xFF}): // JPEG
+	case bytes.HasPrefix(buf, []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}): // PNG
+	case len(buf) >= 12 && bytes.Equal(buf[0:4], []byte("RIFF")) && bytes.Equal(buf[8:12], []byte("WEBP")): // WEBP
+	default:
+		return ErrImageInvalidFormat
+	}
+
+	return verifyDimensions(buf, maxDim)
+}
+
+// verifyDimensions baca SAHAJA header gambar (image.DecodeConfig) untuk
+// dapatkan lebar/tinggi tanpa menyahkod piksel — itu yang menjadikannya
+// murah dan selamat terhadap bom nyahmampat.
+//
+// WEBP sengaja dilepaskan: decoder webp bukan sebahagian pustaka standard,
+// dan menambah kebergantungan semata-mata untuk semakan ni tak berbaloi
+// sekarang. Had saiz bait (VerifyImageSize) masih terpakai padanya.
+func verifyDimensions(header []byte, maxDim int) error {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(header))
+	if err != nil {
+		// Header terpotong atau format tanpa decoder berdaftar (WEBP).
+		// Jangan tolak gambar semata-mata sebab tak dapat diukur — magic
+		// number dah lulus, dan had bait masih menjaga kes paling teruk.
+		return nil
+	}
+	if cfg.Width > maxDim || cfg.Height > maxDim {
+		return fmt.Errorf("%w: %dx%d", ErrImageTooManyPixels, cfg.Width, cfg.Height)
+	}
+	return nil
+}
+
+// DeleteImage buang objek dari R2 — dipanggil bila gambar ditolak
+// (terlalu besar) supaya tak tinggal orphan dalam bucket.
+func (r *R2Client) DeleteImage(ctx context.Context, key string) error {
+	if !r.configured {
+		return nil
+	}
+	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
+// HasPublicURL — sama ada domain awam bucket dah dikonfigur.
+//
+// Tak lagi diperlukan untuk memapar gambar: SignedURL guna endpoint S3
+// dan berfungsi pada bucket PERSENDIRIAN. Dikekalkan cuma untuk
+// diagnostik.
+func (r *R2Client) HasPublicURL() bool {
+	return r.publicURL != ""
+}
+
+// SignedURL bina URL GET yang ditandatangani dan berumur pendek untuk satu
+// objek.
+//
+// Gantian `PublicURL`. Dengan URL awam r2.dev, SESIAPA yang ada pautan
+// boleh mengambil objek selama-lamanya, tanpa auth — dan sejak avatar
+// wujud, itu bermakna muka ahli. URL yang ditandatangani luput, jadi
+// pautan yang bocor berhenti berfungsi.
+//
+// Pulang "" (dan log) bila R2 tak dikonfigur atau penandatanganan gagal —
+// pemanggil dah pun melangkau rentetan kosong.
+func (r *R2Client) SignedURL(ctx context.Context, key string) string {
+	if !r.configured || key == "" {
+		return ""
+	}
+
+	if url, ok := r.urlCache.Get(ctx, key); ok {
+		return url
+	}
+
+	req, err := r.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(signedGetExpiry))
+	if err != nil {
+		log.Printf("presign GET gagal (r2_key=%s): %v", key, err)
+		return ""
+	}
+
+	r.urlCache.Set(ctx, key, req.URL, signedGetCacheTTL)
+	return req.URL
+}
+
+// PublicURL bina URL awam untuk baca semula gambar yang dah diupload
+// (r2_key disimpan dalam DB, URL dibina runtime — elak simpan URL penuh
+// yang boleh berubah kalau domain public R2 ditukar).
+//
+// Pulang "" kalau R2_PUBLIC_URL tak diset. Caller MESTI langkau nilai
+// kosong dan bukan hantar ia kepada client — lihat buildPostResponses.
+func (r *R2Client) PublicURL(key string) string {
+	if r.publicURL == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s", r.publicURL, key)
+}
