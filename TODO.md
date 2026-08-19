@@ -11,6 +11,147 @@ simpanan. Modul aktiviti (backend penuh) siap — jurangnya direkod di bawah.
 
 ---
 
+## Permintaan pemadaman akaun (Google Play Console) — v1 REQUEST-sahaja, 2026-08-19
+
+Google Play Console mewajibkan app yang sokong penciptaan akaun sediakan
+cara ahli **meminta** pemadaman akaun + data berkaitan. Dibina bawah
+tekanan deadline publish — skop sengaja diminimumkan.
+
+**Dibina**:
+- Jadual `account_deletion_requests` (migration
+  `20260819130000_create_account_deletion_requests.sql`) — `user_id`
+  unik → `users(id)`, `status` (`pending`/`completed`), `requested_at`,
+  `completed_at`.
+- `POST /me/deletion-request` (`ProfileHandler.RequestAccountDeletion`,
+  `profile.go`) — grup `protected` (ahli mana-mana status, termasuk
+  `pending`, boleh minta). Idempoten: panggilan berulang pulang 200 dgn
+  data permintaan SEDIA ADA, bukan ralat (padanan pola
+  `AddBlockedEmailDomain`/`ApproveProfile`). Tulis catatan audit
+  (`audit.EntityAccountDeletionRequest`) sekali sahaja — bila baris
+  BAHARU dicipta, bukan pada panggilan ulang.
+- Rate limiter `account-deletion-request` (3s/10, padanan pola
+  `profileUpdateRateLimiter`).
+
+- [ ] **TIADA auto-purge/cascading delete lagi** — ni GAP SEBENAR, bukan
+      "belum sempat". Sengaja tak dibina dalam sprint ni: reka bentuk +
+      uji pemadaman post/komen/like/derma/bayaran/pendaftaran aktiviti
+      merentas jadual dgn selamat (FK, R2 orphan, refund/rekod kewangan
+      yg kena kekal utk audit) perlukan lebih masa drpd yang ada. Buat
+      masa ni staff kena tindak baris `pending` dalam
+      `account_deletion_requests` SECARA MANUAL (akses DB terus) —
+      padam/anonim profil & data berkaitan ikut budi bicara, lepas tu
+      set `status='completed'`, `completed_at=now()`. Fast-follow
+      diperlukan: proses purge automatik (atau checklist manual rasmi)
+      sebelum jumlah permintaan jadi banyak utk staff urus tangan.
+
+---
+
+## Onboard ahli lama (kertas/manual) — BRAINSTORM BELUM SIAP, tiada spec/plan lagi
+
+Ahli sedia ada (~ratusan) yang dah daftar, dah bayar, dan dah dapat
+no. ahli SEBELUM app ni wujud — proses lama 100% manual/kertas. Client
+ada senarai digital (spreadsheet) rekod ni. Nak integrate mereka ke app
+tanpa suruh mereka bayar semula atau tukar no. ahli mereka. Sesi
+brainstorm (2026-08-16) terhenti di pertengahan reka bentuk data model
+— rujuk juga `../marc_flutter/TODO.md` bahagian sama utk status sisi
+Flutter.
+
+**Keputusan disahkan (Q&A dgn pemilik produk):**
+- Skala: ~ratusan ahli lama.
+- Format no. ahli lama: **belum pasti, client belum tanya lagi**. Reka
+  bentuk MESTI agnostik format — no. ahli lama disimpan sebagai
+  rentetan legap, TIADA parsing/validasi struktur/regex format.
+- Ahli lama LANGSUNG skip yuran pendaftaran ToyyibPay (`registration_
+  payments`/gate di `ApproveMember`, lihat bahagian "Payment —
+  sambungan" di bawah) — dah bayar manual sebelum ni.
+- Cara claim: medan "No. Ahli Lama" PILIHAN semasa daftar (bukan kod
+  jemputan drpd import, bukan padanan manual management selepas
+  daftar). App cari padanan dlm senarai diimport secara real-time;
+  management sahkan padanan tu betul semasa langkah kelulusan
+  (`ApproveMember`) sedia ada — bukan langkah/skrin kelulusan baharu.
+- Import senarai lama: **one-off sahaja**, client hantar satu senarai
+  muktamad — script/migration sekali guna, BUKAN endpoint/UI import
+  berulang.
+- No. ahli tak dijumpai dlm senarai diimport → **sekat submission
+  pendaftaran**, ralat jelas kpd user. User boleh cuba lagi ATAU
+  kosongkan medan & daftar sebagai ahli baharu biasa (laluan sedia ada,
+  bayar yuran macam biasa).
+
+**Reka bentuk data model dicadang (BELUM disahkan, belum ditulis
+migration):**
+
+```sql
+-- Jadual berasingan, TIDAK gabung terus ke profiles — import senyap
+-- sehingga seseorang betul-betul claim, elak profil hantu wujud
+-- sebelum ada orang sebenar daftar.
+create table legacy_members (
+  id uuid primary key default gen_random_uuid(),
+  legacy_no text not null unique,  -- rentetan legap, format apa-apa pun
+  full_name text not null,
+  phone text,
+  paid_note text,                   -- teks bebas drpd sheet (jumlah/tarikh/no resit kalau ada)
+  claimed_by_user_id uuid unique references users(id),
+  claimed_at timestamptz
+);
+
+alter table profiles
+  add column legacy_member_id uuid references legacy_members(id),
+  add column registration_fee_exempt boolean not null default false;
+```
+
+`profiles.member_id` (unique text sedia ada) diset kpd **legacy_no
+verbatim** untuk profil claim jenis ni — BUKAN format app
+`MARC{YYYY}/{MM}/{seq}` (`generateMemberID`, `auth.go:254`). Ini
+padankan keperluan "guna nombor ahli lama, bukan format kita" terus —
+mana-mana UI yang dah papar `member_id` (resit, senarai ahli, profil)
+tak perlu ubah, tak perlu tahu konsep "legacy" pun wujud.
+
+**Titik sambungan gate yuran**: `setMemberStatus`/`ApproveMember`
+(`profile.go:644`) kini semak `HasSucceededRegistrationPayment` sebelum
+lulus (Stage ToyyibPay, siap 2026-08-15). Untuk ahli lama, gate yg sama
+patut terima `profiles.registration_fee_exempt = true` sebagai laluan
+ALTERNATIF (OR), bukan gate baharu berasingan — padan pola exemption
+ahli SEDIA ADA sebelum ciri yuran wujud (no-op check `target.Status ==
+status` yg dah ada).
+
+**Belum diputuskan / belum dibincang langsung:**
+- Endpoint/payload pendaftaran sebenar (medan `legacy_member_no`
+  pilihan pada `POST /auth/register`?) — belum direka.
+- Response bila padanan berjaya/gagal semasa daftar (real-time semak
+  sblm submit, atau semak lepas submit dgn ralat 422?).
+- Kes pertindihan (dua akaun cuba claim `legacy_no` sama serentak) —
+  unique constraint `claimed_by_user_id`/`legacy_no` bagi perlindungan
+  DB-level asas, tapi flow UX/ralat belum direka.
+- Macam mana skrin kelulusan management (`Members` `?status=pending`,
+  `profile.go:354`) papar butiran padanan lama (nama/telefon/paid_note
+  dari `legacy_members`) untuk semakan admin sblm lulus.
+- Skrip import sebenar (format CSV/Excel sumber, cara jalan sekali,
+  validasi sblm insert).
+
+## Web Flutter (`app.marc.hafizbahtiar.com`) — CORS API BELUM WUJUD SECARA MENYELURUH (2026-08-16)
+
+`marc_flutter` sedang digarap ke web (fasa 1: bina+deploy, lihat
+`../marc_flutter/TODO.md`) — sasar `app.marc.hafizbahtiar.com` di
+Railway. **Ditemui semasa semakan**: `middleware.CORS` (`internal/http/
+middleware/cors.go`) kini cuma dipasang pada DUA laluan sempit —
+`POST /auth/verify-email/confirm` (`router.go:99-101`) dan cert-verify
+awam (`router.go:270`) — `r.Use(...)` global (`router.go:76`) TIADA
+CORS langsung. Ini OK setakat ni sebab semua client dulu app native
+(mobile HTTP client tak tertakluk sekatan CORS pelayar). Bila web mula
+panggil API drpd origin browser sebenar, **hampir SEMUA endpoint lain**
+(login, feed, profile, dsb) akan disekat CORS pelayar — ini BUKAN "tambah
+satu origin dlm senarai", ini kerja wiring CORS merentas seluruh
+`r.Use(...)` (atau grup-grup utama) yg belum dibuat langsung.
+
+- [ ] **Reka bentuk + wiring CORS global belum start.** Perlu keputusan:
+      CORS pada `r.Use(...)` teras (semua laluan) vs per-grup, dan
+      `corsAllowedOrigins` (config sedia ada, `cfg.CORSAllowedOrigins`)
+      perlu masuk `https://app.marc.hafizbahtiar.com` (dan
+      staging/local kalau web run tempatan jugak).
+- [ ] **Keputusan API_BASE_URL fasa 1 web belum dibuat** (staging atau
+      prod) — tentukan environment mana perlu CORS origin ni dulu,
+      lihat `../marc_flutter/TODO.md`.
+
 ## Perlu tindakan kau (bukan kod)
 
 - [ ] **Deploy environment `production` Railway** — `staging` sahaja live.

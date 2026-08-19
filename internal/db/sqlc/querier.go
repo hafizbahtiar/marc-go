@@ -72,6 +72,11 @@ type Querier interface {
 	// Menghalang penggantian set sesi yang akan membuang kehadiran yang sudah
 	// direkod.
 	CountSessionsWithAttendance(ctx context.Context, activityID uuid.UUID) (int64, error)
+	// `on conflict do nothing` — idempoten, ahli boleh tekan "padam akaun"
+	// berkali-kali tanpa ralat (padanan pola AddBlockedEmailDomain). Baris
+	// SEDIA ADA (bukan yang baru dicuba) yang perlu dipulangkan pada
+	// konflik — lihat GetAccountDeletionRequestByUserID di handler.
+	CreateAccountDeletionRequest(ctx context.Context, userID uuid.UUID) (AccountDeletionRequest, error)
 	CreateActivity(ctx context.Context, arg CreateActivityParams) (Activity, error)
 	CreateActivityCategory(ctx context.Context, arg CreateActivityCategoryParams) (ActivityCategory, error)
 	CreateActivitySession(ctx context.Context, arg CreateActivitySessionParams) (ActivitySession, error)
@@ -113,6 +118,10 @@ type Querier interface {
 	// on conflict do nothing: padam post yang sama dua kali (atau retry) tak
 	// patut gagal, dan objek tu memang dah dalam gilir.
 	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
+	// Guna oleh CreateAccountDeletionRequest bila insert kena `on conflict do
+	// nothing` (tiada baris dipulangkan), dan utk pelaporan/staff semak status
+	// kemudian.
+	GetAccountDeletionRequestByUserID(ctx context.Context, userID uuid.UUID) (AccountDeletionRequest, error)
 	GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivityByIDRow, error)
 	GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error)
 	GetActivitySessionByID(ctx context.Context, id uuid.UUID) (ActivitySession, error)

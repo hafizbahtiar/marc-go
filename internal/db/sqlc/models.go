@@ -9,6 +9,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccountDeletionRequest struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+	Status      string             `json:"status"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+}
+
 type Activity struct {
 	ID                     uuid.UUID          `json:"id"`
 	CategoryID             uuid.UUID          `json:"category_id"`
