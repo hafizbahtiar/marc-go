@@ -41,6 +41,10 @@ const (
 	// Kategori aktiviti — infrastruktur dikongsi semua aktiviti (bukan
 	// tindakan pengurusan harian), jadi diaudit sama macam role.
 	EntityActivityCategory = "activity_category"
+	// Permintaan pemadaman akaun (Google Play Console — keperluan "request
+	// account deletion"). v1: rekod permintaan sahaja, staff tindak manual
+	// via DB terus — tiada auto-purge lagi.
+	EntityAccountDeletionRequest = "account_deletion_request"
 )
 
 const (

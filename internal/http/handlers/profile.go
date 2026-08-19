@@ -825,6 +825,81 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 	})
 }
 
+type accountDeletionRequestResponse struct {
+	Status      string `json:"status"`
+	RequestedAt string `json:"requested_at"`
+}
+
+// RequestAccountDeletion — POST /me/deletion-request. Keperluan Google
+// Play Console: app yang sokong penciptaan akaun MESTI sediakan cara ahli
+// MEMINTA pemadaman akaun + data. v1 sengaja REQUEST-sahaja — rekod
+// permintaan + jejak audit, staff tindak secara MANUAL (akses DB terus)
+// buat masa ni. TIADA auto-purge post/bayaran/pendaftaran aktiviti dsb —
+// lihat TODO.md untuk gap ni sebagai fast-follow.
+//
+// Sengaja TIDAK di bawah RequireApprovedStatus — ahli pending/rejected pun
+// berhak minta akaun dia dipadam.
+//
+// Idempoten: panggilan berulang oleh ahli sama pulangkan 200 dengan data
+// permintaan yang SEDIA ADA (bukan ralat) — padanan pola
+// AddBlockedEmailDomain/ApproveProfile.
+func (h *ProfileHandler) RequestAccountDeletion(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := middleware.UserID(c)
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal rekod permintaan pemadaman akaun"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	row, err := q.CreateAccountDeletionRequest(ctx, userID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal rekod permintaan pemadaman akaun"})
+			return
+		}
+		// `on conflict do nothing` — dah ada permintaan sedia ada. Ambil
+		// baris tu supaya response pulangkan data ASAL (bukan cuba
+		// dicipta semula), dan JANGAN tulis catatan audit baharu — tiada
+		// apa yang berubah.
+		existing, getErr := h.queries.GetAccountDeletionRequestByUserID(ctx, userID)
+		if getErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal rekod permintaan pemadaman akaun"})
+			return
+		}
+		c.JSON(http.StatusOK, accountDeletionRequestResponse{
+			Status:      existing.Status,
+			RequestedAt: formatTime(existing.RequestedAt),
+		})
+		return
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityAccountDeletionRequest,
+		EntityID:   userID,
+		Action:     audit.ActionCreate,
+		Actor:      auditActor(c, h.queries),
+		New:        map[string]any{"status": row.Status},
+	}); err != nil {
+		log.Printf("audit permintaan pemadaman akaun: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal rekod permintaan pemadaman akaun"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal rekod permintaan pemadaman akaun"})
+		return
+	}
+
+	c.JSON(http.StatusOK, accountDeletionRequestResponse{
+		Status:      row.Status,
+		RequestedAt: formatTime(row.RequestedAt),
+	})
+}
+
 func textToPtr(t pgtype.Text) *string {
 	if !t.Valid {
 		return nil

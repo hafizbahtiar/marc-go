@@ -11,6 +11,41 @@ simpanan. Modul aktiviti (backend penuh) siap — jurangnya direkod di bawah.
 
 ---
 
+## Permintaan pemadaman akaun (Google Play Console) — v1 REQUEST-sahaja, 2026-08-19
+
+Google Play Console mewajibkan app yang sokong penciptaan akaun sediakan
+cara ahli **meminta** pemadaman akaun + data berkaitan. Dibina bawah
+tekanan deadline publish — skop sengaja diminimumkan.
+
+**Dibina**:
+- Jadual `account_deletion_requests` (migration
+  `20260819130000_create_account_deletion_requests.sql`) — `user_id`
+  unik → `users(id)`, `status` (`pending`/`completed`), `requested_at`,
+  `completed_at`.
+- `POST /me/deletion-request` (`ProfileHandler.RequestAccountDeletion`,
+  `profile.go`) — grup `protected` (ahli mana-mana status, termasuk
+  `pending`, boleh minta). Idempoten: panggilan berulang pulang 200 dgn
+  data permintaan SEDIA ADA, bukan ralat (padanan pola
+  `AddBlockedEmailDomain`/`ApproveProfile`). Tulis catatan audit
+  (`audit.EntityAccountDeletionRequest`) sekali sahaja — bila baris
+  BAHARU dicipta, bukan pada panggilan ulang.
+- Rate limiter `account-deletion-request` (3s/10, padanan pola
+  `profileUpdateRateLimiter`).
+
+- [ ] **TIADA auto-purge/cascading delete lagi** — ni GAP SEBENAR, bukan
+      "belum sempat". Sengaja tak dibina dalam sprint ni: reka bentuk +
+      uji pemadaman post/komen/like/derma/bayaran/pendaftaran aktiviti
+      merentas jadual dgn selamat (FK, R2 orphan, refund/rekod kewangan
+      yg kena kekal utk audit) perlukan lebih masa drpd yang ada. Buat
+      masa ni staff kena tindak baris `pending` dalam
+      `account_deletion_requests` SECARA MANUAL (akses DB terus) —
+      padam/anonim profil & data berkaitan ikut budi bicara, lepas tu
+      set `status='completed'`, `completed_at=now()`. Fast-follow
+      diperlukan: proses purge automatik (atau checklist manual rasmi)
+      sebelum jumlah permintaan jadi banyak utk staff urus tangan.
+
+---
+
 ## Onboard ahli lama (kertas/manual) — BRAINSTORM BELUM SIAP, tiada spec/plan lagi
 
 Ahli sedia ada (~ratusan) yang dah daftar, dah bayar, dan dah dapat

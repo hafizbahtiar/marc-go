@@ -114,9 +114,16 @@ func NewRouter(
 	// longgar drpd 'auth'/'donation' sebab bukan permukaan sensitif.
 	profileUpdateRateLimiter := rateLimiter.Limit("profile-update", rate.Every(3*time.Second), 10)
 
+	// accountDeletionRateLimiter — padanan pola profileUpdateRateLimiter.
+	// Bukan permukaan spam-sensitif (satu ahli, satu permintaan idempoten),
+	// tapi tetap dihad sikit sebab ia tulis catatan audit setiap panggilan
+	// yang berjaya cipta baris baharu.
+	accountDeletionRateLimiter := rateLimiter.Limit("account-deletion-request", rate.Every(3*time.Second), 10)
+
 	protected := r.Group("/", middleware.RequireAuth(jwtSvc))
 	protected.GET("/me", profileHandler.Me)
 	protected.PATCH("/me", profileUpdateRateLimiter, profileHandler.UpdateMe)
+	protected.POST("/me/deletion-request", accountDeletionRateLimiter, profileHandler.RequestAccountDeletion)
 	protected.POST("/auth/logout-all", authHandler.LogoutAll)
 
 	// approved (Stage 11) — /members, /device-tokens, dan approve/reject
