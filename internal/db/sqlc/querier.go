@@ -103,6 +103,7 @@ type Querier interface {
 	CreateDonation(ctx context.Context, arg CreateDonationParams) (Donation, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
+	CreatePasswordResetToken(ctx context.Context, arg CreatePasswordResetTokenParams) (PasswordResetToken, error)
 	CreatePaymentLog(ctx context.Context, arg CreatePaymentLogParams) error
 	CreatePendingUpload(ctx context.Context, arg CreatePendingUploadParams) error
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
@@ -133,6 +134,10 @@ type Querier interface {
 	DeleteDoneDeletedUploadsBefore(ctx context.Context, deletedAt pgtype.Timestamptz) (int64, error)
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
+	// Dipanggil DUA tempat, atas sebab berbeza:
+	//   request — permintaan baharu membunuh pautan lama
+	//   confirm — sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
+	DeletePasswordResetTokensByUser(ctx context.Context, userID uuid.UUID) error
 	// Retention 3 bulan (keputusan produk 2026-08-15) — dipanggil
 	// internal/retention, padanan pola sapuan audit_logs sedia ada.
 	DeletePaymentLogsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
@@ -196,6 +201,7 @@ type Querier interface {
 	// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
 	// (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
 	GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error)
+	GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (PasswordResetToken, error)
 	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error)
@@ -555,6 +561,7 @@ type Querier interface {
 	// UPDATE gagal (0 baris), pgx.ErrNoRows dianggap "replay biasa", dan
 	// kesnya jadi kelihatan macam tiada apa berlaku — walhal ahli dah bayar.
 	UpdateRegistrationPaymentStatusByPaymentRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByPaymentRefParams) (ActivityRegistration, error)
+	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)
 }
 
