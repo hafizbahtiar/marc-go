@@ -209,6 +209,10 @@ type Querier interface {
 	// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
 	// (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
 	GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error)
+	// UJIAN SAHAJA — tiada pemanggil produksi, dan jangan tambah satu. Kod
+	// produksi MESTI guna ConsumePasswordResetToken: membaca token
+	// dgn SELECT lalu memadamnya kemudian ialah tepat jurang TOCTOU yang
+	// Consume wujud untuk menutup.
 	GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (PasswordResetToken, error)
 	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
