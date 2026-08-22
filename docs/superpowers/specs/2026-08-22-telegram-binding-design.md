@@ -33,7 +33,7 @@ sepenuhnya: Telegram hantar terus ke URL awam kita, tak kira berapa
 replica di belakangnya — sama konsep webhook Stripe/ToyyibPay yang dah
 wujud (`router.go`, `POST /webhooks/:gateway`).
 
-### Kenapa lajur pada `users`, bukan jadual berasingan
+### Kenapa lajur pada `profiles`, bukan jadual berasingan
 
 Binding ni keadaan **kekal, tunggal, tanpa sejarah** — satu ahli ada
 paling banyak satu chat Telegram terikat, tiada TTL, tiada berbilang
@@ -42,6 +42,12 @@ rekod hidup serentak. Itu profil yang sama dgn `email_verified` atau
 Jadual berasingan (spt `password_reset_tokens`) wajar bila rekod itu
 sementara/berbilang/boleh luput — binding kekal tak padan corak itu.
 
+**Pembetulan drpd draf awal spec ni:** lajur diletak pada `profiles`,
+BUKAN `users` — `users` cuma pegang kelayakan (id/email/password_hash),
+setiap atribut akaun lain (`email_verified`, `avatar_r2_key`) sedia ada
+duduk pada `profiles`. Disemak semasa tulis plan (2026-08-22), Baiki
+sebelum sebarang kod ditulis.
+
 Token pautan-dalam (deep-link) itu sendiri LAIN cerita: ia sementara,
 sekali-guna, dan MEMANG dpt jadual sendiri (`telegram_link_tokens`) —
 sama sebab `password_reset_tokens` berasingan drpd `users`.
@@ -49,7 +55,7 @@ sama sebab `password_reset_tokens` berasingan drpd `users`.
 ## Skema
 
 ```sql
-alter table users
+alter table profiles
   add column telegram_chat_id bigint unique,
   add column telegram_username text,
   add column telegram_linked_at timestamptz;
