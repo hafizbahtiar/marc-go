@@ -16,7 +16,7 @@ const approveProfile = `-- name: ApproveProfile :one
 update profiles
 set status = 'approved', approved_by = $2, approved_at = now()
 where user_id = $1 and status <> 'approved'
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at
 `
 
 type ApproveProfileParams struct {
@@ -40,14 +40,28 @@ func (q *Queries) ApproveProfile(ctx context.Context, arg ApproveProfileParams) 
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
 	)
 	return i, err
+}
+
+const clearTelegramLink = `-- name: ClearTelegramLink :exec
+update profiles
+set telegram_chat_id = null, telegram_username = null, telegram_linked_at = null
+where user_id = $1
+`
+
+func (q *Queries) ClearTelegramLink(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, clearTelegramLink, userID)
+	return err
 }
 
 const createProfile = `-- name: CreateProfile :one
 insert into profiles (user_id, member_id, role_id, phone)
 values ($1, $2, $3, $4)
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at
 `
 
 type CreateProfileParams struct {
@@ -78,6 +92,9 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
 	)
 	return i, err
 }
@@ -95,7 +112,7 @@ func (q *Queries) GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
@@ -108,23 +125,26 @@ where p.user_id = $1
 `
 
 type GetProfileByUserIDRow struct {
-	ID            uuid.UUID          `json:"id"`
-	UserID        uuid.UUID          `json:"user_id"`
-	MemberID      string             `json:"member_id"`
-	DisplayName   pgtype.Text        `json:"display_name"`
-	Phone         pgtype.Text        `json:"phone"`
-	RoleID        int16              `json:"role_id"`
-	EmailVerified bool               `json:"email_verified"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Status        string             `json:"status"`
-	ApprovedBy    pgtype.UUID        `json:"approved_by"`
-	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
-	AvatarR2Key   pgtype.Text        `json:"avatar_r2_key"`
-	Email         string             `json:"email"`
-	RoleKey       string             `json:"role_key"`
-	RoleName      string             `json:"role_name"`
-	RoleCategory  string             `json:"role_category"`
-	RoleRank      int32              `json:"role_rank"`
+	ID               uuid.UUID          `json:"id"`
+	UserID           uuid.UUID          `json:"user_id"`
+	MemberID         string             `json:"member_id"`
+	DisplayName      pgtype.Text        `json:"display_name"`
+	Phone            pgtype.Text        `json:"phone"`
+	RoleID           int16              `json:"role_id"`
+	EmailVerified    bool               `json:"email_verified"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Status           string             `json:"status"`
+	ApprovedBy       pgtype.UUID        `json:"approved_by"`
+	ApprovedAt       pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key      pgtype.Text        `json:"avatar_r2_key"`
+	TelegramChatID   pgtype.Int8        `json:"telegram_chat_id"`
+	TelegramUsername pgtype.Text        `json:"telegram_username"`
+	TelegramLinkedAt pgtype.Timestamptz `json:"telegram_linked_at"`
+	Email            string             `json:"email"`
+	RoleKey          string             `json:"role_key"`
+	RoleName         string             `json:"role_name"`
+	RoleCategory     string             `json:"role_category"`
+	RoleRank         int32              `json:"role_rank"`
 }
 
 func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error) {
@@ -143,6 +163,9 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (Get
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
 		&i.Email,
 		&i.RoleKey,
 		&i.RoleName,
@@ -193,6 +216,17 @@ func (q *Queries) GetStatusByUserID(ctx context.Context, userID uuid.UUID) (stri
 	var status string
 	err := row.Scan(&status)
 	return status, err
+}
+
+const getUserIDByTelegramChatID = `-- name: GetUserIDByTelegramChatID :one
+select user_id from profiles where telegram_chat_id = $1
+`
+
+func (q *Queries) GetUserIDByTelegramChatID(ctx context.Context, telegramChatID pgtype.Int8) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getUserIDByTelegramChatID, telegramChatID)
+	var user_id uuid.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
 }
 
 const listApprovedUserIDs = `-- name: ListApprovedUserIDs :many
@@ -249,7 +283,7 @@ func (q *Queries) ListManagementUserIDs(ctx context.Context, category string) ([
 
 const listVisibleProfiles = `-- name: ListVisibleProfiles :many
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
@@ -305,6 +339,9 @@ type ListVisibleProfilesRow struct {
 	ApprovedBy                pgtype.UUID        `json:"approved_by"`
 	ApprovedAt                pgtype.Timestamptz `json:"approved_at"`
 	AvatarR2Key               pgtype.Text        `json:"avatar_r2_key"`
+	TelegramChatID            pgtype.Int8        `json:"telegram_chat_id"`
+	TelegramUsername          pgtype.Text        `json:"telegram_username"`
+	TelegramLinkedAt          pgtype.Timestamptz `json:"telegram_linked_at"`
 	Email                     string             `json:"email"`
 	RoleKey                   string             `json:"role_key"`
 	RoleName                  string             `json:"role_name"`
@@ -351,6 +388,9 @@ func (q *Queries) ListVisibleProfiles(ctx context.Context, arg ListVisibleProfil
 			&i.ApprovedBy,
 			&i.ApprovedAt,
 			&i.AvatarR2Key,
+			&i.TelegramChatID,
+			&i.TelegramUsername,
+			&i.TelegramLinkedAt,
 			&i.Email,
 			&i.RoleKey,
 			&i.RoleName,
@@ -381,7 +421,7 @@ const rejectProfile = `-- name: RejectProfile :one
 update profiles
 set status = 'rejected', approved_by = $2, approved_at = now()
 where user_id = $1 and status <> 'rejected'
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at
 `
 
 type RejectProfileParams struct {
@@ -405,8 +445,28 @@ func (q *Queries) RejectProfile(ctx context.Context, arg RejectProfileParams) (P
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
 	)
 	return i, err
+}
+
+const setTelegramLink = `-- name: SetTelegramLink :exec
+update profiles
+set telegram_chat_id = $2, telegram_username = $3, telegram_linked_at = now()
+where user_id = $1
+`
+
+type SetTelegramLinkParams struct {
+	UserID           uuid.UUID   `json:"user_id"`
+	TelegramChatID   pgtype.Int8 `json:"telegram_chat_id"`
+	TelegramUsername pgtype.Text `json:"telegram_username"`
+}
+
+func (q *Queries) SetTelegramLink(ctx context.Context, arg SetTelegramLinkParams) error {
+	_, err := q.db.Exec(ctx, setTelegramLink, arg.UserID, arg.TelegramChatID, arg.TelegramUsername)
+	return err
 }
 
 const updateProfile = `-- name: UpdateProfile :one
@@ -415,7 +475,7 @@ set
   display_name = coalesce($2::text, display_name),
   phone = coalesce($3::text, phone)
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at
 `
 
 type UpdateProfileParams struct {
@@ -440,6 +500,9 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
 	)
 	return i, err
 }
@@ -447,7 +510,7 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 const updateProfileAvatar = `-- name: UpdateProfileAvatar :one
 update profiles set avatar_r2_key = $2::text
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at
 `
 
 type UpdateProfileAvatarParams struct {
@@ -471,6 +534,9 @@ func (q *Queries) UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvat
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
 	)
 	return i, err
 }
@@ -479,7 +545,7 @@ const updateProfileRole = `-- name: UpdateProfileRole :one
 update profiles
 set role_id = $2
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at
 `
 
 type UpdateProfileRoleParams struct {
@@ -503,6 +569,9 @@ func (q *Queries) UpdateProfileRole(ctx context.Context, arg UpdateProfileRolePa
 		&i.ApprovedBy,
 		&i.ApprovedAt,
 		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
 	)
 	return i, err
 }

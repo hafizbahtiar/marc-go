@@ -248,18 +248,21 @@ type PostLike struct {
 }
 
 type Profile struct {
-	ID            uuid.UUID          `json:"id"`
-	UserID        uuid.UUID          `json:"user_id"`
-	MemberID      string             `json:"member_id"`
-	DisplayName   pgtype.Text        `json:"display_name"`
-	Phone         pgtype.Text        `json:"phone"`
-	RoleID        int16              `json:"role_id"`
-	EmailVerified bool               `json:"email_verified"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	Status        string             `json:"status"`
-	ApprovedBy    pgtype.UUID        `json:"approved_by"`
-	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
-	AvatarR2Key   pgtype.Text        `json:"avatar_r2_key"`
+	ID               uuid.UUID          `json:"id"`
+	UserID           uuid.UUID          `json:"user_id"`
+	MemberID         string             `json:"member_id"`
+	DisplayName      pgtype.Text        `json:"display_name"`
+	Phone            pgtype.Text        `json:"phone"`
+	RoleID           int16              `json:"role_id"`
+	EmailVerified    bool               `json:"email_verified"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Status           string             `json:"status"`
+	ApprovedBy       pgtype.UUID        `json:"approved_by"`
+	ApprovedAt       pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key      pgtype.Text        `json:"avatar_r2_key"`
+	TelegramChatID   pgtype.Int8        `json:"telegram_chat_id"`
+	TelegramUsername pgtype.Text        `json:"telegram_username"`
+	TelegramLinkedAt pgtype.Timestamptz `json:"telegram_linked_at"`
 }
 
 type RefreshToken struct {
@@ -296,6 +299,14 @@ type Sequence struct {
 	Key          string             `json:"key"`
 	CurrentValue int64              `json:"current_value"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TelegramLinkToken struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {
