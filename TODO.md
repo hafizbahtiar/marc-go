@@ -1661,12 +1661,24 @@ tanpa jejak, jadi dinilai HIGH.
       sana. Ini sebab kenapa 90s ialah tampung: ia menaikkan siling,
       bukan menghapuskannya. Hanya fasa 2 sebagai kerja latar yang buat
       begitu.
-- [ ] **L32 — tiada laluan tukar/reset kata laluan langsung (MEDIUM,
+- [x] **L32 — tiada laluan tukar/reset kata laluan langsung (MEDIUM,
       fungsi).** Grep seluruh `internal/`, `cmd/`, `queries/`: tiada
       `password_reset`, tiada `PATCH /me/password`. Ahli yang lupa kata
       laluan **tiada jalan pulih dalam app** — mesti hubungi staff untuk
       UPDATE DB terus. Untuk app yang gate keahlian dgn kelulusan +
       yuran sebenar, ni gap fungsi yang ketara, bukan nice-to-have.
+
+      **RESET dibina 2026-08-22** (spec:
+      `docs/superpowers/specs/2026-08-22-reset-kata-laluan-design.md`,
+      pelan: `docs/superpowers/plans/2026-08-22-reset-kata-laluan.md`).
+      Jadual `password_reset_tokens`, dua endpoint awam, halaman
+      `marc_astro/src/pages/reset-kata-laluan.astro`, skrin
+      `marc_flutter` `forgot_password_page.dart`.
+
+      **TUKAR kata laluan semasa log masuk KEKAL TERBUKA** — ditolak
+      secara eksplisit semasa brainstorm untuk memendekkan skop. Bukan
+      penyekat: ahli yang syak akaun dikompromi ada
+      `POST /auth/logout-all`. Buka item baharu kalau ia diperlukan.
       Berkait: `registerRequest.Password` `min=6` longgar, dan tiada
       lockout per-AKAUN (had kadar `auth` per-IP sahaja, lihat L26) —
       jadi brute-force teragih merentas IP tak dihalang apa-apa.

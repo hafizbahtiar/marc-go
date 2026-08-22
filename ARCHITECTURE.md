@@ -135,7 +135,11 @@ membuka pelayar, bukan app.
 
 Tiga sifat yang saling bergantung, kesemuanya dalam satu transaksi:
 
-- **Sekali-guna** — token dipadam bersama tukar kata laluan.
+- **Sekali-guna, atomik** — sama macam `/auth/refresh`, klaim token guna
+  SATU statement `DELETE ... RETURNING` sebagai statement PERTAMA dalam
+  transaksi. Sebab itulah dua permintaan serentak bawa token sama tak
+  boleh kedua-duanya berjaya — hanya SATU dapat row terkunci, yang lain
+  dapat 0 rows.
 - **Permintaan baharu membunuh yang lama** — kalau tidak setiap
   permintaan menambah satu lagi kelayakan hidup pada akaun yang sama.
 - **Setiap sesi dibatalkan** — orang reset selalunya kerana syak akaun
