@@ -30,6 +30,7 @@ bukti, laluan kod, dan sebab sesuatu itu dinilai pada keterukan tertentu.
 | 2026-08-07 | [Kelulusan status ahli — spec](./superpowers/specs/2026-08-07-member-approval-status-design.md) · [plan](./superpowers/plans/2026-08-07-member-approval-status.md) |
 | 2026-08-09 | [Modul aktiviti — spec](./superpowers/specs/2026-08-09-modul-aktiviti-design.md) · [plan](./superpowers/plans/2026-08-09-modul-aktiviti.md) |
 | 2026-08-22 | [Reset kata laluan — spec](./superpowers/specs/2026-08-22-reset-kata-laluan-design.md) · [plan](./superpowers/plans/2026-08-22-reset-kata-laluan.md) (L32) |
+| 2026-08-22 | [Integrasi Telegram fasa 1 (binding) — spec](./superpowers/specs/2026-08-22-telegram-binding-design.md) · [plan](./superpowers/plans/2026-08-22-telegram-binding.md) — bukan penemuan audit, tiada label L## |
 
 Dua ciri yang **belum** ada spec: onboard ahli lama (brainstorm terhenti
 di pertengahan) dan auto-purge permintaan pemadaman akaun. Lihat `TODO.md`.

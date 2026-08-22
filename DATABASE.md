@@ -181,11 +181,12 @@ di-generate sebagai `github.com/google/uuid.UUID` (bukan default
 |---|---|
 | `users` | akaun (email lowercase-unique, password_hash) |
 | `roles` | `tester`(5)/`ahli`(10)/`supervisor`(50)/`manager`(60)/`admin`(80)/`superadmin`(100); lajur `rank` yang memacu keterlihatan & hierarki edit |
-| `profiles` | member_id (`MARC{YYYY}/{MM}/{0000}`), display_name, phone, `avatar_r2_key`, role_id, email_verified, status (`pending`/`approved`/`rejected`), approved_by/at |
+| `profiles` | member_id (`MARC{YYYY}/{MM}/{0000}`), display_name, phone, `avatar_r2_key`, role_id, email_verified, status (`pending`/`approved`/`rejected`), approved_by/at, `telegram_chat_id`/`telegram_username`/`telegram_linked_at` (Integrasi Telegram Fasa 1) |
 | `sequences` | counter generic — jana `member_id` DAN `serial` sijil secara atomic |
 | `refresh_tokens` | SHA-256 hash + family_id. Single-use via `consumed_at` |
 | `email_verification_tokens` | hash token pengesahan (TTL 1 jam) |
 | `password_reset_tokens` | hash token reset kata laluan (TTL 1 jam). Jadual BERASINGAN drpd pengesahan emel — dua kitaran hayat berbeza; lihat `docs/superpowers/specs/2026-08-22-reset-kata-laluan-design.md` |
+| `telegram_link_tokens` | hash token deep-link binding Telegram (TTL 10 minit, sekali-guna). Binding SEBENAR (`telegram_chat_id` dll) duduk pada `profiles`, bukan sini — jadual ni cuma token sementara; lihat `docs/superpowers/specs/2026-08-22-telegram-binding-design.md` |
 | `device_tokens` | OneSignal subscription id per user. Unik ikut `onesignal_id` |
 | `blocked_email_domains` | domain emel disekat, tambahan MANUAL superadmin — pelengkap kpd senarai statik terbenam `internal/disposableemail/domains.txt` |
 | `account_deletion_requests` | `user_id` unik, `status` (`pending`/`completed`). Keperluan Google Play Console. **Rekod permintaan sahaja** — tiada auto-purge, staff tindak manual |
