@@ -58,6 +58,8 @@ type profileResponse struct {
 	// berlaku" walau hasil sebenar sentiasa betul di sisi pelayan. Cuma
 	// diisi untuk ahli `pending` (approved tak perlu, dah lepas gate).
 	RegistrationPaymentStatus *string `json:"registration_payment_status"`
+	TelegramLinked            bool    `json:"telegram_linked"`
+	TelegramUsername          *string `json:"telegram_username"`
 }
 
 // Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
@@ -95,6 +97,8 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		RoleRank:                  row.RoleRank,
 		AvatarURL:                 h.avatarURL(ctx, row.AvatarR2Key),
 		RegistrationPaymentStatus: paymentStatus,
+		TelegramLinked:            row.TelegramChatID.Valid,
+		TelegramUsername:          textToPtr(row.TelegramUsername),
 	})
 }
 
