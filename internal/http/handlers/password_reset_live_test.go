@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -255,6 +256,42 @@ func TestConfirmResetSekaliGuna(t *testing.T) {
 	}
 	if !passwordSah(t, pool, userID, "pertama-123") {
 		t.Error("guna kedua menukar kata laluan walaupun ditolak")
+	}
+}
+
+// Sekali-guna mesti berkuat kuasa di bawah PERLUMBAAN, bukan hanya
+// secara berjujukan. TestConfirmResetSekaliGuna memanggil satu demi
+// satu, jadi ia tak pernah menguji ini.
+//
+// `delete ... returning` menjadikannya deterministik: kunci baris
+// Postgres menyerikan kedua-dua permintaan, yang kedua mengena 0 baris.
+func TestConfirmResetSekaliGunaDiBawahPerlumbaan(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+
+	userID := seedMember(t, ctx, pool, "ahli", "approved")
+	token := tokenMentahUntuk(t, pool, userID, time.Hour)
+
+	var wg sync.WaitGroup
+	kod := make([]int, 2)
+	for i := range kod {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			kod[n] = resetConfirmCall(t, pool, token, "serentak-123").Code
+		}(i)
+	}
+	wg.Wait()
+
+	berjaya := 0
+	for _, c := range kod {
+		if c == http.StatusNoContent {
+			berjaya++
+		}
+	}
+	if berjaya != 1 {
+		t.Fatalf("%d permintaan serentak berjaya, mahu TEPAT 1 — token "+
+			"boleh dituntut lebih drpd sekali di bawah perlumbaan", berjaya)
 	}
 }
 

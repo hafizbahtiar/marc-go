@@ -753,10 +753,18 @@ type passwordResetConfirmBody struct {
 // Dipanggil dari halaman Astro (bukan app), jadi route ni dapat CORS +
 // pengendali OPTIONS — padanan tepat verify-email/confirm.
 //
-// Keempat-empat tulisan berlaku dalam SATU transaksi. Kalau mana-mana
-// gagal, tiada satu pun berlaku: kata laluan yang bertukar tanpa
-// pembatalan sesi meninggalkan sesi penyerang hidup, dan token yang
-// dipadam tanpa tukar kata laluan mengunci ahli keluar sepenuhnya.
+// Tuntutan token (`ConsumePasswordResetToken`) ialah pernyataan PERTAMA
+// dalam transaksi, bukan SELECT sebelum tx dibuka — kalau tidak, dua
+// permintaan serentak dgn token yang sama kedua-duanya lulus bacaan
+// sebelum mana-mana pun menulis, dan kedua-duanya berjaya reset. Kunci
+// baris `delete ... returning` jamin hanya SATU permintaan dapat baris;
+// yang lain dapat 0 baris dan ditolak. Lihat komen query.
+//
+// Selebihnya (tukar kata laluan, padam token lain, batalkan sesi) turut
+// dalam transaksi yang SAMA. Kalau mana-mana gagal, tiada satu pun
+// berlaku: kata laluan yang bertukar tanpa pembatalan sesi meninggalkan
+// sesi penyerang hidup, dan token yang dipadam tanpa tukar kata laluan
+// mengunci ahli keluar sepenuhnya.
 func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
 	var req passwordResetConfirmBody
 	if !bindJSON(c, &req) {
@@ -764,14 +772,28 @@ func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	rec, err := h.queries.GetPasswordResetTokenByHash(ctx, auth.HashToken(req.Token))
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	rec, err := q.ConsumePasswordResetToken(ctx, auth.HashToken(req.Token))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pautan tidak sah"})
 		return
 	}
 	if rec.ExpiresAt.Time.Before(time.Now()) {
-		// Dipadam supaya token luput tak berlonggok dalam jadual.
-		_ = h.queries.DeletePasswordResetTokensByUser(ctx, rec.UserID)
+		// Token dah tertuntut (dipadam) di atas — COMMIT supaya pemadaman
+		// itu berkuat kuasa. Rollback di sini akan mengembalikan baris
+		// luput itu, membenarkan ia dituntut lagi kemudian.
+		if err := tx.Commit(ctx); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pautan sudah luput"})
 		return
 	}
@@ -782,21 +804,14 @@ func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
 		return
 	}
 
-	tx, err := h.pool.Begin(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
-		return
-	}
-	defer tx.Rollback(ctx)
-	q := h.queries.WithTx(tx)
-
 	if err := q.UpdateUserPassword(ctx, sqlc.UpdateUserPasswordParams{
 		ID: rec.UserID, PasswordHash: hash,
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
 		return
 	}
-	// Sekali-guna.
+	// Padam mana-mana token reset LAIN milik ahli ni (token yg baru
+	// dituntut dah tiada, lihat atas).
 	if err := q.DeletePasswordResetTokensByUser(ctx, rec.UserID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
 		return

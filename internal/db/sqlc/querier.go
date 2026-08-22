@@ -70,6 +70,14 @@ type Querier interface {
 	// 'published'` buat kemas kini idempoten merentas replika, padanan
 	// gaya `CancelStaleUnstartedPayments` (activitysweep).
 	CompleteEndedActivities(ctx context.Context) ([]Activity, error)
+	// Tuntut token secara ATOMIK: satu pernyataan, `delete ... returning`.
+	//
+	// Padanan `ConsumeRefreshToken` (queries/refresh_tokens.sql) dan atas
+	// sebab yang SAMA: baca-dahulu-kemudian-tulis ada jurang TOCTOU — dua
+	// permintaan serentak dgn hash yang sama kedua-duanya lulus bacaan lalu
+	// kedua-duanya menulis. Dengan `delete ... returning`, kunci baris
+	// Postgres menjamin hanya SATU dapat baris; yang lain dapat 0 baris.
+	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (PasswordResetToken, error)
 	// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 	// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
 	// hash sama dihantar serentak (row-level lock Postgres). Row TAK
