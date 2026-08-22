@@ -255,13 +255,37 @@ func callMembers(t *testing.T, pool *pgxpool.Pool, callerID uuid.UUID) []map[str
 	return out
 }
 
+// wipeMembers kosongkan SEMUA ahli daripada DB ujian yang dikongsi.
+//
+// Dua ujian di bawah menegaskan atas KESELURUHAN senarai ahli ("ahli lain
+// tak nampak emel"), jadi ia mesti bermula daripada DB yang diketahui
+// kosong — tak seperti setiap ujian lain dalam pakej ni, yang menyemai
+// baris berid rawak dan menegaskan hanya atas baris itu.
+//
+// ⚠️ Turutan padam mengikut kekangan kunci asing, bukan citarasa.
+// DUA jadual merujuk `users(id)` TANPA klausa `on delete` (jadi RESTRICT
+// secara lalai) dan MESTI dikosongkan dahulu:
+//
+//	profiles.approved_by  — sudah dilindungi oleh `delete from profiles`
+//	donations.user_id     — TERLEPAS sehingga 2026-08-22 (L33)
+//
+// Selebihnya `on delete cascade`/`set null`, jadi ia hilang sendiri.
+// Kalau jadual BAHARU merujuk `users(id)` tanpa klausa `on delete`,
+// tambah di sini — kalau tidak dua ujian di bawah gagal dengan
+// pelanggaran FK yang tiada kaitan dgn apa yang ia uji.
+func wipeMembers(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(ctx,
+		`delete from donations; delete from profiles; delete from users`); err != nil {
+		t.Fatalf("bersih: %v", err)
+	}
+}
+
 // Emel ialah data peribadi. Sejak ahli boleh nampak ahli lain, menghantar
 // emel kepada semua orang bermakna sesiapa boleh menyalin direktori penuh.
 func TestEmelAhliLainDisembunyikanDaripadaAhliBiasa(t *testing.T) {
 	pool, ctx := statusTestPool(t)
-	if _, err := pool.Exec(ctx, `delete from profiles; delete from users`); err != nil {
-		t.Fatalf("bersih: %v", err)
-	}
+	wipeMembers(t, ctx, pool)
 
 	viewer := seedMember(t, ctx, pool, "ahli", "approved")
 	other := seedMember(t, ctx, pool, "ahli", "approved")
@@ -293,9 +317,7 @@ func TestEmelAhliLainDisembunyikanDaripadaAhliBiasa(t *testing.T) {
 
 func TestManagementMasihNampakSemuaEmel(t *testing.T) {
 	pool, ctx := statusTestPool(t)
-	if _, err := pool.Exec(ctx, `delete from profiles; delete from users`); err != nil {
-		t.Fatalf("bersih: %v", err)
-	}
+	wipeMembers(t, ctx, pool)
 
 	manager := seedMember(t, ctx, pool, "manager", "approved")
 	seedMember(t, ctx, pool, "ahli", "approved")

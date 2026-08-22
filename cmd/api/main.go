@@ -170,8 +170,33 @@ func main() {
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		// WriteTimeout MESTI lebih panjang drpd operasi TERPANJANG yang
+		// dihoskan handler, bukan sekadar "nilai yang nampak selamat"
+		// (Opus verify 2026-08-22, L31). Pada 15s ia lebih PENDEK drpd
+		// dua muat naik R2 sisi-pelayan yang ada had 30s masing-masing
+		// (PDF sijil, PDF resit) — dan penerbitan sijil menjalankan muat
+		// naik itu BERJUJUKAN untuk setiap penerima, jadi aktiviti
+		// 50-200 orang dijamin putus sambungan.
+		//
+		// Go TIDAK membatalkan Request.Context() atas write deadline
+		// (ia cuma menetapkan deadline pada ResponseWriter), jadi
+		// handler tetap habis dan datanya betul — cuma RESPONSnya yang
+		// hilang. Pengurus nampak "gagal" pada operasi yang sebenarnya
+		// berjaya, tanpa cara membezakannya daripada kegagalan sebenar.
+		//
+		// Webhook ToyyibPay pula duduk tepat di tepi: VerifyWebhook buat
+		// poll keluar 15s (httpClient.Timeout) SEBELUM kerja DB, jadi
+		// jumlahnya melebihi 15s sebaik ToyyibPay perlahan — dan
+		// ToyyibPay retry atas sambungan putus.
+		//
+		// 90s dipilih: cukup untuk penerbitan sijil bersaiz sebenar,
+		// masih jauh drpd "tiada had". Ini timeout GLOBAL, jadi ia turut
+		// melonggarkan perlindungan pada route lain — diterima kerana
+		// MaxBodySize (1MB) dan had kadar menangani vektor kehabisan
+		// sumber yang berbeza. Pembaikan sebenar ialah jadikan fasa 2
+		// sijil kerja latar + pulang 202; sehingga itu, ini.
+		WriteTimeout: 90 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	log.Printf("listening on :%s", cfg.Port)

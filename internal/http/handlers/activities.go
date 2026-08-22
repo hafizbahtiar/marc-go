@@ -445,7 +445,7 @@ func (h *ActivityHandler) CreateCategory(c *gin.Context) {
 		EntityType: audit.EntityActivityCategory,
 		EntityID:   category.ID,
 		Action:     audit.ActionCreate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		New:        categorySnapshot(category),
 	}); err != nil {
 		log.Printf("audit cipta kategori aktiviti: %v", err)
@@ -533,7 +533,7 @@ func (h *ActivityHandler) UpdateCategory(c *gin.Context) {
 		EntityType: audit.EntityActivityCategory,
 		EntityID:   id,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        categorySnapshot(before),
 		New:        categorySnapshot(updated),
 	}); err != nil {
@@ -1049,7 +1049,7 @@ func (h *ActivityHandler) Create(c *gin.Context) {
 		EntityType: audit.EntityActivity,
 		EntityID:   activity.ID,
 		Action:     audit.ActionCreate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		New:        activitySnapshot(activity),
 	}); err != nil {
 		log.Printf("audit cipta aktiviti: %v", err)
@@ -1144,7 +1144,7 @@ func (h *ActivityHandler) Update(c *gin.Context) {
 		EntityType: audit.EntityActivity,
 		EntityID:   id,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        activitySnapshot(before),
 		New:        activitySnapshot(updated),
 	}); err != nil {
@@ -1211,7 +1211,7 @@ func (h *ActivityHandler) Publish(c *gin.Context) {
 		EntityType: audit.EntityActivity,
 		EntityID:   id,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        map[string]any{"status": before.Status},
 		New:        map[string]any{"status": updated.Status},
 	}); err != nil {
@@ -1297,7 +1297,7 @@ func (h *ActivityHandler) Cancel(c *gin.Context) {
 		EntityType: audit.EntityActivity,
 		EntityID:   id,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        map[string]any{"status": before.Status, "cancelled_reason": before.CancelledReason.String},
 		New:        map[string]any{"status": updated.Status, "cancelled_reason": updated.CancelledReason.String},
 	}); err != nil {

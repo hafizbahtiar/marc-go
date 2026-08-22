@@ -492,7 +492,7 @@ func (h *AttendanceHandler) Unmark(c *gin.Context) {
 		EntityType: audit.EntityAttendance,
 		EntityID:   before.ID,
 		Action:     audit.ActionDelete,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old: map[string]any{
 			"registration_id": registrationID.String(),
 			"session_id":      sessionID.String(),

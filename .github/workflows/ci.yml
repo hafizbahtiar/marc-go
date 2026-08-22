@@ -8,6 +8,51 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+
+    # Postgres + Redis SEBENAR (L14, 2026-08-22).
+    #
+    # Sebelum ni job ni jalankan `go test ./...` tanpa perkhidmatan
+    # apa-apa, jadi setiap `*_live_test.go` lapor SKIP pada setiap PR —
+    # 122 SKIP berbanding 89 PASS, iaitu 58% suite tak pernah berjalan.
+    # Antara yang langkau itu ialah penegasan 403-untuk-bukan-management
+    # pada SETIAP endpoint pengurusan, jadi PR yang membuang satu semakan
+    # `authz.IsManagement` lulus hijau.
+    #
+    # Kedua-dua perkhidmatan ni percuma pada runner GitHub-hosted dan tak
+    # perlukan rahsia. Ujian R2 KEKAL langkau — ia perlukan kredential
+    # Cloudflare sebenar, yang keputusan berasingan (lihat langkah
+    # "Tripwire" di bawah: ia sengaja tak menuntut R2).
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +70,71 @@ jobs:
         run: |
           diff <(gofmt -l .) <(echo -n "")
 
+      # SATU DB setiap pakej, bukan satu dikongsi. `go test ./...`
+      # menjalankan pakej secara SELARI, dan sapuan latar memproses
+      # SETIAP baris yang layak — jadi dua pakej yang berkongsi satu DB
+      # boleh saling memakan baris benih masing-masing dan menghasilkan
+      # kegagalan yang bergantung pada masa.
+      #
+      # ACTIVITY_TEST_DB dan HANDLER_TEST_DB sengaja berkongsi satu DB:
+      # kedua-duanya pakej `handlers` yang SAMA (lihat activityTestPool,
+      # yang jatuh balik daripada satu ke satu lagi).
+      #
+      # Migration dijalankan sendiri oleh setiap helper setup ujian
+      # (`db.Migrate`), jadi tiada langkah seed di sini.
+      - name: Cipta DB ujian
+        run: |
+          for db in marc_handler marc_reaper marc_retention marc_authz \
+                    marc_sweep marc_lifecycle marc_reconcile; do
+            psql -c "create database $db"
+          done
+
+      # -race: sistem ni menjalankan LIMA goroutine latar plus fan-out
+      # notifikasi, jadi perlumbaan data ialah kelas pepijat yang nyata
+      # di sini dan bukan teori.
       - name: go test
-        run: go test ./... -v
+        run: |
+          set -o pipefail
+          go test ./... -race -v 2>&1 | tee test-output.txt
+        env:
+          HANDLER_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_handler?sslmode=disable
+          ACTIVITY_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_handler?sslmode=disable
+          REAPER_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_reaper?sslmode=disable
+          RETENTION_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_retention?sslmode=disable
+          AUTHZ_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_authz?sslmode=disable
+          ACTIVITYSWEEP_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_sweep?sslmode=disable
+          LIFECYCLE_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_lifecycle?sslmode=disable
+          RECONCILE_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_reconcile?sslmode=disable
+          REDIS_TEST_URL: redis://localhost:6379/15
+
+      # TRIPWIRE — menghalang kembali senyap kepada keadaan lama.
+      #
+      # Kegagalan yang perlu ditangkap: seseorang menamakan semula satu
+      # env var, atau menambah pakej bersandar-DB baharu dan terlupa
+      # menyambungkannya di atas. Ujian itu lalu SKIP, `go test` tetap
+      # keluar 0, dan CI kekal hijau sambil menguji kurang daripada yang
+      # dijangka — persis mod kegagalan yang L14 wujud untuk hapuskan.
+      #
+      # Corak `_TEST_DB`/`REDIS_TEST_URL` dipadankan pada mesej SKIP,
+      # jadi konvensyen penamaan sedia ada menjadikan pakej BAHARU
+      # dilindungi secara automatik.
+      #
+      # Skip R2 (`R2_LIVE_TEST`) SENGAJA dikecualikan — ia perlukan
+      # kredential Cloudflare sebenar dan kekal langkau atas keputusan.
+      # Pengecualian itu MESTI dibuat dengan membuang baris yang menyebut
+      # `R2_LIVE_TEST`, bukan dengan menyempitkan corak utama: beberapa
+      # ujian R2 menyebut `REAPER_TEST_DB` dalam mesej skipnya ("perlukan
+      # R2_LIVE_TEST=1 + REAPER_TEST_DB") dan akan salah ditangkap.
+      - name: Tripwire — ujian bersandar-DB mesti benar-benar berjalan
+        run: |
+          if grep -E '(_TEST_DB|REDIS_TEST_URL)' test-output.txt | grep -v 'R2_LIVE_TEST' | grep -q .; then
+            echo "::error::Ujian bersandar-DB/Redis melapor SKIP walaupun perkhidmatan tersedia."
+            echo "Env var mungkin dinamakan semula, atau pakej baharu belum disambung dalam ci.yml."
+            grep -nE '(_TEST_DB|REDIS_TEST_URL)' test-output.txt | grep -v 'R2_LIVE_TEST' | head -20
+            exit 1
+          fi
+          echo "Semua ujian bersandar-DB/Redis berjalan."
+          echo "PASS: $(grep -c '^--- PASS' test-output.txt), SKIP: $(grep -c '^--- SKIP' test-output.txt) (baki SKIP = ujian R2 sahaja)"
 
   lint:
     runs-on: ubuntu-latest

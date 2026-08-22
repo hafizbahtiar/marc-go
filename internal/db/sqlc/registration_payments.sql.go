@@ -13,8 +13,8 @@ import (
 )
 
 const createRegistrationPayment = `-- name: CreateRegistrationPayment :one
-insert into registration_payments (user_id, amount_cents, currency, gateway, gateway_ref, status)
-values ($1, $2, $3, $4, $5, 'pending')
+insert into registration_payments (user_id, amount_cents, currency, gateway, status)
+values ($1, $2, $3, $4, 'pending')
 returning id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at
 `
 
@@ -23,16 +23,23 @@ type CreateRegistrationPaymentParams struct {
 	AmountCents int32     `json:"amount_cents"`
 	Currency    string    `json:"currency"`
 	Gateway     string    `json:"gateway"`
-	GatewayRef  string    `json:"gateway_ref"`
 }
 
+// SENGAJA tanpa `gateway_ref` (L29, 2026-08-22). Baris ditulis SEBELUM
+// bil gateway dicipta, jadi ref belum wujud pada titik ni — ia diisi
+// oleh `SetRegistrationPaymentGatewayRef` sebaik createBill pulang.
+//
+// Susunan ni yang menjadikan bil yatim mustahil: kalau proses mati
+// antara INSERT dan createBill, yang tinggal ialah baris 'pending' tanpa
+// ref — kelihatan, boleh diaudit, dan TIADA bil untuk dibayar. Susunan
+// lama (createBill dahulu) meninggalkan yang sebaliknya: bil yang boleh
+// dibayar tanpa baris, yang webhook mahupun reconcile tak dapat lihat.
 func (q *Queries) CreateRegistrationPayment(ctx context.Context, arg CreateRegistrationPaymentParams) (RegistrationPayment, error) {
 	row := q.db.QueryRow(ctx, createRegistrationPayment,
 		arg.UserID,
 		arg.AmountCents,
 		arg.Currency,
 		arg.Gateway,
-		arg.GatewayRef,
 	)
 	var i RegistrationPayment
 	err := row.Scan(
@@ -96,7 +103,7 @@ type GetMyRegistrationPaymentByIDRow struct {
 	AmountCents int32              `json:"amount_cents"`
 	Currency    string             `json:"currency"`
 	Gateway     string             `json:"gateway"`
-	GatewayRef  string             `json:"gateway_ref"`
+	GatewayRef  pgtype.Text        `json:"gateway_ref"`
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	MemberID    string             `json:"member_id"`
@@ -177,9 +184,19 @@ func (q *Queries) ListMyRegistrationPayments(ctx context.Context, userID uuid.UU
 
 const listPendingRegistrationPaymentsOlderThan = `-- name: ListPendingRegistrationPaymentsOlderThan :many
 select id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at from registration_payments
-where status = 'pending' and created_at < $1
+where status = 'pending'
+  and gateway_ref is not null
+  and created_at < $1
+  and created_at > $2
 order by created_at
+limit $3
 `
+
+type ListPendingRegistrationPaymentsOlderThanParams struct {
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	Oldest      pgtype.Timestamptz `json:"oldest"`
+	RowLimit    int32              `json:"row_limit"`
+}
 
 // Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
 // pada gateway (internal/paymentreconcile) — bukan `status <> 'succeeded'`
@@ -188,8 +205,25 @@ order by created_at
 // 'succeeded', reconcile tak sepatutnya "hidupkan semula" bayaran gagal
 // tanpa ahli cuba lagi secara eksplisit — bayaran baharu akan hasilkan
 // baris baharu).
-func (q *Queries) ListPendingRegistrationPaymentsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) ([]RegistrationPayment, error) {
-	rows, err := q.db.Query(ctx, listPendingRegistrationPaymentsOlderThan, createdAt)
+//
+// TINGKAP ATAS + LIMIT (L30, 2026-08-22). Sebelum ni query ni ada had
+// umur BAWAH sahaja, dan baris yang ditinggalkan TAK PERNAH keluar
+// daripada 'pending': bil ToyyibPay yang tak dibayar pulang
+// `No data found!` selama-lamanya, jadi `CheckStatus` pulang "pending"
+// selama-lamanya. Setiap checkout terbiar kekal dalam senarai semakan
+// SELAMANYA, dan setiap 30 minit ia satu panggilan HTTP keluar lagi —
+// bebanan yang membesar secara monotonik sepanjang hayat sistem.
+//
+// `stale_before` = had bawah (cukup umur untuk layak disemak).
+// `oldest` = had atas: lebih tua drpd ni bukan lagi kerja rekonsiliasi,
+// ia kerja pembersihan. Baris begitu TIDAK hilang — ia kekal dalam DB
+// dan tetap kelihatan melalui /admin/payments; ia cuma berhenti dipoll.
+// `gateway_ref is not null` (L29, 2026-08-22): baris tanpa ref bermakna
+// createBill tak pernah berjaya, jadi tiada bil untuk ditanya pada
+// gateway. Padanan skop `ListPendingActivityRegistrationsOlderThan`,
+// yang sudah lama menapis dgn cara sama atas sebab yang sama.
+func (q *Queries) ListPendingRegistrationPaymentsOlderThan(ctx context.Context, arg ListPendingRegistrationPaymentsOlderThanParams) ([]RegistrationPayment, error) {
+	rows, err := q.db.Query(ctx, listPendingRegistrationPaymentsOlderThan, arg.StaleBefore, arg.Oldest, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +251,60 @@ func (q *Queries) ListPendingRegistrationPaymentsOlderThan(ctx context.Context, 
 	return items, nil
 }
 
+const markRegistrationPaymentFailed = `-- name: MarkRegistrationPaymentFailed :exec
+update registration_payments
+set status = 'failed'
+where id = $1 and gateway_ref is null
+`
+
+// Dipanggil bila createBill GAGAL selepas baris dicipta. Baris dikekalkan
+// (bukan dipadam) supaya sejarah "Bayaran Saya" ahli menunjukkan
+// percubaan itu benar-benar berlaku — dan `ListPendingRegistrationPayments
+// OlderThan` tak perlu menapis baris yang takkan pernah ada bil.
+//
+// Guard `gateway_ref is null` memastikan ni tak boleh menjatuhkan bayaran
+// yang bilnya SUDAH dicipta.
+func (q *Queries) MarkRegistrationPaymentFailed(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markRegistrationPaymentFailed, id)
+	return err
+}
+
+const setRegistrationPaymentGatewayRef = `-- name: SetRegistrationPaymentGatewayRef :one
+update registration_payments
+set gateway_ref = $2
+where id = $1 and gateway_ref is null
+returning id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at
+`
+
+type SetRegistrationPaymentGatewayRefParams struct {
+	ID         uuid.UUID   `json:"id"`
+	GatewayRef pgtype.Text `json:"gateway_ref"`
+}
+
+// Isi `gateway_ref` sebaik createBill berjaya. Dikunci pada `id` (bukan
+// ref) sebab ref itulah yang belum wujud.
+//
+// Guard `gateway_ref is null` menjadikannya sekali-tulis: sebaik bil
+// dikaitkan, tiada laluan boleh menunjuknya kepada bil LAIN. Tanpa
+// guard, pepijat di tempat lain boleh menulis ganti ref bagi bayaran
+// yang sudah berjaya dan mengalihkan rekod kewangan kepada bil orang
+// lain.
+func (q *Queries) SetRegistrationPaymentGatewayRef(ctx context.Context, arg SetRegistrationPaymentGatewayRefParams) (RegistrationPayment, error) {
+	row := q.db.QueryRow(ctx, setRegistrationPaymentGatewayRef, arg.ID, arg.GatewayRef)
+	var i RegistrationPayment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AmountCents,
+		&i.Currency,
+		&i.Gateway,
+		&i.GatewayRef,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const updateRegistrationPaymentStatusByGatewayRef = `-- name: UpdateRegistrationPaymentStatusByGatewayRef :one
 update registration_payments
 set status = $3
@@ -225,9 +313,9 @@ returning id, user_id, amount_cents, currency, gateway, gateway_ref, status, cre
 `
 
 type UpdateRegistrationPaymentStatusByGatewayRefParams struct {
-	Gateway    string `json:"gateway"`
-	GatewayRef string `json:"gateway_ref"`
-	Status     string `json:"status"`
+	Gateway    string      `json:"gateway"`
+	GatewayRef pgtype.Text `json:"gateway_ref"`
+	Status     string      `json:"status"`
 }
 
 // `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook

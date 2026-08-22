@@ -194,18 +194,50 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 
 // Cancel — DELETE /activities/:id/registration. Baris 'cancelled' kekal
 // sebagai sejarah; indeks unik separa yang membenarkan daftar semula.
+//
+// Ditolak selepas aktiviti TAMAT (L15, keputusan produk 2026-08-22) —
+// lihat komen `CancelRegistration` untuk sebab penuh. Ringkasnya:
+// membatalkan selepas hadir memusnahkan kelayakan sijil sendiri secara
+// senyap dan tanpa laluan pulih dalam app.
 func (h *RegistrationHandler) Cancel(c *gin.Context) {
 	activityID, ok := parseUUIDParam(c, "id")
 	if !ok {
 		return
 	}
+	ctx := c.Request.Context()
 
-	reg, err := h.queries.CancelRegistration(c.Request.Context(), sqlc.CancelRegistrationParams{
+	// Dibaca DAHULU semata-mata untuk mesej ralat. Guard sebenar ada
+	// dalam query (atomik, tak boleh dipintas laluan lain) — tapi di
+	// sana "tidak berdaftar" dan "aktiviti sudah tamat" kedua-duanya
+	// menghasilkan sifar baris, dan memberitahu ahli yang salah antara
+	// dua itu lebih teruk daripada tidak memberitahu apa-apa.
+	activity, err := h.queries.GetActivityByID(ctx, activityID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": errActivityNotFound.Error()})
+			return
+		}
+		log.Printf("baca aktiviti %s (batal pendaftaran): %v", activityID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batal pendaftaran"})
+		return
+	}
+	if !time.Now().Before(activity.EndsAt.Time) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error": "aktiviti sudah tamat, pendaftaran tidak boleh dibatalkan",
+		})
+		return
+	}
+
+	reg, err := h.queries.CancelRegistration(ctx, sqlc.CancelRegistrationParams{
 		ActivityID: activityID,
 		UserID:     middleware.UserID(c),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Sampai sini bermakna semakan `ends_at` di atas lulus, jadi
+			// ini benar-benar "tidak berdaftar" — kecuali aktiviti tamat
+			// dalam tetingkap antara dua bacaan, yang guard SQL tangkap
+			// dengan betul walaupun mesejnya kurang tepat.
 			c.JSON(http.StatusNotFound, gin.H{"error": "anda tidak berdaftar"})
 			return
 		}

@@ -268,7 +268,7 @@ func (h *ProfileHandler) applyAvatar(c *gin.Context, userID uuid.UUID, key strin
 		EntityType: audit.EntityProfile,
 		EntityID:   userID,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        map[string]any{"avatar_r2_key": textToAny(before.AvatarR2Key)},
 		New:        map[string]any{"avatar_r2_key": textToAny(updated.AvatarR2Key)},
 	}); err != nil {
@@ -610,7 +610,7 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		EntityType: audit.EntityProfile,
 		EntityID:   targetID,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        map[string]any{"role_key": target.RoleKey, "role_rank": target.RoleRank},
 		New:        map[string]any{"role_key": newRole.Key, "role_rank": newRole.Rank},
 	}); err != nil {
@@ -767,7 +767,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 		EntityType: audit.EntityProfile,
 		EntityID:   targetID,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        map[string]any{"status": target.Status},
 		New:        map[string]any{"status": updated.Status},
 	}); err != nil {
@@ -881,7 +881,7 @@ func (h *ProfileHandler) RequestAccountDeletion(c *gin.Context) {
 		EntityType: audit.EntityAccountDeletionRequest,
 		EntityID:   userID,
 		Action:     audit.ActionCreate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		New:        map[string]any{"status": row.Status},
 	}); err != nil {
 		log.Printf("audit permintaan pemadaman akaun: %v", err)

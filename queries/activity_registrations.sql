@@ -13,10 +13,31 @@ values ($1, $2, $3, $4, $5)
 returning *;
 
 -- name: CancelRegistration :one
-update activity_registrations
+-- `a.ends_at > now()` (L15, 2026-08-22): pendaftaran TAK boleh dibatalkan
+-- selepas aktiviti tamat.
+--
+-- Sebabnya bukan kekemasan. `ListEligibleForCertificate` menuntut
+-- `r.status = 'registered'`, jadi ahli yang hadir setiap sesi lalu
+-- menekan "Batal pendaftaran" pada aktiviti yang sudah tamat akan
+-- memusnahkan kelayakan sijilnya sendiri — secara senyap, tanpa jejak
+-- audit (pembatalan sengaja tak diaudit: volum tinggi, baris sendiri
+-- simpan `cancelled_at`), dan tanpa laluan pulih dalam app. Baris
+-- kehadiran kekal, tapi ia tak lagi dikira.
+--
+-- Guard diletak dalam SQL dan bukan HANYA dalam handler supaya tiada
+-- laluan tulis masa hadapan boleh memintasnya. Handler turut menyemak
+-- lebih awal semata-mata untuk memulangkan mesej yang membezakan
+-- "tidak berdaftar" daripada "aktiviti sudah tamat" — di sini kedua-dua
+-- kes menghasilkan sifar baris.
+update activity_registrations r
 set status = 'cancelled', cancelled_at = now()
-where activity_id = $1 and user_id = $2 and status <> 'cancelled'
-returning *;
+from activities a
+where a.id = r.activity_id
+  and r.activity_id = $1
+  and r.user_id = $2
+  and r.status <> 'cancelled'
+  and a.ends_at > now()
+returning r.*;
 
 -- name: GetRegistrationByActivityAndUser :one
 select * from activity_registrations
@@ -41,7 +62,26 @@ select * from activity_registrations where id = $1;
 -- coalesce(..., '{}') penting: left join memberi NULL untuk pendaftaran
 -- tanpa kehadiran, dan NULL bersiri sebagai `null` dalam JSON. Klien yang
 -- memanggil .map atasnya terhempas — [] ialah kontrak.
-select r.*, pr.member_id, pr.display_name, pr.avatar_r2_key,
+-- Lajur disenaraikan SATU-SATU, bukan `r.*` (L12, ditutup 2026-08-22).
+-- `checkin_token` SENGAJA tiada di sini: ia kelayakan yang membolehkan
+-- sesiapa yang memegangnya ditanda hadir (`method: 'scan'`), dan
+-- kehadiran itulah yang menentukan siapa menerima sijil. Skrin pengurusan
+-- menanda kehadiran melalui `registration_id`, jadi token ahli LAIN tiada
+-- sebab meninggalkan pelayan — pendedahannya bersifat sampingan (log,
+-- laporan ranap, cache proksi, tangkapan skrin peranti pengurus).
+--
+-- `r.*` bermakna setiap lajur BAHARU pada `activity_registrations` turut
+-- disiarkan secara automatik. Senarai eksplisit menjadikan pendedahan
+-- sebagai keputusan yang perlu ditulis, bukan lalai.
+--
+-- Klien sudah tidak memodelkannya (`marc_flutter`
+-- `manage_providers.dart` menyatakannya secara eksplisit), jadi
+-- membuangnya bukan perubahan yang memecahkan — ia menguatkuasakan di
+-- pelayan apa yang sebelum ini sekadar konvensyen klien.
+select r.id, r.activity_id, r.user_id, r.status,
+  r.payment_status, r.payment_ref, r.fee_cents_paid,
+  r.registered_at, r.cancelled_at,
+  pr.member_id, pr.display_name, pr.avatar_r2_key,
   coalesce(att.session_ids, '{}')::uuid[] as attended_session_ids
 from activity_registrations r
 join profiles pr on pr.user_id = r.user_id
@@ -97,9 +137,29 @@ returning *;
 -- semak awal selamat — lihat internal/paymentreconcile untuk alasan
 -- penuh). Baris `payment_ref is null` (tak pernah cuba checkout) dilangkau
 -- — tiada apa nak disemak pada gateway untuk baris begitu.
+--
+-- Tingkap atas + limit + `status <> 'cancelled'` (L30, 2026-08-22).
+-- Lihat komen penuh pada `ListPendingRegistrationPaymentsOlderThan`.
+--
+-- Guard `status <> 'cancelled'` PENTING khusus di sini:
+-- `CancelStaleUnpaidBills` menetapkan `status='cancelled'` tetapi
+-- MEMBIARKAN `payment_status='pending'` (sengaja — lihat komennya), jadi
+-- tanpa guard ni setiap baris yang pernah dibatalkan sapuan kekal dipoll
+-- pada ToyyibPay selama-lamanya walaupun ia sudah mati secara muktamad.
+--
+-- Ini TIDAK menyembunyikan race bayar-selepas-batal yang
+-- `UpdateRegistrationPaymentStatusByPaymentRef` sengaja biarkan
+-- kelihatan: race itu ditangkap oleh WEBHOOK (yang tak melalui query
+-- ni), dan tetingkap masanya jauh lebih pendek drpd cutoff 24 jam
+-- `CancelStaleUnpaidBills`.
 select * from activity_registrations
-where payment_status = 'pending' and payment_ref is not null and registered_at < $1
-order by registered_at;
+where payment_status = 'pending'
+  and status <> 'cancelled'
+  and payment_ref is not null
+  and registered_at < sqlc.arg('stale_before')
+  and registered_at > sqlc.arg('oldest')
+order by registered_at
+limit sqlc.arg('row_limit');
 
 -- name: CancelStaleUnstartedPayments :many
 -- Batal pendaftaran berbayar yang ahli TAK PERNAH cuba checkout

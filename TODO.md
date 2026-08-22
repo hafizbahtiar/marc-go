@@ -4,6 +4,7 @@ Kerja yang **belum siap** sahaja. Sejarah penuh (keputusan, gotcha, hasil
 verifikasi setiap stage) ada dalam git log — cari ikut nombor stage.
 Struktur kod: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 Schema & migration: [`DATABASE.md`](./DATABASE.md).
+Spec, plan, laporan audit penuh: [`docs/`](./docs/).
 
 Stage 0–15 siap: auth custom, RBAC, posts/comments/likes, kelulusan ahli,
 push, upload R2, donation Stripe, jejak audit, pembersih storan, polisi
@@ -994,8 +995,30 @@ Keluar daripada semakan menyeluruh modul aktiviti. Severiti di bawah ialah
 severiti **hari ini** — L12 khususnya naik apabila satu ciri lain mendarat,
 jadi baca syarat kenaikan itu, bukan label sahaja.
 
-- [ ] **L12 — `checkin_token` dihantar dalam respons senarai peserta.**
-      **Low sekarang → Medium sebaik `self_scan` dibina. Tutup SEBELUM itu.**
+- [x] **L12 — `checkin_token` dihantar dalam respons senarai peserta**
+      (DIBAIKI 2026-08-22).
+
+      **Nota eskalasi yang TIDAK berlaku:** syarat asal berbunyi "Medium
+      sebaik `self_scan` dibina". `self_scan` memang sudah dibina
+      (2026-08-15) — tetapi eskalasi itu **tidak** berlaku, kerana
+      `self_scan` direka untuk menolak `checkin_token` sepenuhnya
+      (identiti daripada JWT, dan handler menolak permintaan `self_scan`
+      yang membawa medan itu). Jadi ia kekal Low sepanjang masa. Direkod
+      supaya tiada siapa membaca nota lama dan menganggap ia terlepas
+      sebagai Medium.
+
+      **Pembaikan:** `ListRegistrationsByActivity` kini menyenaraikan
+      lajur SATU-SATU dan bukan `r.*`, jadi `checkin_token` tak lagi
+      keluar — dan lajur BAHARU pada `activity_registrations` tak lagi
+      disiarkan secara automatik. `ListMyRegistrations` sengaja
+      DIKEKALKAN dengan `r.*`: di situ ahli melukis QR sendiri daripada
+      tokennya sendiri.
+
+      Disahkan selamat merentas repo sebelum diubah: `marc_flutter`
+      `manage_providers.dart` menyatakan sendiri bahawa medan itu
+      "SENGAJA tidak dimodelkan". Jadi ini menguatkuasakan di pelayan apa
+      yang sebelum ini sekadar konvensyen klien. 74 ujian handler
+      (bukan skip) lulus terhadap Postgres sebenar selepas perubahan.
 
       `queries/activity_registrations.sql` (`ListRegistrationsByActivity`)
       guna `select r.*`, jadi `ListRegistrationsByActivityRow` membawa
@@ -1020,8 +1043,27 @@ jadi baca syarat kenaikan itu, bukan label sahaja.
       `r.*`), atau petakan kepada struct respons seperti yang dibuat oleh
       endpoint pengesahan awam. Jangan tunggu sampai `self_scan` bermula.
 
-- [ ] **L13 — `auditActor` mengambil sambungan kolam KEDUA sambil transaksi
-      memegang yang pertama.** Low–Medium, ketersediaan, **seluruh repo**.
+- [x] **L13 — `auditActor` mengambil sambungan kolam KEDUA sambil transaksi
+      memegang yang pertama** (DIBAIKI 2026-08-22). Low–Medium,
+      ketersediaan, **seluruh repo**.
+
+      **Dibaiki secara BERBEZA daripada cadangan asal.** Cadangan asal
+      ialah "nilai `auditActor` sebelum `Begin`". Yang dilakukan: hantar
+      `q` (Queries terikat-transaksi) dan bukan `h.queries` (terikat
+      kolam) pada **15 tapak inline** merentas 5 fail. Ia lebih baik —
+      cadangan asal cuma mengelak dua sambungan SERENTAK, ini langsung
+      tak meminta sambungan kedua. Bacaan berjalan atas sambungan yang
+      sudah dipegang transaksi.
+
+      Bonus: diffnya jauh lebih kecil (tiada penyusunan semula aliran
+      kawalan), dan tiada tapak baharu boleh terlepas — `q` cuma wujud
+      dalam skop yang MEMANG ada transaksi terbuka, jadi `auditActor(c, q)`
+      tak boleh ditulis di tempat yang salah.
+
+      Empat tapak lain betul mengekalkan `h.queries`: `Issue`/`Revoke`
+      sijil dan `Mark` kehadiran menilai actor SEBELUM menyerahkannya
+      kepada fungsi yang membuka tx sendiri — tiada transaksi wujud untuk
+      berlumba dengannya pada titik itu.
 
       `internal/http/handlers/audit_helpers.go` membaca profil melalui
       `h.queries` (terikat kolam) sedangkan pemanggil sedang memegang
@@ -1037,8 +1079,8 @@ jadi baca syarat kenaikan itu, bukan label sahaja.
       dan timeout klien melepaskan sambungan. Pembaikan: nilai `auditActor`
       **sebelum** `Begin` — kebanyakan tapak panggilan baharu sudah begitu.
 
-- [ ] **L14 — ujian kebenaran LANGKAU dalam CI.** Medium sebagai jurang
-      jaminan, bukan kelemahan hidup.
+- [x] **L14 — ujian kebenaran LANGKAU dalam CI** (DIBAIKI 2026-08-22).
+      Medium sebagai jurang jaminan, bukan kelemahan hidup.
 
       `.github/workflows/ci.yml` menjalankan `go test ./... -v` tanpa blok
       `services:` dan tanpa Postgres, jadi setiap `*_live_test.go` dalam
@@ -1058,8 +1100,68 @@ jadi baca syarat kenaikan itu, bukan label sahaja.
       kau), atau pindahkan penegasan authz bernilai tertinggi ke ujian yang
       tidak perlukan DB.
 
-- [ ] **L15 — ahli boleh memusnahkan bukti kehadirannya sendiri, tanpa
-      jejak.** Low (mencederakan diri), tetapi tidak boleh dipulihkan.
+      **Dibuat 2026-08-22** (selepas L36 mengubah pengiraan: kerja yang
+      baru siap takkan melindungi apa-apa secara automatik).
+      `ci.yml` kini menjalankan perkhidmatan `postgres:18` + `redis:8` —
+      kedua-duanya percuma pada runner GitHub-hosted, tiada rahsia
+      diperlukan. Kesan diukur:
+
+      | | Sebelum | Selepas |
+      |---|---|---|
+      | PASS | 89 | **202** |
+      | SKIP | 122 | **9** (semuanya R2) |
+
+      **SATU DB setiap pakej**, bukan satu dikongsi: `go test ./...`
+      menjalankan pakej secara SELARI, dan sapuan latar memproses SETIAP
+      baris yang layak — dua pakej berkongsi satu DB akan saling memakan
+      baris benih dan menghasilkan kegagalan bergantung-masa.
+      `ACTIVITY_TEST_DB`/`HANDLER_TEST_DB` sengaja berkongsi (pakej yang
+      sama).
+
+      `-race` turut dihidupkan — sistem ni menjalankan lima goroutine
+      latar plus fan-out notifikasi, jadi perlumbaan data kelas pepijat
+      yang nyata di sini. Disahkan bersih secara tempatan sebelum
+      dimasukkan.
+
+      **Langkah tripwire ditambah** supaya kembali senyap kepada keadaan
+      lama mustahil: kalau mana-mana ujian melapor SKIP dengan sebab
+      `_TEST_DB`/`REDIS_TEST_URL`, job GAGAL. Tanpanya, menamakan semula
+      satu env var (atau menambah pakej bersandar-DB baharu dan terlupa
+      menyambungkannya) akan menjadikan CI hijau semula sambil menguji
+      kurang — persis mod kegagalan asal L14. Corak dipadankan pada
+      konvensyen penamaan, jadi pakej BAHARU dilindungi automatik.
+
+      Ujian R2 (9 baki SKIP) kekal langkau — ia perlukan kredential
+      Cloudflare sebenar, iaitu keputusan berasingan. Tripwire sengaja
+      mengecualikannya dengan membuang baris yang menyebut `R2_LIVE_TEST`
+      — BUKAN dengan menyempitkan corak utama, sebab empat ujian R2
+      menyebut `REAPER_TEST_DB` dalam mesej skipnya dan akan salah
+      ditangkap.
+
+      Disahkan DUA arah secara tempatan sebelum dihantar: dengan semua
+      perkhidmatan hadir tripwire senyap (202 PASS / 9 SKIP, kesemua 9
+      sebab-R2); dengan `AUTHZ_TEST_DB` dibuang, `go test` tetap keluar 0
+      (tepat masalahnya) dan tripwire MENYALA.
+
+- [x] **L15 — ahli boleh memusnahkan bukti kehadirannya sendiri, tanpa
+      jejak** (DIBAIKI 2026-08-22). Low (mencederakan diri), tetapi tidak
+      boleh dipulihkan.
+
+      **Keputusan produk 2026-08-22: pembatalan DITOLAK selepas aktiviti
+      tamat.** `CancelRegistration` kini join `activities` dan menuntut
+      `a.ends_at > now()`; handler `Cancel` menyemak lebih awal semata
+      untuk memulangkan 422 yang membezakan "aktiviti sudah tamat"
+      daripada "tidak berdaftar" (dalam SQL, kedua-duanya sifar baris).
+
+      Guard diletak dalam SQL dan bukan HANYA handler supaya laluan tulis
+      masa hadapan tak boleh memintasnya — ada ujian khusus yang
+      memanggil query TERUS untuk menegakkan itu.
+
+      **Baki yang diterima:** ahli masih boleh batal SEMASA aktiviti
+      berjalan, selepas hadir sesi awal. Tetingkapnya jauh lebih sempit
+      dan pilihannya lebih jelas kepada ahli (aktiviti belum tamat), jadi
+      ia tak dianggap sebagai jurang yang sama. Guard "ada kehadiran
+      direkod" akan menutupnya sepenuhnya kalau ia jadi masalah sebenar.
 
       `CancelRegistration` (`queries/activity_registrations.sql`) tiada
       pengawal langsung atas status, tetingkap masa, atau kehadiran sedia
@@ -1237,22 +1339,36 @@ direkod sahaja.
       tak sentuh title langsung (`merge` salin balik `before.Title`).
       Baris jadi tak boleh di-PATCH selama-lamanya. Ini regresi `aa0e6c5`
       sendiri, bukan gap lama. Fix: `utf8.RuneCountInString`.
-- [ ] **L24 — medan lain masih tiada had panjang** (di luar skop L17
+- [x] **L24 — medan lain masih tiada had panjang** (di luar skop L17
       asal): `activityRequest.Description`/`LocationAddress`
-      (`activities.go:526,528`, POST DAN PATCH), `Cancel.Reason`
-      (`activities.go:1053` — **turut disuntik terus ke body push
-      notification yang di-fanout ke setiap pendaftar**,
-      `activities.go:1125`), `revokeCertificateRequest.Reason`
-      (`activity_certificates.go:550`), `markAttendanceRequest.Reason`
-      (`activity_attendance.go:220`).
-- [ ] **L25 — spam notification/push tanpa had melalui comment create**
+      (POST DAN PATCH), `Cancel.Reason` (**turut disuntik terus ke body
+      push notification yang di-fanout ke setiap pendaftar**),
+      `revokeCertificateRequest.Reason`, `markAttendanceRequest.Reason`.
+
+      **Disahkan SIAP 2026-08-22** (dibaiki sepanjang kerja sejak audit,
+      cuma tak pernah ditanda): `Description` `max=2000`,
+      `LocationAddress` `max=500`, `Cancel.Reason` `required,max=500`,
+      kedua-dua `revokeCertificateRequest.Reason` dan
+      `markAttendanceRequest.Reason` `omitempty,max=500`. Laluan PATCH
+      pula ada semakan `utf8.RuneCountInString` berasingan untuk
+      keempat-empat medan aktiviti — kira RUNE, bukan bait, jadi ia tak
+      mengulang regresi L23.
+- [x] **L25 — spam notification/push tanpa had melalui comment create**
       (corak sama L18, terbuka pada laluan berimpak lebih tinggi).
-      `comments.go:99-103` panggil `notifyOwner` pada SETIAP
-      `POST /posts/:id/comments`, route ni **tiada rate limiter**
-      (`router.go:124`). Gelung = harassment bersasar + pertumbuhan
-      `notifications`/`comments` tanpa had. `POST /posts` dan `PATCH /me`
-      turut tak dihad kadar.
-- [ ] **L26 — bucket rate-limit auth kini dikongsi 7 route, IP-only.**
+      `comments.go` panggil `notifyOwner` pada SETIAP
+      `POST /posts/:id/comments`, route ni **tiada rate limiter**.
+      Gelung = harassment bersasar + pertumbuhan `notifications`/
+      `comments` tanpa had. `POST /posts` dan `PATCH /me` turut tak
+      dihad kadar.
+
+      **Disahkan SIAP 2026-08-22**: ketiga-tiga route kini ada baldi
+      BERNAMA sendiri dalam `router.go` — `comment-create` (3s/10),
+      `post-create` (3s/10), `profile-update` (3s/10). Had kadar (bukan
+      dedup macam L18) memang ubat yang betul di sini: setiap create
+      MEMANG baris baharu yang sah, jadi tiada konsep "dah wujud" untuk
+      diguna sebagai guard.
+- [x] **L26 — bucket rate-limit auth kini dikongsi 7 route, IP-only**
+      (sisi Go SIAP; baki disemak sebagai L26a di bawah).
       `authRateLimiter` (`router.go:69`) satu instance dikongsi
       register/login/refresh/logout/verify-email (confirm+request), had
       5 burst/1 setiap 12s, kunci `c.ClientIP()` sahaja. Risiko IP
@@ -1264,13 +1380,46 @@ direkod sahaja.
       tinggalkan refresh token hidup. Turut lemahkan andaian L21 (5/min
       diandaikan khusus untuk enumerasi Register). Cadangan: bucket
       bernama berasingan (lebih longgar) untuk refresh/logout.
-- [ ] **L27 — dua residual tarikh LOW pada resit donation.**
-      (a) `pi.Created` (`stripe.go:117`) ialah masa PaymentIntent
-      **dicipta**, bukan masa bayar sebenar — untuk DuitNow QR/FPX
-      pembayar mungkin bayar minit kemudian; `LatestCharge.Created` lebih
-      tepat. (b) `donations.go:348` format `paidAt` dalam server-local
-      (UTC) manakala PDF lampiran cetak MYT — badan emel dan lampirannya
-      sendiri kini lari 8 jam.
+
+      **Sisi Go SIAP (disahkan 2026-08-22)**: `authSessionRateLimiter`
+      (baldi `auth-session`, 3s/burst 10) kini dipasang pada `/refresh`
+      dan `/logout` sahaja, berasingan daripada baldi `auth` ketat
+      (12s/5) yang kekal untuk register/login/verify-email. Senario
+      wifi-kelab/CGNAT tak lagi menghabiskan kuota log masuk.
+
+- [x] **L26a — sahkan sisi Flutter kendalikan 429 pada `/auth/refresh`**
+      (DISAHKAN SELAMAT 2026-08-22). Baki L26 yang tak dapat disemak dari
+      repo ni. Kalau `marc_flutter` melayan 429 sama macam 401 (token tak
+      sah), ia jadi forced-logout beramai-ramai.
+
+      **Tidak berlaku.** `marc_flutter` `lib/core/api_client.dart`:
+      `e.response?.statusCode == 401 ? rejected : networkFailure` — jadi
+      429 jatuh ke `networkFailure`, yang MENGEKALKAN refresh token dan
+      cuma menggagalkan permintaan semasa. Hanya 401 yang membuang sesi.
+      Digandingkan dengan baldi `auth-session` berasingan (L26), senario
+      wifi-kelab/CGNAT kini selamat pada KEDUA-DUA belah.
+- [x] **L27 — dua residual tarikh LOW pada resit donation.**
+      (a) `pi.Created` (`stripe.go`) ialah masa PaymentIntent **dicipta**,
+      bukan masa bayar sebenar — untuk DuitNow QR/FPX pembayar mungkin
+      bayar minit kemudian; `LatestCharge.Created` lebih tepat.
+      (b) `donations.go` format `paidAt` dalam server-local (UTC)
+      manakala PDF lampiran cetak MYT — badan emel dan lampirannya
+      sendiri lari 8 jam.
+
+      **(b) SIAP** (disahkan 2026-08-22): `donationReceiptHTML` kini guna
+      `receipt.FormatDateTime`, fungsi SAMA yang PDF guna
+      (`t.In(malaysiaTZ)` + akhiran "(MYT)"). Badan emel dan lampiran tak
+      boleh lari lagi — satu fungsi, satu zon waktu.
+
+      **(a) RISIKO DITERIMA**, bukan kerja tertunggak. Komen panjang dalam
+      `stripe.go` menerangkan sebabnya: Stripe TIDAK meng-expand
+      `latest_charge` dalam payload webhook secara lalai — ia tiba sebagai
+      rentetan id, dan `Charge.UnmarshalJSON` stripe-go cuma menetapkan
+      `ID` sambil membiarkan `Created` pada nilai sifar. Jadi membaca
+      `pi.LatestCharge.Created` akan senyap mencetak **1970-01-01** —
+      lebih teruk daripada pepijat semasa (tarikh salah tapi munasabah).
+      Pembaikan sebenar perlukan tetapan expansion pada endpoint webhook
+      Stripe atau panggilan `charge.Get` tambahan.
 
 ### Nota reka bentuk keselamatan — yuran pendaftaran ToyyibPay (belum dibina, rujukan awal)
 
@@ -1328,6 +1477,345 @@ Direkod supaya tidak diburu semula sebagai penemuan baharu:
   `(a.fee_cents = 0 or r.payment_status = 'paid')` menjadi palsu untuk
   setiap pendaftar — sifar orang layak, tiada ralat di mana-mana.
 
+### Audit `queries/` + `internal/` + `cmd/` (2026-08-22)
+
+> Laporan penuh (bukti, laluan kegagalan, kod): [`docs/audits/2026-08-22-queries-internal-cmd.md`](./docs/audits/2026-08-22-queries-internal-cmd.md).
+> Bahagian ni senarai kerjanya sahaja.
+
+Pusingan ketiga. Skop: ketiga-tiga direktori penuh, termasuk yang dibina
+SELEPAS audit 2026-08-15 (yuran aktiviti, `paymentreconcile`,
+`activitysweep`, `activitylifecycle`, `paymentlog`, resit, permintaan
+pemadaman akaun). `go build`/`go vet`/`gofmt`/`go test ./...` bersih
+semasa audit — jadi semua penemuan di bawah ialah gap yang lulus compiler
+DAN lulus ujian sedia ada.
+
+Tiada penemuan capai bar CRITICAL (eksploit sekarang oleh aktor
+keistimewaan rendah). L28 dan L29 dua-dua kehilangan data/duit senyap
+tanpa jejak, jadi dinilai HIGH.
+
+- [x] **L28 — reaper boleh padam gambar post yang MASIH hidup (HIGH,
+      DIBAIKI 2026-08-22).**
+      `queries/uploads.sql` `ListStalePendingUploads` komennya kata
+      "pending upload yang tak pernah dilekatkan pada mana-mana post",
+      tapi query sebenar `select * from pending_uploads where created_at
+      < $1` — **tiada semakan lekatan langsung**. Ia bergantung 100% pada
+      baris `pending_uploads` dipadam semasa post dicipta, dan
+      `posts.go` (gelung `CreatePostImage`) buang ralat itu dengan
+      `_ = q.DeletePendingUpload(...)` di bawah komen "row lingering
+      harmless". Ia BUKAN harmless: kalau DELETE tu gagal (deadlock, blip
+      sambungan), `reaper.sweepAbandonedUploads` gilirkan kunci tu selepas
+      6 jam (`abandonedAfter`) dan `drainDeleteQueue` padam objek dari R2 —
+      gambar post yang sedang dipaparkan hilang kekal, baris `post_images`
+      tinggal, feed papar imej rosak. Laluan avatar (`profile.go`
+      `applyAvatar`) buat BETUL — ia semak ralat `DeletePendingUpload`
+      dalam transaksi.
+
+      **Dibaiki 2026-08-22, kedua-dua lapisan** (bukan salah satu — kos
+      melanggar invarian ni ialah kehilangan data yang tak boleh
+      dipulihkan): (a) `ListStalePendingUploads` kini ada DUA klausa
+      `not exists` (`post_images`, `profiles.avatar_r2_key`) jadi ia
+      betul secara bersendirian dan tak bergantung pada fail lain; (b)
+      `posts.go` menyemak ralat `DeletePendingUpload` dan menggagalkan
+      transaksi — rollback mengekalkan baris pending, tepat seperti niat
+      asal komen lama. Migration `20260822100000_index_post_images_r2_key`
+      menambah indeks pada `post_images(r2_key)` — subquery baharu (DAN
+      `ListOrphanedPostImageKeys` sedia ada) sebelum ni seq scan jadual
+      yang tumbuh selama-lamanya.
+
+      Ujian: `internal/reaper/pending_uploads_live_test.go`, tiga kes —
+      gambar post hidup tak disapu, avatar hidup tak disapu, dan yatim
+      SEBENAR masih disapu (guard terhadap pembaikan yang terlebih
+      ketat). Perlukan **Postgres sahaja**, bukan R2 — yang diuji ialah
+      predikat SQL. Dua kes pertama disahkan GAGAL terhadap query lama
+      dan LULUS terhadap yang baharu.
+- [x] **L29 — bil ToyyibPay dicipta SEBELUM baris DB; bayaran boleh hilang
+      tanpa jejak (HIGH, DIBAIKI PENUH 2026-08-22).** `registration_payment.go` `Checkout` panggil
+      `h.gw.CreatePayment(...)` (bil SAH wujud di ToyyibPay, ahli boleh
+      bayar) dan baru lepas tu `CreateRegistrationPayment(...)`. Kalau
+      INSERT gagal → 500, tapi bil tetap hidup. Lepas ahli bayar:
+      `UpdateRegistrationPaymentStatusByGatewayRef` kena 0 baris →
+      `pgx.ErrNoRows` dilayan sebagai "replay biasa" dan **disenyapkan**;
+      `paymentreconcile` pula iterasi baris `registration_payments`, jadi
+      ia tak boleh tolong untuk baris yang tak pernah wujud. Duit masuk,
+      sifar rekod. Satu-satunya jejak ialah `payment_logs`
+      `EventCheckoutFailed` — yang **tak bawa `GatewayRef`** sebab
+      `result` dibuang pada laluan ralat, jadi bil yatim tu tak boleh
+      dicari pun. Corak sama pada `activity_registration_payment.go`
+      (`SetRegistrationPaymentRef` gagal selepas bil dicipta).
+
+      Fix: cipta baris `pending` dengan `gateway_ref` kosong DAHULU,
+      panggil `CreatePayment`, lepas tu UPDATE isi ref.
+
+      ⚠️ Susunan semula itu **perlukan migration** — `gateway_ref` ialah
+      `not null` dengan indeks unik `(gateway, gateway_ref)`, jadi dua
+      baris ref-kosong akan berlanggar pada ahli KEDUA yang checkout.
+      Perlu jadikan lajur nullable + tukar indeks kepada partial
+      (`where gateway_ref is not null`). Itu yang menjadikannya kerja
+      laluan-duit + skema, bukan susunan semula ringkas.
+
+      **PEMBAIKAN PENUH dipasang 2026-08-22.** Migration
+      `20260822140000_registration_payments_nullable_ref`:
+      `gateway_ref` jadi nullable, indeks unik jadi SEPARA
+      (`where gateway_ref is not null`). Susunan `Checkout` dibalikkan:
+
+      1. `CreateRegistrationPayment` — baris 'pending', TIADA ref
+      2. `CreatePayment` (createBill)
+      3. `SetRegistrationPaymentGatewayRef` — pautkan
+
+      Kegagalan pada langkah 1 tak mencipta apa-apa. Kegagalan pada
+      langkah 2 meninggalkan baris tanpa ref, yang ditanda `'failed'`
+      (`MarkRegistrationPaymentFailed`, guard `gateway_ref is null`) —
+      **tiada bil wujud, jadi tiada duit boleh berpindah tangan**. Urutan
+      berbahaya lama (bil wujud, baris tiada) kini MUSTAHIL.
+
+      `SetRegistrationPaymentGatewayRef` sekali-tulis (guard
+      `gateway_ref is null`) supaya rekod kewangan yang sudah berpaut tak
+      boleh dialihkan kepada bil orang lain.
+
+      **Tetingkap baki, dinyatakan jujur:** langkah 3 boleh gagal selepas
+      bil dicipta, meninggalkan bil + baris yang tak berpaut. Ia jauh
+      lebih sempit drpd sebelum ni DAN boleh dipulihkan — baris itu kini
+      WUJUD dengan user_id, amaun, dan timestamp, jadi mendamaikannya
+      ialah satu UPDATE, bukan siasatan forensik. Log ERROR +
+      `paymentlog` membawa kedua-dua belah pautan.
+
+      `ListPendingRegistrationPaymentsOlderThan` menapis
+      `gateway_ref is not null` — baris tanpa bil tiada apa untuk ditanya
+      pada gateway (padanan skop query aktiviti).
+
+      Ujian: `handlers/registration_payment_live_test.go` (5 kes, gateway
+      distub) + `TestReconcileLangkauBarisTanpaGatewayRef`. Dua mutasi
+      disahkan menggagalkan ujian yang sepatutnya: buang tapisan
+      `is not null`, dan buang tanda `'failed'`. Pusingan migration
+      `up → down → up` diuji dgn baris ref-NULL sebenar — `Down`
+      memusnahkan data (didokumen dalam failnya) tapi memulihkan
+      `NOT NULL` + indeks penuh dengan betul.
+- [x] **L30 — backlog `paymentreconcile` membesar selama-lamanya (MEDIUM,
+      kos + kadar API gateway; DIBAIKI 2026-08-22).** Ketiga-tiga query sumber ada had umur
+      **bawah** sahaja — tiada had atas, tiada `LIMIT`:
+      `ListPendingRegistrationPaymentsOlderThan`,
+      `ListPendingDonationsOlderThan`,
+      `ListPendingActivityRegistrationsOlderThan`. Checkout yang
+      ditinggalkan TAK PERNAH keluar dari `pending`: ToyyibPay pulang
+      `No data found!` → `CheckStatus` = `"pending"` selamanya; Stripe
+      intent terbiar kekal `requires_payment_method` → `"pending"`
+      selamanya; dan `CancelStaleUnpaidBills` set `status='cancelled'`
+      tapi **biarkan `payment_status='pending'`** sedangkan query aktiviti
+      tak tapis `status <> 'cancelled'`, jadi baris mati kekal disemak.
+      Kesan: setiap 30 minit, satu panggilan HTTP keluar bagi SETIAP baris
+      terkumpul sejak hari pertama. Selepas setahun operasi = ratusan/ribuan
+      panggilan setiap pusingan, selama-lamanya. Fix: tingkap atas
+      (`created_at > now() - interval '7 days'`) + `limit`, dan tapis
+      `status <> 'cancelled'` pada query aktiviti.
+
+      **Dibuat 2026-08-22**, ketiga-tiganya: pemalar `maxAge` (7 hari,
+      dipilih sebab cutoff paling panjang di tempat lain dalam sistem ni
+      ialah 24 jam — `activitysweep.unpaidBillAfter` — jadi tiada bayaran
+      yang masih boleh diselesaikan tercicir) dan `batchSize` (200),
+      dihantar melalui struct `window`. Struct, bukan dua
+      `pgtype.Timestamptz` bersebelahan: kedua-duanya jenis SAMA, jadi
+      tertukar susunan akan menghasilkan julat kosong secara SENYAP
+      (sifar baris = "tiada kerja"), bukan ralat.
+
+      Guard `status <> 'cancelled'` pada query aktiviti TIDAK
+      menyembunyikan race bayar-selepas-batal yang
+      `UpdateRegistrationPaymentStatusByPaymentRef` sengaja biarkan
+      kelihatan — race itu ditangkap oleh WEBHOOK, yang tak melalui query
+      ni, dan tetingkap masanya jauh lebih pendek drpd cutoff 24 jam.
+
+      Baris yang melebihi tingkap TIDAK hilang: ia kekal dalam DB dan
+      tetap kelihatan melalui `/admin/payments`, cuma berhenti dipoll.
+      `order by created_at` menaik bermakna yang paling lama menunggu
+      didahulukan, jadi tiada baris boleh kebuluran di bawah `batchSize`.
+- [x] **L31 — `WriteTimeout` server (15s) lebih pendek drpd operasi yang ia
+      hoskan (30s) (MEDIUM, DITAMPUNG 2026-08-22 — `WriteTimeout` kini
+      90s; pembaikan sebenar, iaitu fasa 2 sijil jadi kerja latar + 202,
+      kekal TERBUKA).** `cmd/api/main.go` set `WriteTimeout: 15 *
+      time.Second`, tapi `certificateUploadTimeout` dan
+      `receiptUploadTimeout` dua-dua 30s, dan `VerifyWebhook` ToyyibPay
+      buat poll keluar 15s (`httpClient.Timeout`) SEBELUM kerja DB.
+      Kesan konkrit: `POST /activities/:id/certificates` untuk aktiviti
+      50–200 orang **dijamin** putus sambungan pada 15s — handler terus
+      jalan (Go tak batalkan `Request.Context()` atas write deadline,
+      cuma set deadline pada `ResponseWriter`) jadi datanya betul dan
+      boleh disambung, tapi pengurus nampak "gagal" setiap kali dan
+      takkan tahu ia sebenarnya berjaya sebahagian. Webhook ToyyibPay
+      duduk tepat di tepi: 15s poll + DB > 15s → ToyyibPay dapat
+      sambungan putus dan retry. Ini kes konkrit bagi amaran generik yang
+      dah direkod dalam "Nota reka bentuk keselamatan — yuran pendaftaran
+      ToyyibPay" di atas ("pastikan endpoint webhook tetap pulang cepat").
+      Fix: naikkan `WriteTimeout` (60–90s), atau lebih baik jadikan fasa 2
+      sijil kerja latar + pulang 202 serta-merta.
+
+      **Siapa mengikat siapa** (disemak silang dgn `marc_flutter`
+      2026-08-22): klien Flutter SUDAH ada override
+      `certificatesIssueTimeout` = **5 minit** khusus untuk laluan terbit
+      sijil (lalai dio global 12s). Jadi PELAYAN yang mengikat, bukan
+      klien — 15s membenarkan ~20 sijil, 90s membenarkan ~120 (fasa 2
+      berjujukan, ~0.7s sesijil). Melebihi itu, pengurus masih bergantung
+      pada laluan 202/timeout + "Tekan Terbitkan sekali lagi" yang SUDAH
+      dibina di kedua-dua belah dan kekal betul.
+
+      Untuk laluan LAIN (resit dsb), lalai dio 12s yang mengikat dan
+      bukan `WriteTimeout` — jadi menaikkannya tak mengubah apa-apa di
+      sana. Ini sebab kenapa 90s ialah tampung: ia menaikkan siling,
+      bukan menghapuskannya. Hanya fasa 2 sebagai kerja latar yang buat
+      begitu.
+- [ ] **L32 — tiada laluan tukar/reset kata laluan langsung (MEDIUM,
+      fungsi).** Grep seluruh `internal/`, `cmd/`, `queries/`: tiada
+      `password_reset`, tiada `PATCH /me/password`. Ahli yang lupa kata
+      laluan **tiada jalan pulih dalam app** — mesti hubungi staff untuk
+      UPDATE DB terus. Untuk app yang gate keahlian dgn kelulusan +
+      yuran sebenar, ni gap fungsi yang ketara, bukan nice-to-have.
+      Berkait: `registerRequest.Password` `min=6` longgar, dan tiada
+      lockout per-AKAUN (had kadar `auth` per-IP sahaja, lihat L26) —
+      jadi brute-force teragih merentas IP tak dihalang apa-apa.
+- [x] **L33 — `GET /me/payments` tak pulangkan derma; endpoint resit derma
+      tak boleh dicapai (LOW, DIBAIKI 2026-08-22).** `payments.go` `Mine` pulang
+      `registration_fee` + `activity_fees` sahaja, dan `queries/donations.sql`
+      tiada `ListMyDonations` langsung. Tapi route
+      `GET /me/payments/donation/:id/receipt` wujud dan perlukan
+      `donations.id` — client tiada cara sah dapat id tu. Endpoint tu mati
+      secara praktikal. Fix: tambah `ListMyDonations` (skop `user_id`) +
+      seksyen ketiga dalam `Mine`.
+
+      **Dibuat 2026-08-22, kedua-dua repo.** Go: `ListMyDonations` (skop
+      `user_id`, isih `created_at desc`) + kunci `donations` dalam
+      respons `Mine`. Flutter: `DonationPaymentEntry` +
+      seksyen "Sokongan" dalam `payment_history_page.dart`.
+
+      Nota yang mengesahkan diagnosis: `PaymentReceiptRepository.donation()`
+      SUDAH wujud di Flutter dan berfungsi — plumbing klien lengkap sejak
+      awal, cuma senarai yang mendedahkan `donations.id` tiada. Tiada
+      sebaris pun kod resit perlu ditulis di mana-mana belah.
+
+      Derma TANPA NAMA (`user_id` null) sengaja dikecualikan — penderma
+      tiada akaun untuk menuntutnya. Status `pending`/`failed` TURUT
+      dipulangkan (padanan `ListMyRegistrationPayments`): sejarah patut
+      menunjukkan percubaan, bukan senyap menghilangkannya; butang resit
+      digate pada `status == 'succeeded'` di UI.
+
+      Ujian Go: 5 kes termasuk pengasingan (derma ahli LAIN dan derma
+      tanpa nama tak boleh bocor — kalau bocor, pemanggil boleh muat
+      turun resit yang membawa nama + emel penderma). Ujian Flutter: 5
+      kes nyahsiri, termasuk **kunci `donations` TIADA → senarai kosong**
+      supaya app baharu tak terhempas terhadap backend lama semasa
+      tetingkap deploy berperingkat.
+- [x] **L34 — respons `PATCH /comments/:id` hilang `author` (LOW,
+      DIBAIKI 2026-08-22).** `comments.go` `Update` bina `commentResponse`
+      tanpa medan `Author`, berbeza drpd `Create` dan `List` yang dua-dua
+      isi. Client yang tulis-ganti komen dalam senarai daripada respons
+      PATCH akan nampak nama/avatar penulis hilang sampai refresh.
+
+      Semasa membaiki, `LikeCount`/`LikedByMe` didapati ada kecacatan
+      yang SAMA pada laluan yang sama — dua-dua tinggal pada nilai sifar,
+      jadi klien yang menulis ganti komen turut nampak kiraan like jatuh
+      ke 0. Dibaiki sekali; membaiki `author` sahaja akan meninggalkan
+      pepijat serupa satu medan di sebelahnya. Logik author diekstrak ke
+      `authorOf` (dikongsi dgn `Create`, jadi dua laluan tak boleh
+      terpesong lagi) dan kiraan like ke `likeStateOf`, yang guna semula
+      query berkumpulan SAMA dengan `List` (kepingan satu elemen).
+- [x] **L35 — like comment tak hantar notifikasi (LOW, DIBAIKI
+      2026-08-22).** `posts.go` `Like` panggil `notifyOwner`;
+      `comments.go` `CommentHandler.Like` tak panggil apa-apa dan tiada
+      komen yang kata ia sengaja. NOTA: L18 di atas merekod
+      "`CommentHandler.Like` betul (tak notify)" — tapi itu dalam konteks
+      *spam* like berulang, bukan keputusan produk "komen tak layak
+      notifikasi". Sahkan mana satu yang dimaksudkan sebelum tambah;
+      kalau ditambah, ia perlu guard `:execrows` sama macam `LikePost`
+      lepas fix L18.
+
+      **Keputusan produk 2026-08-22: YA, beritahu.** Dilaksana bersama
+      guardnya SERENTAK, bukan selepasnya: `LikeComment` jadi
+      `:execrows`, dan handler cuma memberitahu bila `rows > 0`. Route
+      like TIADA rate limiter — dedup inilah mekanismenya, jadi guard tu
+      satu-satunya yang menahan gelung harassment bersasar. Ujian
+      `TestLikeCommentBerulangTidakSpamNotifikasi` menegakkannya
+      (disahkan gagal dgn `5 notifikasi selepas 5 like` bila guard
+      dilumpuhkan).
+
+      Migration `20260822160000_notifications_comment_like` meluaskan
+      `notifications_type_check` dengan `'comment_like'`. Senarai tertutup
+      DIKEKALKAN (bukan dibuang): ia yang menahan jenis tersalah eja
+      daripada menjadi notifikasi yang klien tak tahu cara papar.
+
+      ⚠️ **Flutter belum kendalikan jenis `comment_like`** — backend akan
+      mula menghantarnya sebaik ini di-deploy. Lihat
+      `../marc_flutter/TODO.md`.
+- [x] **L36 — modul duit paling berisiko tiada ujian langsung (MEDIUM,
+      liputan; DIBAIKI 2026-08-22).** `go test ./...` lapor `no test files` untuk
+      `internal/paymentreconcile`, `internal/activitysweep`,
+      `internal/activitylifecycle`, `internal/authz`, `internal/auth`,
+      `internal/config`. `paymentreconcile.RunOnce` sengaja diekspos
+      "supaya boleh dipanggil terus dalam ujian" — ujian tu tak pernah
+      ditulis. Ia logik yang **menulis ganti status bayaran secara
+      automatik** berdasarkan jawapan gateway; itu tempat terakhir yang
+      patut tiada ujian. `internal/authz` pula ialah keseluruhan lapisan
+      kebenaran (gantian RLS) — bertindih dgn L14/nota CI di bahagian
+      Ujian bawah.
+
+      **Keenam-enam ditutup 2026-08-22.** Dua yang TULEN (`auth`,
+      `config`) ialah ujian unit biasa — ia benar-benar berjalan dalam
+      CI, tak macam empat yang lain. Empat yang perlukan Postgres ikut
+      corak live sedia ada (env var, `t.Skip` tanpa DB).
+
+      `paymentreconcile` diuji dengan `payment.Gateway` PALSU — gateway
+      ialah antara muka, jadi jawapannya boleh ditetapkan per-rujukan dan
+      keputusan reconcile jadi deterministik. Hanya DB perlu nyata,
+      kerana kekangan yang membentuk logiknya (`CHECK` pada
+      `payment_status` yang TIADA 'failed') hidup dalam skema.
+
+      **Ujian mutasi dijalankan pada tiga guard paling kritikal** — dan
+      DUA daripadanya mendedahkan penegasan yang vacuous, yang lalu
+      dibetulkan:
+
+      - *Tingkap atas L30*: versi pertama menyemai baris pada
+        `maxAge + 24h`. Umur benih diterbitkan drpd pemalar yang diuji,
+        jadi menaikkan `maxAge` turut menaikkan umur benih — penegasan
+        yang TAK BOLEH gagal. Dibetulkan kepada umur MUTLAK (30 hari) +
+        semakan awal yang gagal kalau `maxAge` menghampirinya.
+      - *Dedup peringatan*: versi pertama menjalankan `RunOnce` dua kali
+        dan menegaskan tiada push berganda. Itu menguji tapisan
+        `ListActivitiesNeedingReminder`, BUKAN guard race sebenar —
+        membuang `if affected == 0` dalam Go tak menggagalkannya, kerana
+        lapisan senarai menutupnya dahulu. Ditambah ujian yang memanggil
+        `MarkActivityReminderSent` DUA KALI terus (mensimulasikan dua
+        replika yang menyenaraikan baris sama sebelum salah satu
+        menandanya) dan menegaskan panggilan kedua mengena SIFAR baris.
+
+      Selepas dibetulkan, ketiga-tiga mutasi (longgarkan `maxAge`,
+      samakan dua cutoff `activitysweep`, buang guard SQL
+      `reminder_sent_at is null`) menggagalkan ujian yang sepatutnya.
+
+**Minor (direkod, bukan kerja tertunggak):**
+
+- `posts.go` `List` **senyapkan** `limit` tak sah ke default;
+  `activities.go` `List` pulang 400 untuk kes sama, dan komennya sendiri
+  terangkan kenapa senyap itu salah ("limit=500 diamkan jadi 20 ialah
+  jenis perbezaan yang klien tak dapat lihat"). Selaraskan.
+- `donations.go` `selectGateway(amountCents)` abaikan parameternya
+  sepenuhnya (placeholder untuk threshold RM500 SociaBuzz — lihat
+  bahagian Payment).
+- `paymentreconcile.go` kira `summary.MismatchesFixed++` juga untuk kes
+  `cancelled+paid` yang sebenarnya **perlukan campur tangan manual**,
+  bukan "dibetulkan" — laporan pencetus manual jadi terlebih optimistik.
+- `profile.go` `UpdateMe` tulis nama/telefon dalam satu operasi lalu
+  avatar dalam transaksi BERASINGAN; kalau avatar ditolak, ahli dapat 400
+  tapi nama sudah tersimpan.
+- Purata 6–10 query DB setiap permintaan tulis (2 middleware gate +
+  `requireManagement` + `auditActor` + muat semula respons). Belum
+  masalah pada skala kelab; `auditActor` boleh guna semula profil yang
+  `requireManagement` baru sahaja baca.
+
+**Disahkan bersih pusingan ni** (tiada penemuan baharu): rotasi refresh
+token (atom, guard `consumed_at is null`, grace window reuse), corak kunci
+pesanan `LockActivityForRegistration` merentas daftar/PATCH/check-in/
+terbit-sijil, `audit.Record` dalam transaksi mutasi di SETIAP tapak,
+keyset pagination semua senarai, penapisan keterlihatan `ListVisibleProfiles`
+dalam SQL, `verifyResponse` sebagai sempadan eksplisit halaman pengesahan
+awam, `middleware.BlockTesterWrites` (gagal-tertutup), pengendalian
+`extractBillCode` ToyyibPay, dan pengasingan baldi had kadar bernama.
+
 ## Ujian
 
 Ujian lawan infra sebenar, semua di-skip secara lalai:
@@ -1354,17 +1842,53 @@ ACTIVITY_TEST_DB="postgres://localhost:5432/marc_handler?sslmode=disable" \
 
 # Muat naik R2 sisi pelayan (PDF sijil)
 R2_LIVE_TEST=1 go test ./internal/storage/ -run TestR2PutObjectLive -v
+
+# Lapisan kebenaran (hierarki rank dibaca drpd seed migration sebenar)
+AUTHZ_TEST_DB="postgres://localhost:5432/marc_check?sslmode=disable" \
+  go test ./internal/authz/ -v
+
+# Sapuan pendaftaran berbayar terbiar (DUA cutoff yang sengaja berbeza)
+ACTIVITYSWEEP_TEST_DB="postgres://localhost:5432/marc_check?sslmode=disable" \
+  go test ./internal/activitysweep/ -v
+
+# Peringatan H-1 + auto-complete (termasuk guard dedup cross-replika)
+LIFECYCLE_TEST_DB="postgres://localhost:5432/marc_check?sslmode=disable" \
+  go test ./internal/activitylifecycle/ -v
+
+# Reconcile bayaran — gateway DIPALSUKAN, cuma DB yang nyata
+RECONCILE_TEST_DB="postgres://localhost:5432/marc_check?sslmode=disable" \
+  go test ./internal/paymentreconcile/ -v
 ```
+
+Keempat-empat suite baharu di atas boleh berkongsi SATU DB buangan —
+setiap ujian menyemai barisnya sendiri dengan id rawak dan tidak
+bergantung pada jadual yang kosong.
+
+`internal/auth` dan `internal/config` TULEN (tiada DB) — ia berjalan
+dalam `go test ./...` biasa, jadi ia antara sedikit ujian repo ni yang
+benar-benar melindungi setiap PR.
 
 Guna DB **buangan** untuk yang perlukan Postgres — bukan DB dev kau.
 
 - [ ] Handler test yang tinggal masih manual — belum ada suite integrasi
       penuh untuk posts/comments.
-- [ ] **Semua `*_live_test.go` LANGKAU dalam CI.** `.github/workflows/ci.yml`
+- [x] **Enam pakej langsung `no test files`** — `paymentreconcile`,
+      `activitysweep`, `activitylifecycle`, `authz`, `auth`, `config`
+      (lihat **L36**). **Keenam-enamnya ditutup 2026-08-22.** Tiada lagi
+      pakej dalam `internal/` yang `no test files`.
+- [x] **Semua `*_live_test.go` LANGKAU dalam CI** (DIBAIKI 2026-08-22,
+      lihat **L14**). `.github/workflows/ci.yml`
       jalankan `go test ./...` tanpa perkhidmatan Postgres dan tanpa env
       ujian, jadi setiap ujian live dalam repo — bukan modul aktiviti
       sahaja — lapor SKIP pada setiap pull request. Maknanya: **binaan
-      hijau tidak bermakna ujian live lulus.** Ini ditemui semasa kerja
+      hijau tidak bermakna ujian live lulus.**
+
+      Kini `ci.yml` menjalankan `postgres:18` + `redis:8` dengan tujuh DB
+      berasingan, `-race`, dan langkah tripwire yang GAGALKAN job kalau
+      mana-mana ujian melapor SKIP atas sebab env var DB hilang.
+      Selebihnya di bawah kekal betul sebagai SEJARAH — ia menerangkan
+      kenapa penegasan PII dipecahkan menjadi ujian unit tanpa DB, yang
+      masih merupakan reka bentuk yang lebih baik walaupun CI kini ada DB. Ini ditemui semasa kerja
       sijil, di mana ujian privasi (`TestVerifyTidakMendedahkanPII`) ialah
       satu-satunya tripwire yang menghalang medan PII baharu daripada
       bocor melalui halaman pengesahan awam — ia langkau, jadi ia menjaga
