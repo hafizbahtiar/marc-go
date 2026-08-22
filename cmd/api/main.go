@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	tgbot "github.com/go-telegram/bot"
 	"github.com/joho/godotenv"
 
 	"marc/internal/activitylifecycle"
@@ -19,6 +20,7 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	httpapi "marc/internal/http"
+	"marc/internal/http/handlers"
 	"marc/internal/onesignal"
 	"marc/internal/payment"
 	"marc/internal/paymentreconcile"
@@ -163,7 +165,36 @@ func main() {
 	paymentReconciler := paymentreconcile.New(sqlc.New(pool), paymentGateways, 30*time.Minute)
 	paymentReconciler.Start(ctx)
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli, paymentReconciler, cfg.CORSAllowedOrigins, cfg.RegistrationPaymentReturnURL, cfg.ActivityPaymentReturnURL, cfg.CertificateVerifyURL, cfg.PasswordResetURL)
+	// Integrasi Telegram Fasa 1 (binding akaun). telegramHandler dibina
+	// DULU (tak bergantung rangkaian) sebab bot.New() perlukan
+	// kaedahnya sbg default handler -- lihat nota Task 3 plan
+	// (docs/superpowers/plans/2026-08-22-telegram-binding.md).
+	telegramHandler := handlers.NewTelegramHandler(pool, cfg.TelegramBotUsername)
+
+	var tgBot *tgbot.Bot
+	if cfg.TelegramBotToken != "" {
+		b, err := tgbot.New(cfg.TelegramBotToken,
+			tgbot.WithWebhookSecretToken(cfg.TelegramWebhookSecret),
+			tgbot.WithDefaultHandler(telegramHandler.HandleUpdate),
+		)
+		if err != nil {
+			// TIDAK fatal -- padanan corak Redis Ping: config salah tak
+			// patut halang app boot, cuma matikan ciri ni.
+			log.Printf("AMARAN telegram: bot tak dapat dimulakan (%v) -- ciri binding Telegram tak aktif", err)
+		} else {
+			if _, err := b.SetWebhook(ctx, &tgbot.SetWebhookParams{
+				URL:         cfg.PublicBaseURL + "/webhooks/telegram",
+				SecretToken: cfg.TelegramWebhookSecret,
+			}); err != nil {
+				log.Printf("AMARAN telegram: setWebhook gagal: %v", err)
+			}
+			go b.StartWebhook(ctx)
+			tgBot = b
+			log.Printf("telegram: bot aktif, webhook didaftar")
+		}
+	}
+
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli, paymentReconciler, cfg.CORSAllowedOrigins, cfg.RegistrationPaymentReturnURL, cfg.ActivityPaymentReturnURL, cfg.CertificateVerifyURL, cfg.PasswordResetURL, telegramHandler, tgBot)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
