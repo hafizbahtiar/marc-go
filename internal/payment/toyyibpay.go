@@ -333,13 +333,10 @@ func (t *ToyyibPayGateway) confirmStatus(ctx context.Context, billCode string) (
 		return WebhookEvent{}, ErrIgnoredEvent
 	}
 
-	// Bentuk respons bila ADA transaksi (dokumentasi komuniti, BELUM
-	// disahkan rasmi — sandbox belum capai bil berjaya semasa verifikasi
-	// ni): array JSON, medan `billpaymentStatus` (1=berjaya, 2=pending,
-	// 3=gagal, 4=pending-alt) dan `billpaymentInvoiceNo`. Tarikh bayaran
-	// sebenar (`billPaymentDate`? nama medan tak disahkan) TIDAK
-	// dipetakan di sini — `PaidAt` guna masa poll sebagai anggaran
-	// munasabah sehingga format tarikh sebenar disahkan.
+	// Bentuk respons bila ADA transaksi (disahkan produksi 2026-08-22,
+	// bil fmo34a9m): array JSON, medan `billpaymentStatus` (1=berjaya,
+	// 2=pending, 3=gagal, 4=pending-alt). Satu bil boleh ada BEBERAPA
+	// baris — jangan andaikan indeks terakhir = keputusan akhir.
 	var txns []struct {
 		BillpaymentStatus    string `json:"billpaymentStatus"`
 		BillpaymentInvoiceNo string `json:"billpaymentInvoiceNo"`
@@ -363,20 +360,30 @@ func (t *ToyyibPayGateway) confirmStatus(ctx context.Context, billCode string) (
 		return WebhookEvent{}, ErrIgnoredEvent
 	}
 
-	latest := txns[len(txns)-1]
-	var status string
-	switch latest.BillpaymentStatus {
-	case "1":
-		status = "succeeded"
-	case "3":
-		status = "failed"
-	default: // "2" pending, "4" pending-alt, atau nilai tak dikenali
-		return WebhookEvent{}, ErrIgnoredEvent
+	// Imbas SEMUA transaksi, bukan elemen terakhir. Disahkan LIVE
+	// 2026-08-22 (bil fmo34a9m): array ada status "1" (FPX berjaya) di
+	// HADAPAN, diikuti beberapa "4" (pending-alt). Ambil terakhir
+	// semata-mata buat webhook/reconcile abaikan duit yang dah masuk.
+	// Mana-mana "1" menang; "3" cuma kalau tiada yang berjaya.
+	sawFailed := false
+	for _, txn := range txns {
+		switch txn.BillpaymentStatus {
+		case "1":
+			return WebhookEvent{
+				GatewayRef: billCode,
+				Status:     "succeeded",
+				PaidAt:     time.Now(),
+			}, nil
+		case "3":
+			sawFailed = true
+		}
 	}
-
-	return WebhookEvent{
-		GatewayRef: billCode,
-		Status:     status,
-		PaidAt:     time.Now(),
-	}, nil
+	if sawFailed {
+		return WebhookEvent{
+			GatewayRef: billCode,
+			Status:     "failed",
+			PaidAt:     time.Now(),
+		}, nil
+	}
+	return WebhookEvent{}, ErrIgnoredEvent
 }

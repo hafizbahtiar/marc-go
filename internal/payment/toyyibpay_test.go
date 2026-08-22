@@ -2,7 +2,11 @@ package payment
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -108,4 +112,53 @@ func TestExtractBillCodeTiadaBillcodeLangsung(t *testing.T) {
 			t.Errorf("%s: billcode = %q, mahu kosong", tc.name, code)
 		}
 	}
+}
+
+// Disahkan LIVE 2026-08-22 pada bil produksi fmo34a9m: getBillTransactions
+// pulang ARRAY — transaksi FPX berjaya (status "1") di HADAPAN, diikuti
+// beberapa baris pending-alt ("4"). Ambil elemen terakhir semata-mata
+// buat webhook/reconcile abaikan bayaran yang dah lepas.
+func TestConfirmStatusUtamakanTransaksiBerjayaWalauBukanTerakhir(t *testing.T) {
+	gw := gatewayWithTransactions(t, "\t\n\t\t"+`[{"billpaymentStatus":"1","billpaymentInvoiceNo":"TP1"},{"billpaymentStatus":"4","billpaymentInvoiceNo":"TP2"},{"billpaymentStatus":"4","billpaymentInvoiceNo":"TP3"}]`)
+
+	event, err := gw.confirmStatus(context.Background(), "fmo34a9m")
+	if err != nil {
+		t.Fatalf("confirmStatus: %v (mahu succeeded, bukan abaikan status 4 terakhir)", err)
+	}
+	if event.Status != "succeeded" {
+		t.Fatalf("status = %q, mahu succeeded", event.Status)
+	}
+	if event.GatewayRef != "fmo34a9m" {
+		t.Fatalf("GatewayRef = %q, mahu fmo34a9m", event.GatewayRef)
+	}
+}
+
+func TestConfirmStatusSemuaPendingAltDiabaikan(t *testing.T) {
+	gw := gatewayWithTransactions(t, `[{"billpaymentStatus":"4"},{"billpaymentStatus":"4"}]`)
+
+	_, err := gw.confirmStatus(context.Background(), "m4h10b26")
+	if !errors.Is(err, ErrIgnoredEvent) {
+		t.Fatalf("err = %v, mahu ErrIgnoredEvent", err)
+	}
+}
+
+func TestConfirmStatusGagalKalauTiadaBerjaya(t *testing.T) {
+	gw := gatewayWithTransactions(t, `[{"billpaymentStatus":"4"},{"billpaymentStatus":"3"}]`)
+
+	event, err := gw.confirmStatus(context.Background(), "gagal")
+	if err != nil {
+		t.Fatalf("confirmStatus: %v, mahu failed", err)
+	}
+	if event.Status != "failed" {
+		t.Fatalf("status = %q, mahu failed", event.Status)
+	}
+}
+
+func gatewayWithTransactions(t *testing.T, body string) *ToyyibPayGateway {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return NewToyyibPayGateway(srv.URL, "secret", "cat", "https://cb.example", "https://ret.example")
 }
