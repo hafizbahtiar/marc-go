@@ -4,6 +4,10 @@ values ($1, $2, $3)
 returning *;
 
 -- name: GetPasswordResetTokenByHash :one
+-- UJIAN SAHAJA — tiada pemanggil produksi, dan jangan tambah satu. Kod
+-- produksi MESTI guna ConsumePasswordResetToken: membaca token
+-- dgn SELECT lalu memadamnya kemudian ialah tepat jurang TOCTOU yang
+-- Consume wujud untuk menutup.
 select * from password_reset_tokens where token_hash = $1;
 
 -- name: ConsumePasswordResetToken :one

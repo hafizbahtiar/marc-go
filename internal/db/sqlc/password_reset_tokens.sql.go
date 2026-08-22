@@ -80,6 +80,10 @@ const getPasswordResetTokenByHash = `-- name: GetPasswordResetTokenByHash :one
 select id, user_id, token_hash, expires_at, created_at from password_reset_tokens where token_hash = $1
 `
 
+// UJIAN SAHAJA — tiada pemanggil produksi, dan jangan tambah satu. Kod
+// produksi MESTI guna ConsumePasswordResetToken: membaca token
+// dgn SELECT lalu memadamnya kemudian ialah tepat jurang TOCTOU yang
+// Consume wujud untuk menutup.
 func (q *Queries) GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (PasswordResetToken, error) {
 	row := q.db.QueryRow(ctx, getPasswordResetTokenByHash, tokenHash)
 	var i PasswordResetToken

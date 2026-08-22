@@ -781,6 +781,15 @@ supaya tiada dua versi yang boleh menyimpang. Ringkasan:
 Tiada satu pun menyekat penggunaan; semuanya direkod supaya tidak
 "ditemui semula" sebagai pepijat baharu.
 
+- [ ] **Tiada ujian peringkat-router bahawa CORS terpasang pada
+      `/auth/password-reset/confirm`.** `middleware/cors_test.go` menguji
+      middleware itu sendiri dengan teliti, tetapi tiada apa menguji
+      *wiring*. Buang `passwordResetCORS` daripada `router.go` dan setiap
+      ujian Go tetap lulus — sementara seluruh aliran reset mati dengan
+      ralat CORS pelayar yang tak muncul langsung dalam log Go. Sama untuk
+      `verify-email/confirm`, jadi bukan regresi standard; disebut kerana
+      ini satu-satunya kebergantungan silang-repo ciri ini dan satu-satunya
+      yang tak dilindungi. (Semakan akhir L32, 2026-08-22.)
 - [ ] Ralat mesej pendaftaran terbalik: mendaftar SEBELUM
       `registration_opens_at` memulangkan `errRegistrationClosed`
       ("pendaftaran telah ditutup"), dan `errActivityNotOpen` ("aktiviti

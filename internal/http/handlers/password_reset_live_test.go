@@ -302,8 +302,12 @@ func TestConfirmResetTokenLuputDitolak(t *testing.T) {
 	userID := seedMember(t, ctx, pool, "ahli", "approved")
 	token := tokenMentahUntuk(t, pool, userID, -time.Minute)
 
-	if rec := resetConfirmCall(t, pool, token, "baharu-123"); rec.Code == http.StatusNoContent {
-		t.Fatal("token LUPUT diterima")
+	// Assert 400 TEPAT, bukan sekadar "bukan 204": ujian yang menerima
+	// mana-mana kegagalan tak menguji kontrak, ia menguji ketiadaan
+	// kejayaan. Tanpa ini, salah kendali pgx.ErrNoRows yang memulangkan
+	// 500 kepada setiap pautan luput akan lulus tanpa disedari.
+	if rec := resetConfirmCall(t, pool, token, "baharu-123"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("token LUPUT: kod = %d, mahu 400", rec.Code)
 	}
 	if passwordSah(t, pool, userID, "baharu-123") {
 		t.Error("token luput menukar kata laluan")
@@ -313,8 +317,9 @@ func TestConfirmResetTokenLuputDitolak(t *testing.T) {
 func TestConfirmResetTokenTidakSahDitolak(t *testing.T) {
 	pool := activityTestPool(t)
 
-	if rec := resetConfirmCall(t, pool, "token-rekaan-yang-tak-wujud", "baharu-123"); rec.Code == http.StatusNoContent {
-		t.Fatal("token rekaan diterima")
+	// Lihat nota pada TestConfirmResetTokenLuputDitolak — 400 TEPAT.
+	if rec := resetConfirmCall(t, pool, "token-rekaan-yang-tak-wujud", "baharu-123"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("token rekaan: kod = %d, mahu 400", rec.Code)
 	}
 }
 

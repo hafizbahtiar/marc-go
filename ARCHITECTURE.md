@@ -146,6 +146,12 @@ Tiga sifat yang saling bergantung, kesemuanya dalam satu transaksi:
   dikompromi; membiarkan refresh token penyerang hidup mengalahkan
   tujuannya.
 
+  Tepatnya: setiap **refresh token**, bukan setiap sesi. Access token ialah
+  JWT tanpa keadaan, jadi yang sudah dikeluarkan kekal sah sehingga TTL 15
+  minitnya tamat — tiada senarai hitam. Untuk ciri yang justifikasinya
+  "akaun disyaki dikompromi", tetingkap itu patut diketahui dan bukan
+  dianggap sifar. Sama untuk `POST /auth/logout-all`.
+
 `request` pulang **204 sentiasa** (bukan-enumerasi) dan menghantar emel
 dalam goroutine supaya masa respons tak membocorkan kewujudan akaun —
 mitigasi separa; lihat komennya. Ia TIDAK menanda `email_verified`.
@@ -486,9 +492,14 @@ BERBEZA — bukan satu:
 | Kosong | Kesan | Contoh |
 |---|---|---|
 | No-op senyap | ciri hilang, tiada ralat di mana-mana | OneSignal, Resend |
-| 503 yang jelas | endpoint pulang ralat yang boleh dibaca | R2, Stripe, ToyyibPay |
+| 503 yang jelas | endpoint pulang ralat yang boleh dibaca | R2, Stripe, ToyyibPay, `PASSWORD_RESET_URL` |
 | Jatuh balik setempat | ciri berfungsi, cuma per-instance | Redis (had kadar + cache URL) |
 | Jatuh balik ke Go | halaman HTML Go sendiri, bukan Astro | `EMAIL_VERIFY_URL`, `*_RETURN_URL`, `CERTIFICATE_VERIFY_URL` |
+
+⚠️ `PASSWORD_RESET_URL` ialah satu-satunya var `*_URL` yang **tidak** jatuh
+balik ke Go — ia duduk pada baris 503. Borang kata laluan bukan sesuatu
+yang patut muncul daripada halaman sandaran yang tiada siapa reka, jadi
+ciri itu dimatikan sepenuhnya dan bukan didegradasi.
 
 App **sentiasa** boot. Redis pula disahkan boleh dicapai semasa boot supaya
 salah konfigurasi muncul dalam log serta-merta dan bukan pada permintaan
