@@ -176,8 +176,11 @@ kosong = ciri mati (503), bukan degradasi senyap.
 
 ### marc_flutter
 
-- `about_page.dart` (atau seksyen baharu berdekatan) — butang
-  "Sambung Telegram" / keadaan "Disambungkan" + butang nyahsambung
+- `profile_page.dart` — satu `ListTile` baharu dlm senarai navigasi
+  sedia ada (padanan `/my-activities`, `/donate`, dll), bukan
+  `about_page.dart` (itu laman rasmi/penafian, bukan tetapan akaun)
+- Skrin baharu `telegram_link_page.dart` — papar keadaan
+  Sambung/Disambungkan, butang buka deep-link, butang nyahsambung
 - Kaedah baharu dlm service auth/profile sedia ada utk 3 endpoint di
   atas
 - `url_launcher` buka deep-link (pakej dah ada dependency)
