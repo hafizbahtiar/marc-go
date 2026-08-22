@@ -126,6 +126,28 @@ pgxpool → Postgres → JSON
   hanya SATU dapat row; yang lain dapat 0 rows → 401 bersih. Reka bentuk
   get-then-delete ada gap TOCTOU yang membenarkan KEDUA-DUANYA berjaya.
 
+### Reset kata laluan
+
+Token legap 32 bait, disimpan sebagai hash SHA-256 dalam
+`password_reset_tokens`, TTL 1 jam. Ahli menaip kata laluan baharu pada
+halaman `marc_astro` — tiada app-link https dikonfigur, jadi pautan emel
+membuka pelayar, bukan app.
+
+Tiga sifat yang saling bergantung, kesemuanya dalam satu transaksi:
+
+- **Sekali-guna** — token dipadam bersama tukar kata laluan.
+- **Permintaan baharu membunuh yang lama** — kalau tidak setiap
+  permintaan menambah satu lagi kelayakan hidup pada akaun yang sama.
+- **Setiap sesi dibatalkan** — orang reset selalunya kerana syak akaun
+  dikompromi; membiarkan refresh token penyerang hidup mengalahkan
+  tujuannya.
+
+`request` pulang **204 sentiasa** (bukan-enumerasi) dan menghantar emel
+dalam goroutine supaya masa respons tak membocorkan kewujudan akaun —
+mitigasi separa; lihat komennya. Ia TIDAK menanda `email_verified`.
+
+`PASSWORD_RESET_URL` kosong = ciri dimatikan (503), bukan fallback HTML Go.
+
 ## Authorization — gantian Postgres RLS
 
 Tiada RLS lagi (lihat `TODO.md` Stage 9). Semua enforcement app-level:

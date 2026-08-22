@@ -742,3 +742,76 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+type passwordResetConfirmBody struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" binding:"required,min=6,max=72"`
+}
+
+// ConfirmPasswordReset — POST /auth/password-reset/confirm. AWAM.
+//
+// Dipanggil dari halaman Astro (bukan app), jadi route ni dapat CORS +
+// pengendali OPTIONS — padanan tepat verify-email/confirm.
+//
+// Keempat-empat tulisan berlaku dalam SATU transaksi. Kalau mana-mana
+// gagal, tiada satu pun berlaku: kata laluan yang bertukar tanpa
+// pembatalan sesi meninggalkan sesi penyerang hidup, dan token yang
+// dipadam tanpa tukar kata laluan mengunci ahli keluar sepenuhnya.
+func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
+	var req passwordResetConfirmBody
+	if !bindJSON(c, &req) {
+		return
+	}
+
+	ctx := c.Request.Context()
+	rec, err := h.queries.GetPasswordResetTokenByHash(ctx, auth.HashToken(req.Token))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pautan tidak sah"})
+		return
+	}
+	if rec.ExpiresAt.Time.Before(time.Now()) {
+		// Dipadam supaya token luput tak berlonggok dalam jadual.
+		_ = h.queries.DeletePasswordResetTokensByUser(ctx, rec.UserID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pautan sudah luput"})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	if err := q.UpdateUserPassword(ctx, sqlc.UpdateUserPasswordParams{
+		ID: rec.UserID, PasswordHash: hash,
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+	// Sekali-guna.
+	if err := q.DeletePasswordResetTokensByUser(ctx, rec.UserID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+	// Batalkan SETIAP sesi — lihat komen fungsi.
+	if err := q.DeleteRefreshTokensByUser(ctx, rec.UserID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+
+	log.Printf("kata laluan direset untuk user %s, semua sesi dibatalkan", rec.UserID)
+	c.Status(http.StatusNoContent)
+}

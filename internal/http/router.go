@@ -111,6 +111,14 @@ func NewRouter(
 	authGroup.OPTIONS("/verify-email/confirm", verifyEmailCORS)
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
 	authGroup.POST("/password-reset/request", passwordResetRateLimiter, authHandler.RequestPasswordReset)
+	// CORS + OPTIONS: laluan ni dipanggil oleh halaman Astro melalui
+	// fetch() silang-origin, sama seperti verify-email/confirm. Instance
+	// BERASINGAN drpd verifyEmailCORS walaupun konfigurasinya sama —
+	// menamakannya ikut laluan yang ia lindungi menjadikan niat boleh
+	// dibaca, dan kedua-duanya bebas berubah kemudian.
+	passwordResetCORS := middleware.CORS(corsAllowedOrigins, "POST, OPTIONS")
+	authGroup.POST("/password-reset/confirm", passwordResetCORS, passwordResetRateLimiter, authHandler.ConfirmPasswordReset)
+	authGroup.OPTIONS("/password-reset/confirm", passwordResetCORS)
 
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
