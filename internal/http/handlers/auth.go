@@ -28,6 +28,43 @@ import (
 
 const emailVerificationTTL = time.Hour
 
+// passwordResetTTL — sama 1 jam dengan pengesahan emel. Token reset
+// memberi kawalan PENUH akaun, jadi tetingkapnya tak patut lebih longgar
+// daripada token yang cuma mengesahkan alamat.
+const passwordResetTTL = time.Hour
+
+// Had hantar emel pengesahan per akaun (bukan per IP). IP limiter
+// berasingan masih ada di router — ni lapisan kedua: jeda pendek elak
+// double-tap, siling 24 jam elak spam Resend dari akaun yang sama.
+const (
+	emailVerifySendCooldown = 60 * time.Second
+	emailVerifySendDailyMax = 5
+	emailVerifySendWindow   = 24 * time.Hour
+)
+
+type emailVerifyLimitError struct {
+	status  int
+	message string
+}
+
+func (e *emailVerifyLimitError) Error() string { return e.message }
+
+func checkEmailVerifySendLimit(lastSend *time.Time, sendsLastWindow int, now time.Time) *emailVerifyLimitError {
+	if lastSend != nil && now.Sub(*lastSend) < emailVerifySendCooldown {
+		return &emailVerifyLimitError{
+			status:  http.StatusTooManyRequests,
+			message: "tunggu sebentar sebelum minta emel pengesahan semula",
+		}
+	}
+	if sendsLastWindow >= emailVerifySendDailyMax {
+		return &emailVerifyLimitError{
+			status:  http.StatusTooManyRequests,
+			message: "had harian emel pengesahan tercapai. Cuba lagi esok.",
+		}
+	}
+	return nil
+}
+
 // dummyPasswordHash — bcrypt hash tetap (bukan password sebenar
 // sesiapa) dipakai untuk "bakar" masa bcrypt yang sama pada path
 // email-tak-wujud di Login, elak timing oracle yang boleh bezakan
@@ -44,13 +81,14 @@ const dummyPasswordHash = "$2a$10$/8Dd.SDyfy2jxDvvxwPheeHLucYAitJ42OSSoz8wtyR1UT
 const refreshReuseGraceWindow = 5 * time.Second
 
 type AuthHandler struct {
-	pool           *pgxpool.Pool
-	queries        *sqlc.Queries
-	jwt            *auth.JWT
-	refreshTTL     time.Duration
-	emailClient    *email.Client
-	publicBaseURL  string
-	emailVerifyURL string
+	pool             *pgxpool.Pool
+	queries          *sqlc.Queries
+	jwt              *auth.JWT
+	refreshTTL       time.Duration
+	emailClient      *email.Client
+	publicBaseURL    string
+	emailVerifyURL   string
+	passwordResetURL string
 }
 
 func NewAuthHandler(
@@ -60,15 +98,17 @@ func NewAuthHandler(
 	emailClient *email.Client,
 	publicBaseURL string,
 	emailVerifyURL string,
+	passwordResetURL string,
 ) *AuthHandler {
 	return &AuthHandler{
-		pool:           pool,
-		queries:        sqlc.New(pool),
-		jwt:            jwtSvc,
-		refreshTTL:     refreshTTL,
-		emailClient:    emailClient,
-		publicBaseURL:  publicBaseURL,
-		emailVerifyURL: emailVerifyURL,
+		pool:             pool,
+		queries:          sqlc.New(pool),
+		jwt:              jwtSvc,
+		refreshTTL:       refreshTTL,
+		emailClient:      emailClient,
+		publicBaseURL:    publicBaseURL,
+		emailVerifyURL:   emailVerifyURL,
+		passwordResetURL: passwordResetURL,
 	}
 }
 
@@ -390,6 +430,27 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 	userID := middleware.UserID(c)
 	ctx := c.Request.Context()
+	now := time.Now()
+
+	var lastSend *time.Time
+	if ts, err := h.queries.GetLatestEmailVerificationSendAt(ctx, userID); err == nil && ts.Valid {
+		lastSend = &ts.Time
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
+		return
+	}
+	sends, err := h.queries.CountEmailVerificationSendsSince(ctx, sqlc.CountEmailVerificationSendsSinceParams{
+		UserID:    userID,
+		CreatedAt: pgtype.Timestamptz{Time: now.Add(-emailVerifySendWindow), Valid: true},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
+		return
+	}
+	if limErr := checkEmailVerifySendLimit(lastSend, int(sends), now); limErr != nil {
+		c.JSON(limErr.status, gin.H{"error": limErr.message})
+		return
+	}
 
 	if err := h.queries.DeleteEmailVerificationTokensByUser(ctx, userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
@@ -405,10 +466,15 @@ func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 	if _, err := h.queries.CreateEmailVerificationToken(ctx, sqlc.CreateEmailVerificationTokenParams{
 		UserID:    userID,
 		TokenHash: auth.HashToken(token),
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(emailVerificationTTL), Valid: true},
+		ExpiresAt: pgtype.Timestamptz{Time: now.Add(emailVerificationTTL), Valid: true},
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
 		return
+	}
+	if err := h.queries.InsertEmailVerificationSend(ctx, userID); err != nil {
+		// Token dah wujud; jejak had gagal ditulis. Jangan sekat hantar
+		// emel — lebih baik satu resend "percuma" drpd user tersekat.
+		log.Printf("gagal catat email verification send untuk user %s: %v", userID, err)
 	}
 
 	// Kalau EMAIL_VERIFY_URL configure (Stage 8, portfolio-astro), link
@@ -570,4 +636,197 @@ func verificationHTMLPage(message string) string {
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+type passwordResetRequestBody struct {
+	// `required,email` sengaja PADAN registerRequest/loginRequest. Emel
+	// berruang ditolak 400 pada ketiga-tiga laluan — konsisten, dan 400 tak
+	// membocorkan apa-apa (ia tak bezakan akaun wujud atau tidak). Klien
+	// menghantar emel yang sudah di-trim.
+	Email string `json:"email" binding:"required,email"`
+}
+
+// RequestPasswordReset — POST /auth/password-reset/request. AWAM.
+//
+// Pulang 204 SENTIASA, sama ada akaun wujud atau tidak. Kalau ia
+// membezakan, endpoint ni jadi alat menyenaraikan emel mana yang
+// berdaftar. UI mengimbangi dgn mesej "Kalau emel itu berdaftar, kami
+// dah hantar pautan reset" — ahli yang tersilap taip tetap dapat maklum
+// balas berguna tanpa server mengesahkan kewujudan akaun.
+//
+// TIADA gate status: ahli `pending`/`rejected` yang paling mungkin
+// terkunci keluar, dan tiada laluan lain untuk mereka pulih. Alasan sama
+// dengan `/me` (lihat ARCHITECTURE.md, Lapisan akses).
+func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
+	// Ciri dimatikan bila halaman belum dikonfigur — disemak SEBELUM
+	// sebarang kerja DB supaya tiada token ditulis untuk pautan yang
+	// takkan pernah boleh dibuka.
+	if h.passwordResetURL == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "reset kata laluan belum tersedia",
+		})
+		return
+	}
+
+	var req passwordResetRequestBody
+	if !bindJSON(c, &req) {
+		return
+	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	ctx := c.Request.Context()
+	user, err := h.queries.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		// Akaun tiada. Pulang 204 yang SAMA — lihat komen fungsi.
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	// Permintaan baharu membunuh pautan lama: tanpa ni, setiap permintaan
+	// menambah satu lagi kelayakan hidup pada akaun yang sama.
+	if err := h.queries.DeletePasswordResetTokensByUser(ctx, user.ID); err != nil {
+		log.Printf("padam token reset lama (user=%s): %v", user.ID, err)
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	token, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		log.Printf("jana token reset (user=%s): %v", user.ID, err)
+		c.Status(http.StatusNoContent)
+		return
+	}
+	if _, err := h.queries.CreatePasswordResetToken(ctx, sqlc.CreatePasswordResetTokenParams{
+		UserID:    user.ID,
+		TokenHash: auth.HashToken(token),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(passwordResetTTL), Valid: true},
+	}); err != nil {
+		log.Printf("simpan token reset (user=%s): %v", user.ID, err)
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	link := fmt.Sprintf("%s?token=%s", h.passwordResetURL, token)
+	if !h.emailClient.Enabled() {
+		log.Printf("reset kata laluan (provider belum configure) untuk user %s: %s", user.ID, link)
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	// Dihantar dalam GOROUTINE untuk MASA, bukan latensi. Kalau akaun
+	// wujud kita panggil Resend (~200ms); kalau tidak kita pulang
+	// serta-merta. Perbezaan itu ialah oracle enumerasi yang mengalahkan
+	// keputusan 204 di atas.
+	//
+	// Mitigasi SEPARA: kerja DB masih berbeza beberapa milisaat antara
+	// dua laluan. Jauh di bawah bunyi rangkaian, jadi diterima — tapi
+	// bukan sifar, dan tiada siapa patut membaca ni dan menganggap
+	// masanya seragam.
+	//
+	// ctx permintaan SENGAJA tidak digunakan: ia dibatalkan sebaik
+	// respons ditulis (padanan notifyMembers, activities.go).
+	html := fmt.Sprintf(
+		`<p>Kami terima permintaan untuk reset kata laluan akaun MARC anda. `+
+			`Klik pautan di bawah untuk tetapkan kata laluan baharu (luput dalam 1 jam):</p>`+
+			`<p><a href="%s">%s</a></p>`+
+			`<p>Kalau bukan anda yang minta, abaikan emel ni — kata laluan anda tak berubah.</p>`,
+		link, link,
+	)
+	go func(to string) {
+		sendCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.emailClient.Send(sendCtx, to, "Reset Kata Laluan MARC", html); err != nil {
+			log.Printf("gagal hantar emel reset kata laluan: %v", err)
+		}
+	}(user.Email)
+
+	c.Status(http.StatusNoContent)
+}
+
+type passwordResetConfirmBody struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" binding:"required,min=6,max=72"`
+}
+
+// ConfirmPasswordReset — POST /auth/password-reset/confirm. AWAM.
+//
+// Dipanggil dari halaman Astro (bukan app), jadi route ni dapat CORS +
+// pengendali OPTIONS — padanan tepat verify-email/confirm.
+//
+// Tuntutan token (`ConsumePasswordResetToken`) ialah pernyataan PERTAMA
+// dalam transaksi, bukan SELECT sebelum tx dibuka — kalau tidak, dua
+// permintaan serentak dgn token yang sama kedua-duanya lulus bacaan
+// sebelum mana-mana pun menulis, dan kedua-duanya berjaya reset. Kunci
+// baris `delete ... returning` jamin hanya SATU permintaan dapat baris;
+// yang lain dapat 0 baris dan ditolak. Lihat komen query.
+//
+// Selebihnya (tukar kata laluan, padam token lain, batalkan sesi) turut
+// dalam transaksi yang SAMA. Kalau mana-mana gagal, tiada satu pun
+// berlaku: kata laluan yang bertukar tanpa pembatalan sesi meninggalkan
+// sesi penyerang hidup, dan token yang dipadam tanpa tukar kata laluan
+// mengunci ahli keluar sepenuhnya.
+func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
+	var req passwordResetConfirmBody
+	if !bindJSON(c, &req) {
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	rec, err := q.ConsumePasswordResetToken(ctx, auth.HashToken(req.Token))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pautan tidak sah"})
+		return
+	}
+	if rec.ExpiresAt.Time.Before(time.Now()) {
+		// Token dah tertuntut (dipadam) di atas — COMMIT supaya pemadaman
+		// itu berkuat kuasa. Rollback di sini akan mengembalikan baris
+		// luput itu, membenarkan ia dituntut lagi kemudian.
+		if err := tx.Commit(ctx); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pautan sudah luput"})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+
+	if err := q.UpdateUserPassword(ctx, sqlc.UpdateUserPasswordParams{
+		ID: rec.UserID, PasswordHash: hash,
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+	// Padam mana-mana token reset LAIN milik ahli ni (token yg baru
+	// dituntut dah tiada, lihat atas).
+	if err := q.DeletePasswordResetTokensByUser(ctx, rec.UserID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+	// Batalkan SETIAP sesi — lihat komen fungsi.
+	if err := q.DeleteRefreshTokensByUser(ctx, rec.UserID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
+		return
+	}
+
+	log.Printf("kata laluan direset untuk user %s, semua sesi dibatalkan", rec.UserID)
+	c.Status(http.StatusNoContent)
 }

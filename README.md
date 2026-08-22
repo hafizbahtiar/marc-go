@@ -78,6 +78,8 @@ Lapisan akses bertingkat: **auth** → **approved** (status diluluskan) →
 | POST | `/auth/refresh` | — | rotate refresh token (single-use, atomic) |
 | POST | `/auth/logout` | — | revoke satu refresh token |
 | POST | `/auth/logout-all` | ✓ | revoke semua sesi |
+| POST | `/auth/password-reset/request` | — | sentiasa 204 (tiada enumerasi); 503 kalau `PASSWORD_RESET_URL` kosong |
+| POST | `/auth/password-reset/confirm` | — | dari halaman Astro; tukar kata laluan + batal SEMUA sesi |
 | POST | `/auth/verify-email/request` | ✓ | hantar emel pengesahan |
 | POST | `/auth/verify-email/confirm` | — | confirm via JSON (dari app) |
 | GET | `/auth/verify-email/confirm?token=` | — | confirm via klik link (render HTML) |

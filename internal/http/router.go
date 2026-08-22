@@ -71,6 +71,7 @@ func NewRouter(
 	registrationPaymentReturnURL string,
 	activityPaymentReturnURL string,
 	certificateVerifyURL string,
+	passwordResetURL string,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
@@ -80,13 +81,22 @@ func NewRouter(
 
 	r.GET("/healthz", handlers.Health)
 
-	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL)
+	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL, passwordResetURL)
 
-	// Satu factory, tiga had bernama. Nama MESTI unik — dalam Redis ia
+	// Satu factory, had bernama. Nama MESTI unik — dalam Redis ia
 	// yang mengasingkan baldi; tanpa itu login dan upload berkongsi kuota.
 	rateLimiter := middleware.NewRateLimiter(redisCli)
 	authRateLimiter := rateLimiter.Limit("auth", authRateLimit, authRateBurst)
 	authSessionRateLimiter := rateLimiter.Limit("auth-session", authSessionRateLimit, authSessionRateBurst)
+	// Baldi BERASINGAN daripada 'auth' (pengajaran L26): trafik reset tak
+	// patut menghabiskan kuota log masuk ahli, dan sebaliknya. Seketat
+	// 'auth' sebab setiap permintaan yang berjaya mencetuskan penghantaran
+	// emel.
+	passwordResetRateLimiter := rateLimiter.Limit("password-reset", authRateLimit, authRateBurst)
+	// Baldi berasingan drpd login/register — resend emel pengesahan
+	// sah, tak patut habiskan kuota auth. Had ketat per-akaun (60s +
+	// 5/24jam) duduk dalam handler; ni cuma elak flood dari satu IP.
+	verifyEmailRequestRateLimiter := rateLimiter.Limit("verify-email-request", rate.Every(10*time.Second), 3)
 
 	authGroup := r.Group("/auth")
 	authGroup.POST("/register", authRateLimiter, authHandler.Register)
@@ -100,9 +110,18 @@ func NewRouter(
 	authGroup.POST("/verify-email/confirm", verifyEmailCORS, authRateLimiter, authHandler.ConfirmEmailVerification)
 	authGroup.OPTIONS("/verify-email/confirm", verifyEmailCORS)
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
+	authGroup.POST("/password-reset/request", passwordResetRateLimiter, authHandler.RequestPasswordReset)
+	// CORS + OPTIONS: laluan ni dipanggil oleh halaman Astro melalui
+	// fetch() silang-origin, sama seperti verify-email/confirm. Instance
+	// BERASINGAN drpd verifyEmailCORS walaupun konfigurasinya sama —
+	// menamakannya ikut laluan yang ia lindungi menjadikan niat boleh
+	// dibaca, dan kedua-duanya bebas berubah kemudian.
+	passwordResetCORS := middleware.CORS(corsAllowedOrigins, "POST, OPTIONS")
+	authGroup.POST("/password-reset/confirm", passwordResetCORS, passwordResetRateLimiter, authHandler.ConfirmPasswordReset)
+	authGroup.OPTIONS("/password-reset/confirm", passwordResetCORS)
 
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
-	protectedAuthGroup.POST("/verify-email/request", authRateLimiter, authHandler.RequestEmailVerification)
+	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
 
 	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)

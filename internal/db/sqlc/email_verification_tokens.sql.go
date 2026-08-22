@@ -12,6 +12,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countEmailVerificationSendsSince = `-- name: CountEmailVerificationSendsSince :one
+select count(*)::int from email_verification_sends
+where user_id = $1 and created_at > $2
+`
+
+type CountEmailVerificationSendsSinceParams struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CountEmailVerificationSendsSince(ctx context.Context, arg CountEmailVerificationSendsSinceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countEmailVerificationSendsSince, arg.UserID, arg.CreatedAt)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createEmailVerificationToken = `-- name: CreateEmailVerificationToken :one
 insert into email_verification_tokens (user_id, token_hash, expires_at)
 values ($1, $2, $3)
@@ -70,4 +87,27 @@ func (q *Queries) GetEmailVerificationTokenByHash(ctx context.Context, tokenHash
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getLatestEmailVerificationSendAt = `-- name: GetLatestEmailVerificationSendAt :one
+select created_at from email_verification_sends
+where user_id = $1
+order by created_at desc
+limit 1
+`
+
+func (q *Queries) GetLatestEmailVerificationSendAt(ctx context.Context, userID uuid.UUID) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getLatestEmailVerificationSendAt, userID)
+	var created_at pgtype.Timestamptz
+	err := row.Scan(&created_at)
+	return created_at, err
+}
+
+const insertEmailVerificationSend = `-- name: InsertEmailVerificationSend :exec
+insert into email_verification_sends (user_id) values ($1)
+`
+
+func (q *Queries) InsertEmailVerificationSend(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, insertEmailVerificationSend, userID)
+	return err
 }

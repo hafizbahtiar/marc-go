@@ -70,6 +70,14 @@ type Querier interface {
 	// 'published'` buat kemas kini idempoten merentas replika, padanan
 	// gaya `CancelStaleUnstartedPayments` (activitysweep).
 	CompleteEndedActivities(ctx context.Context) ([]Activity, error)
+	// Tuntut token secara ATOMIK: satu pernyataan, `delete ... returning`.
+	//
+	// Padanan `ConsumeRefreshToken` (queries/refresh_tokens.sql) dan atas
+	// sebab yang SAMA: baca-dahulu-kemudian-tulis ada jurang TOCTOU — dua
+	// permintaan serentak dgn hash yang sama kedua-duanya lulus bacaan lalu
+	// kedua-duanya menulis. Dengan `delete ... returning`, kunci baris
+	// Postgres menjamin hanya SATU dapat baris; yang lain dapat 0 baris.
+	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (PasswordResetToken, error)
 	// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 	// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
 	// hash sama dihantar serentak (row-level lock Postgres). Row TAK
@@ -83,6 +91,7 @@ type Querier interface {
 	CountAttendanceByRegistration(ctx context.Context, registrationID uuid.UUID) (int64, error)
 	CountCommentLikesByCommentIDs(ctx context.Context, commentIds []uuid.UUID) ([]CountCommentLikesByCommentIDsRow, error)
 	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
+	CountEmailVerificationSendsSince(ctx context.Context, arg CountEmailVerificationSendsSinceParams) (int32, error)
 	CountPostLikes(ctx context.Context, postID uuid.UUID) (int64, error)
 	CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountPostLikesByPostIDsRow, error)
 	// Menghalang penggantian set sesi yang akan membuang kehadiran yang sudah
@@ -102,6 +111,7 @@ type Querier interface {
 	CreateDonation(ctx context.Context, arg CreateDonationParams) (Donation, error)
 	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) (EmailVerificationToken, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
+	CreatePasswordResetToken(ctx context.Context, arg CreatePasswordResetTokenParams) (PasswordResetToken, error)
 	CreatePaymentLog(ctx context.Context, arg CreatePaymentLogParams) error
 	CreatePendingUpload(ctx context.Context, arg CreatePendingUploadParams) error
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
@@ -132,6 +142,10 @@ type Querier interface {
 	DeleteDoneDeletedUploadsBefore(ctx context.Context, deletedAt pgtype.Timestamptz) (int64, error)
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
+	// Dipanggil DUA tempat, atas sebab berbeza:
+	//   request — permintaan baharu membunuh pautan lama
+	//   confirm — sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
+	DeletePasswordResetTokensByUser(ctx context.Context, userID uuid.UUID) error
 	// Retention 3 bulan (keputusan produk 2026-08-15) — dipanggil
 	// internal/retention, padanan pola sapuan audit_logs sedia ada.
 	DeletePaymentLogsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
@@ -158,6 +172,7 @@ type Querier interface {
 	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
 	GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
+	GetLatestEmailVerificationSendAt(ctx context.Context, userID uuid.UUID) (pgtype.Timestamptz, error)
 	// Untuk `/me` — Flutter perlukan ni supaya ahli nampak bayaran mereka
 	// berjaya/gagal/menunggu, bukan senyap (gap ditemui 2026-08-15: bayaran
 	// gagal/berjaya dua-dua direkod betul dalam DB tapi client tak pernah
@@ -194,6 +209,7 @@ type Querier interface {
 	// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
 	// (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
 	GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error)
+	GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (PasswordResetToken, error)
 	GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow, error)
 	GetProfileByUserID(ctx context.Context, userID uuid.UUID) (GetProfileByUserIDRow, error)
@@ -213,6 +229,7 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
+	InsertEmailVerificationSend(ctx context.Context, userID uuid.UUID) error
 	// Semakan pendaftaran (/auth/register) — pelengkap kpd senarai statik
 	// terbenam (internal/disposableemail), utk domain tambahan management.
 	IsEmailDomainBlocked(ctx context.Context, domain string) (bool, error)
@@ -552,6 +569,7 @@ type Querier interface {
 	// UPDATE gagal (0 baris), pgx.ErrNoRows dianggap "replay biasa", dan
 	// kesnya jadi kelihatan macam tiada apa berlaku — walhal ahli dah bayar.
 	UpdateRegistrationPaymentStatusByPaymentRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByPaymentRefParams) (ActivityRegistration, error)
+	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)
 }
 

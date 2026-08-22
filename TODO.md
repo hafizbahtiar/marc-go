@@ -1661,12 +1661,24 @@ tanpa jejak, jadi dinilai HIGH.
       sana. Ini sebab kenapa 90s ialah tampung: ia menaikkan siling,
       bukan menghapuskannya. Hanya fasa 2 sebagai kerja latar yang buat
       begitu.
-- [ ] **L32 — tiada laluan tukar/reset kata laluan langsung (MEDIUM,
+- [x] **L32 — tiada laluan tukar/reset kata laluan langsung (MEDIUM,
       fungsi).** Grep seluruh `internal/`, `cmd/`, `queries/`: tiada
       `password_reset`, tiada `PATCH /me/password`. Ahli yang lupa kata
       laluan **tiada jalan pulih dalam app** — mesti hubungi staff untuk
       UPDATE DB terus. Untuk app yang gate keahlian dgn kelulusan +
       yuran sebenar, ni gap fungsi yang ketara, bukan nice-to-have.
+
+      **RESET dibina 2026-08-22** (spec:
+      `docs/superpowers/specs/2026-08-22-reset-kata-laluan-design.md`,
+      pelan: `docs/superpowers/plans/2026-08-22-reset-kata-laluan.md`).
+      Jadual `password_reset_tokens`, dua endpoint awam, halaman
+      `marc_astro/src/pages/reset-kata-laluan.astro`, skrin
+      `marc_flutter` `forgot_password_page.dart`.
+
+      **TUKAR kata laluan semasa log masuk KEKAL TERBUKA** — ditolak
+      secara eksplisit semasa brainstorm untuk memendekkan skop. Bukan
+      penyekat: ahli yang syak akaun dikompromi ada
+      `POST /auth/logout-all`. Buka item baharu kalau ia diperlukan.
       Berkait: `registerRequest.Password` `min=6` longgar, dan tiada
       lockout per-AKAUN (had kadar `auth` per-IP sahaja, lihat L26) —
       jadi brute-force teragih merentas IP tak dihalang apa-apa.
@@ -1742,6 +1754,28 @@ tanpa jejak, jadi dinilai HIGH.
       ⚠️ **Flutter belum kendalikan jenis `comment_like`** — backend akan
       mula menghantarnya sebaik ini di-deploy. Lihat
       `../marc_flutter/TODO.md`.
+- [ ] **L37 — `POST /auth/register` membocorkan enumerasi akaun (LOW).**
+      Ia pulang `409 "email ini sudah berdaftar"` untuk emel yang wujud,
+      jadi sesiapa boleh menyenaraikan emel mana yang berdaftar dengan
+      memanggil register berulang kali. Dihadkan kadar (baldi `auth`,
+      12s/5 per IP) jadi ia perlahan — tapi tak dihalang.
+
+      Ditemui semasa brainstorm **L32** (reset kata laluan), yang memilih
+      **tidak** membocorkan enumerasi pada endpoint barunya. Direkod
+      BERASINGAN dan bukan diselinapkan ke dalam kerja itu: membaikinya
+      menyentuh aliran pendaftaran yang tiada kaitan, dan ia mengubah
+      mesej ralat yang Flutter sudah papar.
+
+      Nota jujur: selagi ni terbuka, keputusan bukan-enumerasi L32 TIDAK
+      menutup enumerasi merentas sistem — penyerang akan guna `register`.
+      Itu bukan hujah untuk membocorkannya pada laluan reset juga;
+      menambah kebocoran kedua menjadikan pembaikan nanti lebih mahal.
+
+      Pembaikan BUKAN remeh: pendaftaran mesti tetap memberitahu pengguna
+      SEBENAR bahawa emel mereka sudah diambil, kalau tidak UX daftar
+      rosak. Corak biasa ialah pulang 201 lalu hantar emel "seseorang cuba
+      daftar guna alamat anda" — keputusan produk, bukan sekadar teknikal.
+
 - [x] **L36 — modul duit paling berisiko tiada ujian langsung (MEDIUM,
       liputan; DIBAIKI 2026-08-22).** `go test ./...` lapor `no test files` untuk
       `internal/paymentreconcile`, `internal/activitysweep`,

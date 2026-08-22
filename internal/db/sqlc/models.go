@@ -168,6 +168,12 @@ type Donation struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type EmailVerificationSend struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type EmailVerificationToken struct {
 	ID        uuid.UUID          `json:"id"`
 	UserID    uuid.UUID          `json:"user_id"`
@@ -187,6 +193,14 @@ type Notification struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	ActivityID    pgtype.UUID        `json:"activity_id"`
 	CertificateID pgtype.UUID        `json:"certificate_id"`
+}
+
+type PasswordResetToken struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type PaymentLog struct {
