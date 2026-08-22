@@ -115,7 +115,8 @@ func TestRequestResetKeduaMembatalkanYangPertama(t *testing.T) {
 	}
 }
 
-// Emel dinormalkan sebelum carian, sama seperti login/register.
+// Carian emel case-insensitive (disokong index
+// users_email_lowercase_unique), sama seperti login/register.
 func TestRequestResetEmelDinormalkan(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -123,10 +124,10 @@ func TestRequestResetEmelDinormalkan(t *testing.T) {
 	userID := seedMember(t, ctx, pool, "ahli", "approved")
 	emel := emailOf(t, pool, userID)
 
-	resetRequestCall(t, pool, `{"email":"  `+strings.ToUpper(emel)+`  "}`)
+	resetRequestCall(t, pool, `{"email":"`+strings.ToUpper(emel)+`"}`)
 
 	if got := countResetTokens(t, pool, userID); got != 1 {
-		t.Fatalf("token = %d — emel huruf besar/berruang tak dinormalkan", got)
+		t.Fatalf("token = %d — emel huruf besar tak dipadan case-insensitive", got)
 	}
 }
 

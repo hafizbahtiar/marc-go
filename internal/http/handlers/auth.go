@@ -639,12 +639,11 @@ func isUniqueViolation(err error) bool {
 }
 
 type passwordResetRequestBody struct {
-	// TIADA tag `email`: validator go-playground tolak format tu kalau
-	// nilai ada ruang lingkung (cth " foo@bar.com "), sebelum sempat kita
-	// trim di bawah. `required` je cukup — emel salah format cuma takkan
-	// padan mana-mana akaun (GetUserByEmail pulang ErrNoRows), lalu jatuh
-	// ke laluan 204 "akaun tiada" yang sama macam biasa.
-	Email string `json:"email" binding:"required"`
+	// `required,email` sengaja PADAN registerRequest/loginRequest. Emel
+	// berruang ditolak 400 pada ketiga-tiga laluan — konsisten, dan 400 tak
+	// membocorkan apa-apa (ia tak bezakan akaun wujud atau tidak). Klien
+	// menghantar emel yang sudah di-trim.
+	Email string `json:"email" binding:"required,email"`
 }
 
 // RequestPasswordReset — POST /auth/password-reset/request. AWAM.
