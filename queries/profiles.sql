@@ -128,3 +128,16 @@ returning *;
 -- name: ListApprovedUserIDs :many
 -- Penerima siaran seluruh kelab (cth aktiviti baharu diterbitkan).
 select user_id from profiles where status = 'approved';
+
+-- name: GetUserIDByTelegramChatID :one
+select user_id from profiles where telegram_chat_id = $1;
+
+-- name: SetTelegramLink :exec
+update profiles
+set telegram_chat_id = $2, telegram_username = $3, telegram_linked_at = now()
+where user_id = $1;
+
+-- name: ClearTelegramLink :exec
+update profiles
+set telegram_chat_id = null, telegram_username = null, telegram_linked_at = null
+where user_id = $1;

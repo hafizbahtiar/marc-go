@@ -88,8 +88,11 @@ Lapisan akses bertingkat: **auth** → **approved** (status diluluskan) →
 
 | Method | Path | Akses | Nota |
 |---|---|---|---|
-| GET | `/me` | ✓ | sengaja TIDAK perlu approved — user pending kena boleh baca status sendiri |
+| GET | `/me` | ✓ | sengaja TIDAK perlu approved — user pending kena boleh baca status sendiri; bawa `telegram_linked`/`telegram_username` |
 | PATCH | `/me` | ✓ | display_name / phone |
+| POST | `/me/telegram-link/token` | ✓ | jana deep-link binding Telegram; 503 kalau `TELEGRAM_BOT_TOKEN` kosong |
+| DELETE | `/me/telegram-link` | ✓ | nyahikat akaun Telegram; idempoten |
+| POST | `/webhooks/telegram` | — | dipanggil Telegram sahaja; route tak berdaftar bila ciri dimatikan |
 | GET | `/members` | approved | keterlihatan ikut `roles.rank`; emel ahli lain management sahaja |
 | GET | `/members?status=pending` | approved | barisan kelulusan — management sahaja |
 | POST | `/members/:id/approve` | approved | management; diaudit |

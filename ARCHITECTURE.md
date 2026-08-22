@@ -158,6 +158,45 @@ mitigasi separa; lihat komennya. Ia TIDAK menanda `email_verified`.
 
 `PASSWORD_RESET_URL` kosong = ciri dimatikan (503), bukan fallback HTML Go.
 
+### Binding Telegram (Fasa 1)
+
+Spec: `docs/superpowers/specs/2026-08-22-telegram-binding-design.md`.
+Fasa pertama drpd tiga fasa dirancang: binding (ni) → notifikasi →
+2FA — dua yg terakhir belum dibina.
+
+Ahli sambung akaun Telegram via deep-link sekali-guna, corak SAMA
+persis reset kata laluan: token legap 32 bait, hash SHA-256 dalam
+`telegram_link_tokens`, TTL 10 minit (bukan 1 jam — aliran ni
+app→Telegram serta-merta), tuntutan atomik `DELETE ... RETURNING`.
+Binding sendiri (`telegram_chat_id`/`telegram_username`/
+`telegram_linked_at`) duduk pada `profiles`, BUKAN jadual berasingan —
+ia keadaan kekal-tunggal per-ahli, sama profil dgn `email_verified`/
+`avatar_r2_key`.
+
+**Terima update via webhook, bukan long polling.** Telegram tolak
+(`409 Conflict`) >1 proses `getUpdates` serentak bagi token bot yg
+sama. Lima kerja latar sedia ada sengaja jalan pd SETIAP instance
+tanpa kunci teragih (lihat "Redis" TODO.md) — long polling tak boleh
+ikut corak itu. Webhook (`POST /webhooks/telegram`) elak masalah ni
+sepenuhnya.
+
+**Binding 1:1 ketat** (`telegram_chat_id unique`). Chat lain cuba bind
+akaun yg sudah terikat chat lain → tolak. User yg SUDAH ada binding
+jana token utk chat baharu → gantikan (chat lama senyap terputus,
+belum ada mekanisme notifikasi utk beritahu).
+
+⚠️ `bot.WebhookHandler()` (library `github.com/go-telegram/bot`)
+**tidak pernah** tulis status HTTP eksplisit pd sebarang cabang
+(termasuk bila header rahsia tak padan) — respons SENTIASA 200
+implisit. Jangan uji/anggap ia pulang 401 pd rahsia salah; satu²nya
+cara nampak kesan sebenar rahsia yg tak padan ialah tengok SAMA ADA
+`TelegramHandler.HandleUpdate` dipanggil (lihat
+`internal/http/router_telegram_test.go`).
+
+`TELEGRAM_BOT_TOKEN` kosong (atau `bot.New()` gagal, cth token tak
+sah) = ciri dimatikan sepenuhnya — endpoint token 503, route webhook
+langsung tak berdaftar (404), bukan 503 runtime.
+
 ## Authorization — gantian Postgres RLS
 
 Tiada RLS lagi (lihat `TODO.md` Stage 9). Semua enforcement app-level:
@@ -492,7 +531,7 @@ BERBEZA — bukan satu:
 | Kosong | Kesan | Contoh |
 |---|---|---|
 | No-op senyap | ciri hilang, tiada ralat di mana-mana | OneSignal, Resend |
-| 503 yang jelas | endpoint pulang ralat yang boleh dibaca | R2, Stripe, ToyyibPay, `PASSWORD_RESET_URL` |
+| 503 yang jelas | endpoint pulang ralat yang boleh dibaca | R2, Stripe, ToyyibPay, `PASSWORD_RESET_URL`, `TELEGRAM_BOT_TOKEN` |
 | Jatuh balik setempat | ciri berfungsi, cuma per-instance | Redis (had kadar + cache URL) |
 | Jatuh balik ke Go | halaman HTML Go sendiri, bukan Astro | `EMAIL_VERIFY_URL`, `*_RETURN_URL`, `CERTIFICATE_VERIFY_URL` |
 

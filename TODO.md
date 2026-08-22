@@ -12,6 +12,23 @@ simpanan. Modul aktiviti (backend penuh) siap — jurangnya direkod di bawah.
 
 ---
 
+## Integrasi Telegram — fasa 2 (notifikasi) + fasa 3 (2FA) belum dibina
+
+**Fasa 1 (binding akaun) SIAP 2026-08-22** — spec:
+[`docs/superpowers/specs/2026-08-22-telegram-binding-design.md`](./docs/superpowers/specs/2026-08-22-telegram-binding-design.md),
+plan: [`docs/superpowers/plans/2026-08-22-telegram-binding.md`](./docs/superpowers/plans/2026-08-22-telegram-binding.md).
+Ahli boleh sambung/nyahsambung akaun Telegram via deep-link sekali-guna
+(`POST /me/telegram-link/token`, `DELETE /me/telegram-link`, webhook
+`/start`). Ciri MATI (503 + route tak berdaftar) sehingga
+`TELEGRAM_BOT_TOKEN` diset di production/staging — belum diset lagi
+buat masa ni.
+
+**Fasa 2 (saluran notifikasi via bot)** dan **fasa 3 (2FA via
+Telegram)** kedua-duanya BERGANTUNG pada binding fasa 1, tapi
+BELUM dibina — brainstorm/spec/plan berasingan diperlukan bila
+hendak dimulakan. Jangan anggap notifikasi Telegram sudah wujud
+sekadar sebab binding sudah ada.
+
 ## Permintaan pemadaman akaun (Google Play Console) — v1 REQUEST-sahaja, 2026-08-19
 
 Google Play Console mewajibkan app yang sokong penciptaan akaun sediakan

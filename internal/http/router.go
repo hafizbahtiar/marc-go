@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	tgbot "github.com/go-telegram/bot"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/time/rate"
 
@@ -72,6 +73,8 @@ func NewRouter(
 	activityPaymentReturnURL string,
 	certificateVerifyURL string,
 	passwordResetURL string,
+	telegramHandler *handlers.TelegramHandler,
+	tgBot *tgbot.Bot,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
@@ -144,6 +147,21 @@ func NewRouter(
 	protected.PATCH("/me", profileUpdateRateLimiter, profileHandler.UpdateMe)
 	protected.POST("/me/deletion-request", accountDeletionRateLimiter, profileHandler.RequestAccountDeletion)
 	protected.POST("/auth/logout-all", authHandler.LogoutAll)
+
+	// Baldi berasingan drpd 'auth'/'password-reset' (pengajaran L26):
+	// trafik binding Telegram tak patut kongsi kuota dgn laluan lain.
+	telegramLinkRateLimiter := rateLimiter.Limit("telegram-link", authRateLimit, authRateBurst)
+	protected.POST("/me/telegram-link/token", telegramLinkRateLimiter, telegramHandler.RequestLinkToken)
+	protected.DELETE("/me/telegram-link", telegramHandler.DeleteLink)
+
+	// Webhook Telegram -- AWAM, dipanggil Telegram (bukan app). tgBot
+	// nil bila TELEGRAM_BOT_TOKEN kosong ATAU bot.New() gagal (token
+	// tak sah) -- route tak didaftar langsung, bukan 503 runtime,
+	// padanan corak lain dlm sistem ni (route hilang, bukan handler
+	// yg semak config setiap panggilan).
+	if tgBot != nil {
+		r.POST("/webhooks/telegram", gin.WrapF(tgBot.WebhookHandler()))
+	}
 
 	// approved (Stage 11) — /members, /device-tokens, dan approve/reject
 	// sendiri perlu status=approved. /me sengaja TAK di sini (lihat

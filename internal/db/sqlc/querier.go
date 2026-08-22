@@ -63,6 +63,7 @@ type Querier interface {
 	// `cancelled_at` (rosakkan jejak audit "bila SEBENAR ia dibatal") dan
 	// kembungkan bilangan baris dilaporkan log tanpa sebab.
 	CancelStaleUnstartedPayments(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error)
+	ClearTelegramLink(ctx context.Context, userID uuid.UUID) error
 	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
 	// Peralihan status automatik 'published' -> 'completed' bila aktiviti
 	// dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) —
@@ -86,6 +87,11 @@ type Querier interface {
 	// consumed_at dah bukan null, so 0 rows returned di sini -> caller
 	// boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
 	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
+	// Tuntut token secara ATOMIK: satu pernyataan, `delete ... returning`.
+	// Padanan tepat ConsumePasswordResetToken (queries/password_reset_tokens.sql)
+	// dan atas sebab yang SAMA -- baca-dahulu-kemudian-tulis ada jurang
+	// TOCTOU yang membenarkan dua permintaan serentak kedua-duanya lulus.
+	ConsumeTelegramLinkToken(ctx context.Context, tokenHash string) (TelegramLinkToken, error)
 	CountActiveRegistrations(ctx context.Context, activityID uuid.UUID) (int64, error)
 	CountActivitySessions(ctx context.Context, activityID uuid.UUID) (int64, error)
 	CountAttendanceByRegistration(ctx context.Context, registrationID uuid.UUID) (int64, error)
@@ -129,6 +135,7 @@ type Querier interface {
 	// lama (createBill dahulu) meninggalkan yang sebaliknya: bil yang boleh
 	// dibayar tanpa baris, yang webhook mahupun reconcile tak dapat lihat.
 	CreateRegistrationPayment(ctx context.Context, arg CreateRegistrationPaymentParams) (RegistrationPayment, error)
+	CreateTelegramLinkToken(ctx context.Context, arg CreateTelegramLinkTokenParams) (TelegramLinkToken, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteActivitySessions(ctx context.Context, activityID uuid.UUID) error
 	DeleteAttendance(ctx context.Context, arg DeleteAttendanceParams) (int64, error)
@@ -154,6 +161,7 @@ type Querier interface {
 	DeletePendingUploadByKey(ctx context.Context, r2Key string) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
+	DeleteTelegramLinkTokensByUser(ctx context.Context, userID uuid.UUID) error
 	// on conflict do nothing: padam post yang sama dua kali (atau retry) tak
 	// patut gagal, dan objek tu memang dah dalam gilir.
 	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
@@ -232,6 +240,7 @@ type Querier interface {
 	GetStatusByUserID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetUserIDByTelegramChatID(ctx context.Context, telegramChatID pgtype.Int8) (uuid.UUID, error)
 	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	InsertEmailVerificationSend(ctx context.Context, userID uuid.UUID) error
 	// Semakan pendaftaran (/auth/register) — pelengkap kpd senarai statik
@@ -532,6 +541,7 @@ type Querier interface {
 	// hidup, supaya yuran yang ditukar SELEPAS bayar tak senyap ubah resit
 	// yang sedia wujud (Opus verify 2026-08-15).
 	SetRegistrationPaymentRef(ctx context.Context, arg SetRegistrationPaymentRefParams) (ActivityRegistration, error)
+	SetTelegramLink(ctx context.Context, arg SetTelegramLinkParams) error
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
