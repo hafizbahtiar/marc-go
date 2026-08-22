@@ -207,7 +207,33 @@ func (h *ActivityRegistrationPaymentHandler) Checkout(c *gin.Context) {
 		PaymentRef:   pgtype.Text{String: result.GatewayRef, Valid: true},
 		FeeCentsPaid: pgtype.Int4{Int32: activity.FeeCents, Valid: true},
 	}); err != nil {
-		log.Printf("simpan payment_ref pendaftaran aktiviti %s: %v", reg.ID, err)
+		// TAMPUNG L29 (Opus verify 2026-08-22) — padanan kes yang sama di
+		// RegistrationPaymentHandler.Checkout, cuma bentuknya sedikit
+		// berbeza: baris pendaftaran DAH wujud di sini, tapi
+		// `payment_ref` tak pernah ditulis. Jadi webhook (yang mencari
+		// ikut `payment_ref`) dan paymentreconcile (yang melangkau baris
+		// `payment_ref is null`) kedua-duanya buta kepada bil yang DAH
+		// wujud dan boleh dibayar. `activitysweep` akhirnya membatalkan
+		// pendaftaran itu sebagai "tak pernah cuba checkout" — pada
+		// cutoff PENDEK 45 minit, kerana setakat DB memang ia tak pernah.
+		//
+		// Rekod GatewayRef + RelatedID supaya pasangan bil↔pendaftaran
+		// masih boleh disambung semula secara manual.
+		feeCents := int64(activity.FeeCents)
+		log.Printf("ERROR activity_registration_payment: bil %s DAH DICIPTA di %s tapi payment_ref gagal ditulis (registration=%s, user=%s) — bil yatim, ahli boleh bayar tanpa rekod: %v",
+			result.GatewayRef, h.gw.Name(), reg.ID, userID, err)
+		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+			Module:      paymentlog.ModuleActivityFee,
+			Event:       paymentlog.EventCheckoutFailed,
+			Status:      paymentlog.StatusMismatch,
+			Gateway:     h.gw.Name(),
+			GatewayRef:  result.GatewayRef,
+			AmountCents: &feeCents,
+			UserID:      &userID,
+			RelatedID:   &reg.ID,
+			Message:     truncateForLog("bil dicipta tapi payment_ref gagal ditulis (bil yatim): " + err.Error()),
+			RawPayload:  []byte(result.RawResponse),
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}

@@ -112,18 +112,85 @@ func (q *Queries) GetMyDonationByID(ctx context.Context, arg GetMyDonationByIDPa
 	return i, err
 }
 
+const listMyDonations = `-- name: ListMyDonations :many
+select id, user_id, donor_name, donor_email, amount_cents, currency, gateway, gateway_ref, status, created_at from donations
+where user_id = $1
+order by created_at desc
+`
+
+// Sejarah derma seorang ahli, untuk `GET /me/payments` (L33, 2026-08-22).
+//
+// Tanpa query ni, `GET /me/payments/donation/:id/receipt` mati secara
+// praktikal: ia perlukan `donations.id`, dan tiada permukaan API yang
+// pernah mendedahkan id itu kepada pemiliknya. Endpoint resit wujud sejak
+// awal; yang hilang cuma cara menemuinya.
+//
+// Diskop `user_id`, jadi derma TANPA NAMA (user_id null) tak pernah
+// muncul — betul: penderma itu tiada akaun untuk menuntut baris ni, dan
+// emel resit yang dihantar semasa webhook ialah satu-satunya jejak mereka
+// ada, mengikut reka bentuk (lihat komen `GetMyDonationByID`).
+//
+// Status 'pending'/'failed' TURUT dipulangkan (bukan 'succeeded' sahaja),
+// padanan `ListMyRegistrationPayments`: sejarah patut menunjukkan
+// percubaan yang gagal, bukan senyap menghilangkannya. Butang resit
+// digate pada status di sisi klien.
+func (q *Queries) ListMyDonations(ctx context.Context, userID pgtype.UUID) ([]Donation, error) {
+	rows, err := q.db.Query(ctx, listMyDonations, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Donation
+	for rows.Next() {
+		var i Donation
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.DonorName,
+			&i.DonorEmail,
+			&i.AmountCents,
+			&i.Currency,
+			&i.Gateway,
+			&i.GatewayRef,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingDonationsOlderThan = `-- name: ListPendingDonationsOlderThan :many
 select id, user_id, donor_name, donor_email, amount_cents, currency, gateway, gateway_ref, status, created_at from donations
-where status = 'pending' and created_at < $1
+where status = 'pending'
+  and created_at < $1
+  and created_at > $2
 order by created_at
+limit $3
 `
+
+type ListPendingDonationsOlderThanParams struct {
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	Oldest      pgtype.Timestamptz `json:"oldest"`
+	RowLimit    int32              `json:"row_limit"`
+}
 
 // Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
 // pada gateway (internal/paymentreconcile) — padanan alasan
 // ListPendingRegistrationPaymentsOlderThan (registration_payments.sql):
 // cuma 'pending', bukan 'failed' (terminal, tak perlu disemak semula).
-func (q *Queries) ListPendingDonationsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) ([]Donation, error) {
-	rows, err := q.db.Query(ctx, listPendingDonationsOlderThan, createdAt)
+//
+// Tingkap atas + limit — lihat komen penuh pada
+// `ListPendingRegistrationPaymentsOlderThan` (L30). Sebab sama terpakai:
+// PaymentIntent Stripe yang ditinggalkan kekal `requires_payment_method`,
+// yang `CheckStatus` petakan kepada "pending" selama-lamanya.
+func (q *Queries) ListPendingDonationsOlderThan(ctx context.Context, arg ListPendingDonationsOlderThanParams) ([]Donation, error) {
+	rows, err := q.db.Query(ctx, listPendingDonationsOlderThan, arg.StaleBefore, arg.Oldest, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}

@@ -174,34 +174,96 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 		"billPhone":   billPhone,
 	}
 
+	// ---- L29: BARIS DB DAHULU, BIL GATEWAY KEMUDIAN ----
+	//
+	// Susunan ni ialah keseluruhan pembaikan. Sebelum ni createBill
+	// berjalan dahulu dan INSERT kemudian — jadi INSERT yang gagal
+	// meninggalkan bil ToyyibPay yang SAH dan boleh dibayar tanpa
+	// sebarang baris merujuknya. Kalau ahli bayar bil itu: webhook
+	// mengena 0 baris dan menyenyapkannya sebagai "replay biasa", dan
+	// reconcile melelar baris `registration_payments` jadi ia buta
+	// kepada apa yang tak pernah wujud. Duit masuk, sifar rekod.
+	//
+	// Dibalikkan, kegagalan yang setara jadi tak berbahaya: yang tinggal
+	// ialah baris 'pending' TANPA ref — kelihatan dalam sejarah bayaran
+	// ahli, boleh diaudit, dan TIADA bil untuk sesiapa bayar.
+	regPayment, err := h.queries.CreateRegistrationPayment(ctx, sqlc.CreateRegistrationPaymentParams{
+		UserID:      userID,
+		AmountCents: int32(h.feeCents),
+		Currency:    "myr",
+		Gateway:     h.gw.Name(),
+	})
+	if err != nil {
+		log.Printf("create registration payment row: %v", err)
+		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+			Module:      paymentlog.ModuleRegistrationFee,
+			Event:       paymentlog.EventCheckoutFailed,
+			Status:      paymentlog.StatusError,
+			Gateway:     h.gw.Name(),
+			AmountCents: &h.feeCents,
+			UserID:      &userID,
+			Message:     truncateForLog("baris DB gagal ditulis sebelum createBill: " + err.Error()),
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
+		return
+	}
+
 	result, err := h.gw.CreatePayment(ctx, payment.CreateParams{
 		AmountCents: h.feeCents,
 		Currency:    "myr",
 		Metadata:    metadata,
 	})
 	if err != nil {
+		// Tiada bil wujud, jadi baris 'pending' tu takkan pernah
+		// diselesaikan. Tandakan 'failed' supaya ia tak duduk selamanya
+		// dalam sejarah ahli sebagai "sedang diproses" — dan supaya
+		// `GetLatestRegistrationPaymentStatus` (yang mengisi skrin /me)
+		// melaporkan sesuatu yang jujur.
 		log.Printf("%s create payment (registration fee): %v", h.gw.Name(), err)
+		if merr := h.queries.MarkRegistrationPaymentFailed(ctx, regPayment.ID); merr != nil {
+			log.Printf("tanda registration payment %s sebagai failed: %v", regPayment.ID, merr)
+		}
 		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
-			Module:  paymentlog.ModuleRegistrationFee,
-			Event:   paymentlog.EventCheckoutFailed,
-			Status:  paymentlog.StatusError,
-			Gateway: h.gw.Name(),
-			UserID:  &userID,
-			Message: truncateForLog(err.Error()),
+			Module:      paymentlog.ModuleRegistrationFee,
+			Event:       paymentlog.EventCheckoutFailed,
+			Status:      paymentlog.StatusError,
+			Gateway:     h.gw.Name(),
+			AmountCents: &h.feeCents,
+			UserID:      &userID,
+			RelatedID:   &regPayment.ID,
+			Message:     truncateForLog(err.Error()),
 		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
 
-	regPayment, err := h.queries.CreateRegistrationPayment(ctx, sqlc.CreateRegistrationPaymentParams{
-		UserID:      userID,
-		AmountCents: int32(h.feeCents),
-		Currency:    "myr",
-		Gateway:     h.gw.Name(),
-		GatewayRef:  result.GatewayRef,
-	})
-	if err != nil {
-		log.Printf("create registration payment row: %v", err)
+	if _, err := h.queries.SetRegistrationPaymentGatewayRef(ctx, sqlc.SetRegistrationPaymentGatewayRefParams{
+		ID:         regPayment.ID,
+		GatewayRef: pgtype.Text{String: result.GatewayRef, Valid: true},
+	}); err != nil {
+		// TETINGKAP BAKI — jauh lebih sempit drpd sebelum ni, tapi bukan
+		// sifar. Bil wujud dan baris wujud; cuma pautan antara keduanya
+		// yang hilang, jadi webhook (yang mencari ikut ref) takkan
+		// menemuinya.
+		//
+		// Beza pentingnya: baris itu KINI WUJUD dan membawa user_id +
+		// amaun + timestamp, jadi mendamaikannya secara manual ialah satu
+		// UPDATE dan bukan siasatan forensik. Log ERROR + paymentlog
+		// membawa kedua-dua belah pautan yang perlu disambung.
+		log.Printf("ERROR registration_payment: bil %s DICIPTA di %s tapi gagal dipautkan ke baris %s (user=%s) — perlukan pautan manual: %v",
+			result.GatewayRef, h.gw.Name(), regPayment.ID, userID, err)
+		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+			Module:      paymentlog.ModuleRegistrationFee,
+			Event:       paymentlog.EventCheckoutFailed,
+			Status:      paymentlog.StatusMismatch,
+			Gateway:     h.gw.Name(),
+			GatewayRef:  result.GatewayRef,
+			AmountCents: &h.feeCents,
+			UserID:      &userID,
+			RelatedID:   &regPayment.ID,
+			Message:     truncateForLog("bil dicipta tapi gagal dipautkan ke baris bayaran: " + err.Error()),
+			RawPayload:  []byte(result.RawResponse),
+		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mulakan pembayaran"})
 		return
 	}
@@ -288,8 +350,12 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 	// lepas bayaran disahkan). Tiada senario ahli diluluskan TANPA
 	// bayaran 'succeeded' pernah wujud dalam DB.
 	updated, err := h.queries.UpdateRegistrationPaymentStatusByGatewayRef(c.Request.Context(), sqlc.UpdateRegistrationPaymentStatusByGatewayRefParams{
-		Gateway:    h.gw.Name(),
-		GatewayRef: event.GatewayRef,
+		Gateway: h.gw.Name(),
+		// `gateway_ref` nullable sejak L29. Baris yang belum berpaut
+		// (ref NULL) tak boleh dipadankan oleh `=`, yang memang betul:
+		// bil untuk baris itu tak pernah wujud, jadi tiada webhook sah
+		// boleh merujuknya.
+		GatewayRef: pgtype.Text{String: event.GatewayRef, Valid: true},
 		Status:     event.Status,
 	})
 	if err != nil {

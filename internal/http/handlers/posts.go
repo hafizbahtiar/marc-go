@@ -160,10 +160,21 @@ func (h *PostHandler) Create(c *gin.Context) {
 		// jadi client boleh retry POST /posts dengan r2_keys yang sama
 		// tanpa kena "gambar tidak sah" sedangkan gambar tu still ada
 		// dan sah kepunyaan dia (lihat Fix H2 follow-up, audit 2026-08-07).
-		// Best-effort — kegagalan padam row ni tak patut gagalkan post
-		// yang dah berjaya dicipta (row lingering harmless, cuma
-		// tracking stale untuk key yang dah attached).
-		_ = q.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
+		//
+		// Ralat DISEMAK, bukan diabaikan (Opus verify 2026-08-22, L28).
+		// Komen lama kata baris yang tertinggal "harmless" — ia TIDAK:
+		// `pending_uploads` ialah senarai PADAM, dan `reaper` menggilir
+		// apa sahaja yang masih di situ selepas 6 jam lalu membuang
+		// objeknya dari R2. Satu DELETE yang gagal di sini bermakna
+		// gambar post yang MASIH dipaparkan hilang kekal, tanpa ralat di
+		// mana-mana. Gagalkan transaksi sebaliknya: rollback mengekalkan
+		// baris pending (selamat, boleh retry) dan TIDAK meninggalkan
+		// post yang gambarnya dijadualkan untuk dipadam.
+		if err := q.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID}); err != nil {
+			log.Printf("buang pending upload %s selepas lekat pada post: %v", key, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal cipta post"})
+			return
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -308,7 +319,7 @@ func (h *PostHandler) Update(c *gin.Context) {
 		EntityType: audit.EntityPost,
 		EntityID:   id,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        map[string]any{"content": before.Content},
 		New:        map[string]any{"content": updated.Content},
 	}); err != nil {
@@ -398,7 +409,7 @@ func (h *PostHandler) Delete(c *gin.Context) {
 		EntityType: audit.EntityPost,
 		EntityID:   id,
 		Action:     audit.ActionDelete,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old: map[string]any{
 			"content":   before.Content,
 			"type":      before.Type,

@@ -3,7 +3,8 @@
 Backend Go untuk app komuniti MARC (gantian Supabase).
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) untuk struktur kod,
 [`DATABASE.md`](./DATABASE.md) untuk schema & migration,
-[`TODO.md`](./TODO.md) untuk kerja yang belum siap.
+[`TODO.md`](./TODO.md) untuk kerja yang belum siap,
+[`docs/`](./docs/) untuk spec, plan dan laporan audit.
 
 Client Flutter: repo `marc_flutter` (sibling).
 
@@ -15,10 +16,31 @@ Client Flutter: repo `marc_flutter` (sibling).
 - **sqlc** — generate Go type-safe daripada raw SQL (`queries/*.sql` → `internal/db/sqlc`)
 - **pgx/v5** — Postgres driver
 - **JWT (access) + opaque token (refresh, rotated)** — auth custom
-- **Cloudflare R2** — storan gambar (upload presigned terus dari client)
-- **Stripe** — donation (kad + FPX) melalui interface `payment.Gateway`
-- **Resend** — emel pengesahan + resit donation (dengan lampiran PDF)
+- **Cloudflare R2** — storan gambar + PDF (upload presigned terus dari client;
+  PDF dijana server ditolak terus)
+- **Redis** — *pilihan*: had kadar teragih + kestabilan URL R2 antara replika.
+  Kosong = jatuh balik per-instance, bukan gagal
+- **Stripe** — derma (kad + FPX) melalui interface `payment.Gateway`
+- **ToyyibPay** — yuran pendaftaran ahli + yuran aktiviti (dua instance,
+  kredential sama, callback berbeza)
+- **go-pdf/fpdf** + **skip2/go-qrcode** — PDF resit & sijil, QR pengesahan
+- **Resend** — emel pengesahan + resit derma (dengan lampiran PDF)
 - **OneSignal** — push notification
+
+## Kerja latar
+
+Lima goroutine bermula pada boot (`cmd/api/main.go`), semuanya selamat
+kalau proses terbunuh dan disambung semula pada boot berikutnya:
+
+| Modul | Kadar | Tugas |
+|---|---|---|
+| `reaper` | 15 min | padam objek R2 yatim (post dipadam, karangan ditinggalkan) |
+| `activitysweep` | 15 min | batal pendaftaran berbayar terbiar, bebaskan slot |
+| `paymentreconcile` | 30 min | semak bayaran `pending` terus pada gateway, betulkan DB |
+| `activitylifecycle` | 1 jam | peringatan H-1 + auto-complete aktiviti tamat |
+| `retention` | 24 jam | redaksi PII audit, prune audit/payment_logs/batu nisan |
+
+Butiran reka bentuk: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Quickstart (dev)
 
@@ -73,6 +95,42 @@ Lapisan akses bertingkat: **auth** → **approved** (status diluluskan) →
 | PATCH | `/members/:id/role` | approved | hierarki rank; diaudit |
 | GET | `/roles` | approved | ditapis kepada role yang caller boleh assign |
 | GET | `/audit-logs` | approved | management sahaja; keyset pagination `before_id` |
+| POST | `/me/deletion-request` | ✓ | idempoten; rekod permintaan sahaja (tiada auto-purge) |
+| POST | `/device-tokens` | approved | daftar OneSignal subscription id |
+| DELETE | `/device-tokens/:id` | approved | |
+| DELETE | `/device-tokens/by-onesignal/:onesignalId` | approved | dipakai waktu logout |
+
+### Aktiviti
+
+Baca cukup `approved`; menulis perlu `verified`. Semakan "management sahaja"
+dibuat **dalam handler**, bukan pada grup route.
+
+| Method | Path | Akses | Nota |
+|---|---|---|---|
+| GET | `/activity-categories` | approved | `?all=true` = termasuk tidak aktif, manager ke atas |
+| POST/PATCH | `/activity-categories[/:id]` | verified | manager ke atas |
+| GET | `/activities` | approved | keyset cursor; `?status=draft` management sahaja |
+| GET | `/activities/:id` | approved | draf pulang 404 kepada bukan-management |
+| POST | `/activities` | verified | management; cipta + sesi sekali gus |
+| PATCH | `/activities/:id` | verified | management; PATCH separa sebenar (`optional[T]`) |
+| POST | `/activities/:id/publish` | verified | management; draf → published, fan-out push |
+| POST | `/activities/:id/cancel` | verified | management; notify pendaftar sahaja |
+| PUT | `/activities/:id/sessions` | verified | ganti SELURUH set; ditolak kalau ada kehadiran |
+| GET | `/me/activities` | approved | pendaftaran aktif sendiri |
+| POST/DELETE | `/activities/:id/registration` | verified | daftar / batal |
+| GET | `/activities/:id/registrations` | verified | management; termasuk `attended_session_ids` |
+| POST | `/activities/:id/sessions/:sid/attendance` | verified | `manual`/`scan` = management; `self_scan` = ahli sendiri |
+| DELETE | `/activities/:id/sessions/:sid/attendance/:rid` | verified | management; sentiasa diaudit |
+
+### Sijil
+
+| Method | Path | Akses | Nota |
+|---|---|---|---|
+| POST | `/activities/:id/certificates` | verified | management; 2 fasa, boleh diulang untuk sambung |
+| POST | `/certificates/:id/revoke` | verified | management; baris kekal, fail digilir padam |
+| GET | `/me/certificates` | approved | |
+| GET | `/me/certificates/:id/file` | approved | pulang URL bertandatangan, bukan bait PDF |
+| GET | `/verify/certificates/:token` | **awam** | QR sijil bercetak; respons medan-awam sahaja |
 
 ### Posts & comments
 
@@ -91,15 +149,47 @@ Lapisan akses bertingkat: **auth** → **approved** (status diluluskan) →
 | POST/DELETE | `/comments/:id/like` | verified | |
 | POST | `/uploads/presign` | verified | rate limit; pulang `{upload_url, r2_key}` |
 
-### Notifikasi & donation
+### Notifikasi
 
 | Method | Path | Akses | Nota |
 |---|---|---|---|
 | GET | `/notifications` | verified | |
 | POST | `/notifications/:id/read` | verified | |
 | POST | `/notifications/read-all` | verified | |
+
+### Bayaran
+
+Tiga modul **berasingan** — jangan keliru. Butiran: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+
+| Method | Path | Akses | Nota |
+|---|---|---|---|
 | POST | `/donations/checkout` | **awam** | OptionalAuth — guest boleh derma (emel wajib) |
 | POST | `/webhooks/:gateway` | **awam** | verify tandatangan; `:gateway` = `stripe` |
+| POST | `/registration-payments/checkout` | ✓ | yuran ahli SEKALI bayar; `protected` supaya ahli `pending` boleh bayar |
+| POST | `/registration-payments/webhook/toyyibpay` | **awam** | ambil `billcode`, sahkan via poll `getBillTransactions` |
+| GET | `/registration-payments/return/toyyibpay` | **awam** | halaman landing; 302 ke Astro kalau dikonfigur |
+| POST | `/activities/:id/registration/checkout` | verified | yuran AKTIVITI; mesti dah berdaftar dahulu |
+| POST | `/activity-registrations/webhook/toyyibpay` | **awam** | instance gateway KEDUA (callback berbeza) |
+| GET | `/activity-registrations/return/toyyibpay` | **awam** | |
+| GET | `/me/payments` | ✓ | sejarah sendiri — yuran pendaftaran + yuran aktiviti + derma (derma tanpa nama dikecualikan) |
+| GET | `/me/payments/registration/:id/receipt` | ✓ | jana PDF + pulang URL bertandatangan |
+| GET | `/me/payments/activity/:id/receipt` | ✓ | `:id` = id **pendaftaran**, bukan id aktiviti |
+| GET | `/me/payments/donation/:id/receipt` | ✓ | |
+
+Route checkout melalui `BlockTesterWrites` — akaun `tester` (review Google
+Play/App Store) berkelakuan macam ahli biasa untuk SEMUA tindakan lain,
+cuma bayaran sebenar yang disekat.
+
+### Admin
+
+Diletak pada grup `approved`; siling sebenar dikuatkuasakan dalam handler.
+
+| Method | Path | Akses | Nota |
+|---|---|---|---|
+| GET | `/admin/payments` | approved | management; modul `donation` **superadmin sahaja** |
+| POST | `/admin/payments/reconcile` | approved | management; cetus satu pusingan `paymentreconcile` |
+| GET/POST | `/admin/blocked-email-domains` | approved | **superadmin sahaja** |
+| DELETE | `/admin/blocked-email-domains/:domain` | approved | **superadmin sahaja** |
 
 ## Testing
 
@@ -111,6 +201,19 @@ golangci-lint run
 
 Ujian lawan infra sebenar (R2, Postgres) di-skip secara lalai — lihat
 [`TODO.md`](./TODO.md) untuk cara jalankannya.
+
+CI menjalankan perkhidmatan **Postgres 18 + Redis 8** sebenar, jadi ujian
+bersandar-DB benar-benar berjalan pada setiap PR — **202 PASS / 9 SKIP**,
+dan kesembilan-sembilan SKIP itu ujian R2 (perlukan kredential Cloudflare).
+`-race` dihidupkan.
+
+Satu langkah **tripwire** menggagalkan job kalau mana-mana ujian melapor
+SKIP atas sebab env var DB hilang — supaya menamakan semula satu env var
+tak boleh senyap mengembalikan CI kepada keadaan lama (dulu: 89 PASS /
+122 SKIP).
+
+Setempat, ujian bersandar-DB dilangkau melainkan env var diset — arahan
+penuh dalam [`TODO.md`](./TODO.md) bahagian Ujian.
 
 ## Deployment
 

@@ -102,15 +102,7 @@ func (h *CommentHandler) Create(c *gin.Context) {
 			pgtype.UUID{Bytes: comment.ID, Valid: true}, "Comment baru", "Seseorang comment pada post anda")
 	}
 
-	author := authorResponse{}
-	if profile, err := h.queries.GetProfileByUserID(ctx, userID); err == nil {
-		author.MemberID = profile.MemberID
-		if profile.DisplayName.Valid {
-			s := profile.DisplayName.String
-			author.DisplayName = &s
-		}
-		author.AvatarURL = avatarURLFor(ctx, h.r2, profile.AvatarR2Key)
-	}
+	author := h.authorOf(ctx, userID)
 
 	c.JSON(http.StatusCreated, commentResponse{
 		ID:              comment.ID.String(),
@@ -122,6 +114,58 @@ func (h *CommentHandler) Create(c *gin.Context) {
 		LikeCount:       0,
 		LikedByMe:       false,
 	})
+}
+
+// authorOf bina blok `author` untuk respons komen tunggal (Create/Update).
+//
+// Best-effort dengan sengaja: profil yang gagal dibaca memulangkan blok
+// kosong dan bukan menggagalkan permintaan — komen SUDAH tersimpan pada
+// tahap ni, jadi 500 di sini akan membuat klien fikir suntingannya gagal
+// sedangkan ia berjaya.
+//
+// Dikongsi antara Create dan Update supaya kedua-duanya tak boleh
+// terpesong — Update dulu tak mengisi medan ni langsung (L34).
+func (h *CommentHandler) authorOf(ctx context.Context, userID uuid.UUID) authorResponse {
+	author := authorResponse{}
+	profile, err := h.queries.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("baca profil %s untuk respons komen: %v", userID, err)
+		return author
+	}
+	author.MemberID = profile.MemberID
+	if profile.DisplayName.Valid {
+		s := profile.DisplayName.String
+		author.DisplayName = &s
+	}
+	author.AvatarURL = avatarURLFor(ctx, h.r2, profile.AvatarR2Key)
+	return author
+}
+
+// likeStateOf baca kiraan like + "aku dah like?" untuk SATU komen.
+//
+// Guna semula query berkumpulan yang sama dengan List (hantar kepingan
+// satu elemen) supaya tiada query kedua yang boleh terpesong daripada
+// yang dipakai senarai.
+func (h *CommentHandler) likeStateOf(ctx context.Context, commentID, viewerID uuid.UUID) (int64, bool) {
+	ids := []uuid.UUID{commentID}
+
+	var count int64
+	if rows, err := h.queries.CountCommentLikesByCommentIDs(ctx, ids); err != nil {
+		log.Printf("kira like komen %s: %v", commentID, err)
+	} else if len(rows) > 0 {
+		count = rows[0].LikeCount
+	}
+
+	liked := false
+	if rows, err := h.queries.CommentsLikedByUser(ctx, sqlc.CommentsLikedByUserParams{
+		UserID: viewerID, CommentIds: ids,
+	}); err != nil {
+		log.Printf("semak like komen %s: %v", commentID, err)
+	} else {
+		liked = len(rows) > 0
+	}
+
+	return count, liked
 }
 
 func (h *CommentHandler) List(c *gin.Context) {
@@ -245,7 +289,7 @@ func (h *CommentHandler) Update(c *gin.Context) {
 		EntityType: audit.EntityComment,
 		EntityID:   id,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old:        map[string]any{"content": existing.Content},
 		New:        map[string]any{"content": updated.Content},
 	}); err != nil {
@@ -259,12 +303,27 @@ func (h *CommentHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Author + kiraan like DIISI (Opus verify 2026-08-22, L34). Sebelum
+	// ni respons PATCH tinggalkan ketiga-tiganya pada nilai sifar —
+	// `authorResponse` ialah struct NILAI, jadi ia bersiri sebagai
+	// {"member_id":"","display_name":null,"avatar_url":null} dan bukan
+	// tiada. Klien yang menulis ganti komen dalam senarai daripada
+	// respons ni (corak biasa selepas edit) nampak nama, avatar DAN
+	// kiraan like penulis lenyap sehingga muat semula.
+	//
+	// Bentuknya kini padan Create dan List — ketiga-tiga laluan komen
+	// memulangkan `commentResponse` yang LENGKAP.
+	likeCount, likedByMe := h.likeStateOf(ctx, id, userID)
+
 	c.JSON(http.StatusOK, commentResponse{
 		ID:              updated.ID.String(),
 		ParentCommentID: nullableUUIDString(updated.ParentCommentID),
 		Content:         updated.Content,
 		CreatedAt:       formatTime(updated.CreatedAt),
 		EditedAt:        formatTimeNullable(updated.EditedAt),
+		Author:          h.authorOf(ctx, userID),
+		LikeCount:       likeCount,
+		LikedByMe:       likedByMe,
 	})
 }
 
@@ -310,7 +369,7 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 		EntityType: audit.EntityComment,
 		EntityID:   id,
 		Action:     audit.ActionDelete,
-		Actor:      auditActor(c, h.queries),
+		Actor:      auditActor(c, q),
 		Old: map[string]any{
 			"content":   existing.Content,
 			"author_id": existing.AuthorID.String(),
@@ -340,13 +399,32 @@ func (h *CommentHandler) Like(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	if err := h.queries.LikeComment(ctx, sqlc.LikeCommentParams{CommentID: id, UserID: userID}); err != nil {
+	rows, err := h.queries.LikeComment(ctx, sqlc.LikeCommentParams{CommentID: id, UserID: userID})
+	if err != nil {
 		if isForeignKeyViolation(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "comment tidak dijumpai"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal like comment"})
 		return
+	}
+
+	// Beritahu penulis komen (L35, keputusan produk 2026-08-22) —
+	// padanan gelagat like pada POST, yang sudah memberitahu sejak awal.
+	//
+	// `rows > 0` WAJIB, bukan kemasan: `LikeComment` ialah `on conflict
+	// do nothing`, jadi menghantar like berulang ialah no-op di DB.
+	// Memberitahu tanpa syarat menjadikan endpoint ni gelung harassment
+	// bersasar — tepat pepijat yang L18 baiki pada laluan post. Rate
+	// limiter TIADA pada route like (dedup inilah mekanismenya), jadi
+	// guard ni satu-satunya yang menahannya.
+	if rows > 0 {
+		if comment, err := h.queries.GetCommentByID(ctx, id); err == nil {
+			notifyOwner(ctx, h.queries, h.push, comment.AuthorID, userID, "comment_like",
+				pgtype.UUID{Bytes: comment.PostID, Valid: true},
+				pgtype.UUID{Bytes: comment.ID, Valid: true},
+				"Komen anda disukai", "Seseorang menyukai komen anda")
+		}
 	}
 
 	c.Status(http.StatusNoContent)

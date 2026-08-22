@@ -13,10 +13,15 @@ import (
 )
 
 const cancelRegistration = `-- name: CancelRegistration :one
-update activity_registrations
+update activity_registrations r
 set status = 'cancelled', cancelled_at = now()
-where activity_id = $1 and user_id = $2 and status <> 'cancelled'
-returning id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid
+from activities a
+where a.id = r.activity_id
+  and r.activity_id = $1
+  and r.user_id = $2
+  and r.status <> 'cancelled'
+  and a.ends_at > now()
+returning r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, r.fee_cents_paid
 `
 
 type CancelRegistrationParams struct {
@@ -24,6 +29,22 @@ type CancelRegistrationParams struct {
 	UserID     uuid.UUID `json:"user_id"`
 }
 
+// `a.ends_at > now()` (L15, 2026-08-22): pendaftaran TAK boleh dibatalkan
+// selepas aktiviti tamat.
+//
+// Sebabnya bukan kekemasan. `ListEligibleForCertificate` menuntut
+// `r.status = 'registered'`, jadi ahli yang hadir setiap sesi lalu
+// menekan "Batal pendaftaran" pada aktiviti yang sudah tamat akan
+// memusnahkan kelayakan sijilnya sendiri — secara senyap, tanpa jejak
+// audit (pembatalan sengaja tak diaudit: volum tinggi, baris sendiri
+// simpan `cancelled_at`), dan tanpa laluan pulih dalam app. Baris
+// kehadiran kekal, tapi ia tak lagi dikira.
+//
+// Guard diletak dalam SQL dan bukan HANYA dalam handler supaya tiada
+// laluan tulis masa hadapan boleh memintasnya. Handler turut menyemak
+// lebih awal semata-mata untuk memulangkan mesej yang membezakan
+// "tidak berdaftar" daripada "aktiviti sudah tamat" — di sini kedua-dua
+// kes menghasilkan sifar baris.
 func (q *Queries) CancelRegistration(ctx context.Context, arg CancelRegistrationParams) (ActivityRegistration, error) {
 	row := q.db.QueryRow(ctx, cancelRegistration, arg.ActivityID, arg.UserID)
 	var i ActivityRegistration
@@ -462,9 +483,20 @@ func (q *Queries) ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]
 
 const listPendingActivityRegistrationsOlderThan = `-- name: ListPendingActivityRegistrationsOlderThan :many
 select id, activity_id, user_id, status, payment_status, payment_ref, checkin_token, registered_at, cancelled_at, fee_cents_paid from activity_registrations
-where payment_status = 'pending' and payment_ref is not null and registered_at < $1
+where payment_status = 'pending'
+  and status <> 'cancelled'
+  and payment_ref is not null
+  and registered_at < $1
+  and registered_at > $2
 order by registered_at
+limit $3
 `
+
+type ListPendingActivityRegistrationsOlderThanParams struct {
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	Oldest      pgtype.Timestamptz `json:"oldest"`
+	RowLimit    int32              `json:"row_limit"`
+}
 
 // Baris 'pending' YANG DAH cuba checkout (payment_ref wujud) dan dah
 // cukup umur untuk layak disemak semula terus pada gateway
@@ -474,8 +506,23 @@ order by registered_at
 // semak awal selamat — lihat internal/paymentreconcile untuk alasan
 // penuh). Baris `payment_ref is null` (tak pernah cuba checkout) dilangkau
 // — tiada apa nak disemak pada gateway untuk baris begitu.
-func (q *Queries) ListPendingActivityRegistrationsOlderThan(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error) {
-	rows, err := q.db.Query(ctx, listPendingActivityRegistrationsOlderThan, registeredAt)
+//
+// Tingkap atas + limit + `status <> 'cancelled'` (L30, 2026-08-22).
+// Lihat komen penuh pada `ListPendingRegistrationPaymentsOlderThan`.
+//
+// Guard `status <> 'cancelled'` PENTING khusus di sini:
+// `CancelStaleUnpaidBills` menetapkan `status='cancelled'` tetapi
+// MEMBIARKAN `payment_status='pending'` (sengaja — lihat komennya), jadi
+// tanpa guard ni setiap baris yang pernah dibatalkan sapuan kekal dipoll
+// pada ToyyibPay selama-lamanya walaupun ia sudah mati secara muktamad.
+//
+// Ini TIDAK menyembunyikan race bayar-selepas-batal yang
+// `UpdateRegistrationPaymentStatusByPaymentRef` sengaja biarkan
+// kelihatan: race itu ditangkap oleh WEBHOOK (yang tak melalui query
+// ni), dan tetingkap masanya jauh lebih pendek drpd cutoff 24 jam
+// `CancelStaleUnpaidBills`.
+func (q *Queries) ListPendingActivityRegistrationsOlderThan(ctx context.Context, arg ListPendingActivityRegistrationsOlderThanParams) ([]ActivityRegistration, error) {
+	rows, err := q.db.Query(ctx, listPendingActivityRegistrationsOlderThan, arg.StaleBefore, arg.Oldest, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +553,10 @@ func (q *Queries) ListPendingActivityRegistrationsOlderThan(ctx context.Context,
 }
 
 const listRegistrationsByActivity = `-- name: ListRegistrationsByActivity :many
-select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, r.fee_cents_paid, pr.member_id, pr.display_name, pr.avatar_r2_key,
+select r.id, r.activity_id, r.user_id, r.status,
+  r.payment_status, r.payment_ref, r.fee_cents_paid,
+  r.registered_at, r.cancelled_at,
+  pr.member_id, pr.display_name, pr.avatar_r2_key,
   coalesce(att.session_ids, '{}')::uuid[] as attended_session_ids
 from activity_registrations r
 join profiles pr on pr.user_id = r.user_id
@@ -528,10 +578,9 @@ type ListRegistrationsByActivityRow struct {
 	Status             string             `json:"status"`
 	PaymentStatus      string             `json:"payment_status"`
 	PaymentRef         pgtype.Text        `json:"payment_ref"`
-	CheckinToken       string             `json:"checkin_token"`
+	FeeCentsPaid       pgtype.Int4        `json:"fee_cents_paid"`
 	RegisteredAt       pgtype.Timestamptz `json:"registered_at"`
 	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
-	FeeCentsPaid       pgtype.Int4        `json:"fee_cents_paid"`
 	MemberID           string             `json:"member_id"`
 	DisplayName        pgtype.Text        `json:"display_name"`
 	AvatarR2Key        pgtype.Text        `json:"avatar_r2_key"`
@@ -549,6 +598,22 @@ type ListRegistrationsByActivityRow struct {
 // coalesce(..., '{}') penting: left join memberi NULL untuk pendaftaran
 // tanpa kehadiran, dan NULL bersiri sebagai `null` dalam JSON. Klien yang
 // memanggil .map atasnya terhempas — [] ialah kontrak.
+// Lajur disenaraikan SATU-SATU, bukan `r.*` (L12, ditutup 2026-08-22).
+// `checkin_token` SENGAJA tiada di sini: ia kelayakan yang membolehkan
+// sesiapa yang memegangnya ditanda hadir (`method: 'scan'`), dan
+// kehadiran itulah yang menentukan siapa menerima sijil. Skrin pengurusan
+// menanda kehadiran melalui `registration_id`, jadi token ahli LAIN tiada
+// sebab meninggalkan pelayan — pendedahannya bersifat sampingan (log,
+// laporan ranap, cache proksi, tangkapan skrin peranti pengurus).
+//
+// `r.*` bermakna setiap lajur BAHARU pada `activity_registrations` turut
+// disiarkan secara automatik. Senarai eksplisit menjadikan pendedahan
+// sebagai keputusan yang perlu ditulis, bukan lalai.
+//
+// Klien sudah tidak memodelkannya (`marc_flutter`
+// `manage_providers.dart` menyatakannya secara eksplisit), jadi
+// membuangnya bukan perubahan yang memecahkan — ia menguatkuasakan di
+// pelayan apa yang sebelum ini sekadar konvensyen klien.
 func (q *Queries) ListRegistrationsByActivity(ctx context.Context, activityID uuid.UUID) ([]ListRegistrationsByActivityRow, error) {
 	rows, err := q.db.Query(ctx, listRegistrationsByActivity, activityID)
 	if err != nil {
@@ -565,10 +630,9 @@ func (q *Queries) ListRegistrationsByActivity(ctx context.Context, activityID uu
 			&i.Status,
 			&i.PaymentStatus,
 			&i.PaymentRef,
-			&i.CheckinToken,
+			&i.FeeCentsPaid,
 			&i.RegisteredAt,
 			&i.CancelledAt,
-			&i.FeeCentsPaid,
 			&i.MemberID,
 			&i.DisplayName,
 			&i.AvatarR2Key,

@@ -108,9 +108,14 @@ func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
 		PayerEmail:  row.Email,
 		AmountCents: int64(row.AmountCents),
 		Currency:    row.Currency,
-		GatewayRef:  row.GatewayRef,
-		PaidAt:      row.CreatedAt.Time,
-		Purpose:     "Yuran Pendaftaran Ahli",
+		// `gateway_ref` nullable sejak L29. Laluan ni dijaga oleh
+		// semakan `status != "succeeded"` di atas, dan bayaran tak boleh
+		// jadi 'succeeded' tanpa webhook yang memadankan ref — jadi ia
+		// sentiasa diisi di sini. `textOrEmpty` jaring keselamatan,
+		// bukan kes yang dijangka.
+		GatewayRef: textOrEmpty(row.GatewayRef),
+		PaidAt:     row.CreatedAt.Time,
+		Purpose:    "Yuran Pendaftaran Ahli",
 	})
 	if err != nil {
 		log.Printf("resit yuran pendaftaran: gagal jana PDF (id=%s): %v", id, err)
@@ -265,11 +270,33 @@ type activityPaymentItem struct {
 	RegisteredAt       pgtype.Timestamptz `json:"registered_at"`
 }
 
-// Mine — GET /me/payments. Dua senarai berasingan (bukan satu list
-// digabung): dua jenis bayaran ni struktur berbeza (yuran pendaftaran
-// boleh ada >1 percubaan per ahli; yuran aktiviti satu baris setiap
-// pendaftaran) dan Flutter memaparkannya sebagai dua seksyen, bukan satu
-// jadual rata.
+// donationPaymentItem — satu derma milik ahli log masuk.
+//
+// SENGAJA tiada `donor_name`/`donor_email`: ahli boleh menderma dengan
+// nama/emel yang berbeza daripada akaunnya, dan senarai ni cuma perlu
+// menjawab "apa yang saya derma, dan mana resitnya". Nilai itu tetap
+// dicetak pada resit PDF, yang cuma pemiliknya boleh muat turun.
+type donationPaymentItem struct {
+	ID          uuid.UUID          `json:"id"`
+	AmountCents int32              `json:"amount_cents"`
+	Currency    string             `json:"currency"`
+	Gateway     string             `json:"gateway"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+// Mine — GET /me/payments. TIGA senarai berasingan (bukan satu list
+// digabung): ketiga-tiga jenis bayaran ni struktur berbeza (yuran
+// pendaftaran boleh ada >1 percubaan per ahli; yuran aktiviti satu baris
+// setiap pendaftaran; derma bebas daripada kedua-duanya) dan Flutter
+// memaparkannya sebagai tiga seksyen, bukan satu jadual rata.
+//
+// `donations` ditambah 2026-08-22 (L33). Sebelum ni endpoint resit derma
+// (`GET /me/payments/donation/:id/receipt`) wujud dan berfungsi, tapi
+// TIADA permukaan API yang pernah mendedahkan `donations.id` kepada
+// pemiliknya — jadi ia mati secara praktikal melainkan seseorang meneka
+// UUID. Kliennya pun sudah ada (`PaymentReceiptRepository.donation`);
+// yang hilang cuma senarainya.
 func (h *PaymentsHandler) Mine(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
@@ -280,6 +307,11 @@ func (h *PaymentsHandler) Mine(c *gin.Context) {
 		return
 	}
 	actRows, err := h.queries.ListMyActivityPayments(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat sejarah bayaran"})
+		return
+	}
+	donRows, err := h.queries.ListMyDonations(ctx, pgUUID(userID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat sejarah bayaran"})
 		return
@@ -312,9 +344,22 @@ func (h *PaymentsHandler) Mine(c *gin.Context) {
 		})
 	}
 
+	donations := make([]donationPaymentItem, 0, len(donRows))
+	for _, r := range donRows {
+		donations = append(donations, donationPaymentItem{
+			ID:          r.ID,
+			AmountCents: r.AmountCents,
+			Currency:    r.Currency,
+			Gateway:     r.Gateway,
+			Status:      r.Status,
+			CreatedAt:   r.CreatedAt,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"registration_fee": registrationFee,
 		"activity_fees":    activityFees,
+		"donations":        donations,
 	})
 }
 

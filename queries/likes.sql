@@ -24,7 +24,13 @@ group by post_id;
 select post_id from post_likes
 where user_id = $1 and post_id = any(sqlc.arg('post_ids')::uuid[]);
 
--- name: LikeComment :exec
+-- name: LikeComment :execrows
+-- `:execrows`, bukan `:exec` (L35, 2026-08-22). Handler perlu tahu sama
+-- ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen —
+-- `on conflict do nothing` bermakna like berulang ialah no-op, dan
+-- memberitahu tanpa syarat menjadikan endpoint ni gelung spam push
+-- bersasar. Corak SAMA yang L18 tegakkan pada `LikePost`; ia dibawa ke
+-- sini SERENTAK dengan notifikasi ditambah, bukan selepasnya.
 insert into comment_likes (comment_id, user_id)
 values ($1, $2)
 on conflict (comment_id, user_id) do nothing;

@@ -136,9 +136,15 @@ func (q *Queries) ListDueDeletedUploads(ctx context.Context, limit int32) ([]Del
 }
 
 const listStalePendingUploads = `-- name: ListStalePendingUploads :many
-select r2_key, user_id, created_at from pending_uploads
-where created_at < $1
-order by created_at
+select pu.r2_key, pu.user_id, pu.created_at from pending_uploads pu
+where pu.created_at < $1
+  and not exists (
+    select 1 from post_images pi where pi.r2_key = pu.r2_key
+  )
+  and not exists (
+    select 1 from profiles pr where pr.avatar_r2_key = pu.r2_key
+  )
+order by pu.created_at
 limit $2
 `
 
@@ -147,7 +153,26 @@ type ListStalePendingUploadsParams struct {
 	Limit     int32              `json:"limit"`
 }
 
-// Pending upload yang tak pernah dilekatkan pada mana-mana post.
+// Pending upload yang tak pernah dilekatkan pada mana-mana post ATAU profil.
+//
+// Dua klausa `not exists` ni BUKAN pendua kepada laluan Go (Opus verify
+// 2026-08-22, L28). Baris yang dipulangkan di sini ialah senarai PADAM:
+// semuanya akan digilir ke `deleted_uploads` dan objek R2nya dibuang.
+// Sebelum ni query cuma menapis ikut UMUR dan bergantung SEPENUHNYA pada
+// baris dikeluarkan semasa post dicipta — sedangkan laluan itu
+// (`posts.go`) mengabaikan ralat `DeletePendingUpload`, jadi satu DELETE
+// yang gagal bermakna gambar post yang MASIH dipaparkan dipadam 6 jam
+// kemudian, kekal, tanpa ralat di mana-mana.
+//
+// Laluan Go kini menyemak ralat itu juga, tapi kedua-dua lapisan
+// dikekalkan dengan sengaja: kos melanggar invarian ni ialah kehilangan
+// data yang tak boleh dipulihkan, dan semakan di SINI turut melindungi
+// mana-mana laluan tulis MASA HADAPAN yang terlupa mengeluarkan barisnya.
+//
+// Laluan avatar (`applyAvatar`) sentiasa menyemak ralatnya, jadi klausa
+// `profiles` lebih kepada simetri drpd pembaikan pepijat — tapi tanpa ia,
+// query ni betul atas sebab yang bergantung pada fail LAIN, dan itulah
+// tepatnya bentuk kelemahan yang L28 wujud untuk hapuskan.
 func (q *Queries) ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]PendingUpload, error) {
 	rows, err := q.db.Query(ctx, listStalePendingUploads, arg.CreatedAt, arg.Limit)
 	if err != nil {

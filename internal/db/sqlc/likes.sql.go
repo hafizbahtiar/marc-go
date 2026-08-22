@@ -116,7 +116,7 @@ func (q *Queries) CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UU
 	return items, nil
 }
 
-const likeComment = `-- name: LikeComment :exec
+const likeComment = `-- name: LikeComment :execrows
 insert into comment_likes (comment_id, user_id)
 values ($1, $2)
 on conflict (comment_id, user_id) do nothing
@@ -127,9 +127,18 @@ type LikeCommentParams struct {
 	UserID    uuid.UUID `json:"user_id"`
 }
 
-func (q *Queries) LikeComment(ctx context.Context, arg LikeCommentParams) error {
-	_, err := q.db.Exec(ctx, likeComment, arg.CommentID, arg.UserID)
-	return err
+// `:execrows`, bukan `:exec` (L35, 2026-08-22). Handler perlu tahu sama
+// ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen —
+// `on conflict do nothing` bermakna like berulang ialah no-op, dan
+// memberitahu tanpa syarat menjadikan endpoint ni gelung spam push
+// bersasar. Corak SAMA yang L18 tegakkan pada `LikePost`; ia dibawa ke
+// sini SERENTAK dengan notifikasi ditambah, bukan selepasnya.
+func (q *Queries) LikeComment(ctx context.Context, arg LikeCommentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, likeComment, arg.CommentID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const likePost = `-- name: LikePost :execrows

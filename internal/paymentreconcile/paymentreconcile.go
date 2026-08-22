@@ -42,6 +42,47 @@ import (
 // (murah), bukan risiko keputusan salah macam pembatalan pra-matang.
 const minAge = 15 * time.Minute
 
+// maxAge — umur MAKSIMUM baris 'pending' yang masih layak disemak (L30).
+//
+// Tanpa had atas, senarai semakan membesar secara monotonik sepanjang
+// hayat sistem: checkout yang ditinggalkan TAK PERNAH keluar daripada
+// 'pending'. Bil ToyyibPay yang tak dibayar pulang `No data found!`
+// selama-lamanya (CheckStatus → "pending"), dan PaymentIntent Stripe
+// yang ditinggalkan kekal `requires_payment_method` (juga "pending").
+// Jadi setiap pusingan 30 minit membawa satu panggilan HTTP keluar bagi
+// SETIAP checkout terbiar sejak hari pertama.
+//
+// 7 hari dipilih: jauh lebih panjang drpd mana-mana kitaran FPX/kad yang
+// munasabah (cutoff paling panjang di tempat lain dalam sistem ni ialah
+// 24 jam — `activitysweep.unpaidBillAfter`), jadi tiada bayaran yang
+// masih boleh diselesaikan tercicir. Baris yang lebih tua TIDAK hilang:
+// ia kekal dalam DB dan tetap kelihatan melalui /admin/payments, cuma
+// berhenti dipoll.
+const maxAge = 7 * 24 * time.Hour
+
+// batchSize — siling baris setiap modul setiap pusingan, supaya satu
+// pusingan ada kos maksimum yang DIKETAHUI (padanan corak
+// `reaper.batchSize`). Baris yang melebihi siling diambil pusingan
+// berikutnya — `order by created_at` menaik bermakna yang paling lama
+// menunggu didahulukan, jadi tiada baris boleh kebuluran.
+const batchSize = 200
+
+// window — sempadan satu pusingan. Struct, bukan dua pgtype.Timestamptz
+// bersebelahan: kedua-duanya jenis SAMA dan tertukar susunan akan
+// menghasilkan julat kosong secara senyap (sifar baris = "tiada kerja"),
+// bukan ralat.
+type window struct {
+	staleBefore pgtype.Timestamptz // had ATAS umur-layak: created_at < ini
+	oldest      pgtype.Timestamptz // had BAWAH: created_at > ini
+}
+
+func newWindow(now time.Time) window {
+	return window{
+		staleBefore: pgtype.Timestamptz{Time: now.Add(-minAge), Valid: true},
+		oldest:      pgtype.Timestamptz{Time: now.Add(-maxAge), Valid: true},
+	}
+}
+
 // ReconcileSummary — keputusan satu pusingan RunOnce, dipulangkan supaya
 // pencetus manual (endpoint HTTP) boleh laporkan sesuatu yang berguna
 // kepada caller, bukan sekadar "ok".
@@ -81,18 +122,22 @@ func (r *Reconciler) Start(ctx context.Context) {
 	}()
 }
 
-// RunOnce semak semua bayaran 'pending' lapuk (>minAge) merentas
-// ketiga-tiga modul terus pada gateway masing-masing, dan betulkan DB
-// automatik bila jawapan gateway tak sepadan. Diekspos supaya boleh
-// dipanggil terus dalam ujian, oleh loop latar, DAN oleh endpoint HTTP
-// pencetus manual (POST /admin/payments/reconcile).
+// RunOnce semak bayaran 'pending' yang jatuh dalam tetingkap
+// [maxAge, minAge] merentas ketiga-tiga modul terus pada gateway
+// masing-masing, dan betulkan DB automatik bila jawapan gateway tak
+// sepadan. Diekspos supaya boleh dipanggil terus dalam ujian, oleh loop
+// latar, DAN oleh endpoint HTTP pencetus manual
+// (POST /admin/payments/reconcile).
+//
+// Setiap modul dihadkan `batchSize` baris — jadi kos satu pusingan
+// bersempadan walau berapa banyak checkout terbiar terkumpul.
 func (r *Reconciler) RunOnce(ctx context.Context) ReconcileSummary {
 	summary := ReconcileSummary{}
-	cutoff := pgtype.Timestamptz{Time: time.Now().Add(-minAge), Valid: true}
+	w := newWindow(time.Now())
 
-	r.reconcileRegistrationPayments(ctx, cutoff, &summary)
-	r.reconcileActivityRegistrations(ctx, cutoff, &summary)
-	r.reconcileDonations(ctx, cutoff, &summary)
+	r.reconcileRegistrationPayments(ctx, w, &summary)
+	r.reconcileActivityRegistrations(ctx, w, &summary)
+	r.reconcileDonations(ctx, w, &summary)
 
 	return summary
 }
@@ -101,8 +146,12 @@ func (r *Reconciler) RunOnce(ctx context.Context) ReconcileSummary {
 // (jadual registration_payments, CHECK status IN ('pending','succeeded',
 // 'failed') — set nilai SAMA dengan Gateway.CheckStatus, jadi jawapan
 // gateway boleh ditulis terus tanpa pemetaan).
-func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, cutoff pgtype.Timestamptz, summary *ReconcileSummary) {
-	rows, err := r.queries.ListPendingRegistrationPaymentsOlderThan(ctx, cutoff)
+func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, w window, summary *ReconcileSummary) {
+	rows, err := r.queries.ListPendingRegistrationPaymentsOlderThan(ctx, sqlc.ListPendingRegistrationPaymentsOlderThanParams{
+		StaleBefore: w.staleBefore,
+		Oldest:      w.oldest,
+		RowLimit:    batchSize,
+	})
 	if err != nil {
 		log.Printf("paymentreconcile: senarai yuran pendaftaran pending gagal: %v", err)
 		summary.Errors++
@@ -112,9 +161,14 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, cutoff p
 	for _, row := range rows {
 		summary.Checked++
 
+		// `gateway_ref` nullable sejak L29 — query menapis `is not null`,
+		// jadi ini sentiasa sah. Diekstrak sekali supaya baki gelung tak
+		// perlu mengulang `.String`.
+		gatewayRef := row.GatewayRef.String
+
 		gw, ok := r.gateways[row.Gateway]
 		if !ok || !gw.Enabled() {
-			log.Printf("paymentreconcile: gateway %q (yuran pendaftaran, ref=%s) tak berdaftar/tak enabled, langkau", row.Gateway, row.GatewayRef)
+			log.Printf("paymentreconcile: gateway %q (yuran pendaftaran, ref=%s) tak berdaftar/tak enabled, langkau", row.Gateway, gatewayRef)
 			summary.Errors++
 			continue
 		}
@@ -123,16 +177,16 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, cutoff p
 		userID := row.UserID
 		relatedID := row.ID
 
-		status, err := gw.CheckStatus(ctx, row.GatewayRef)
+		status, err := gw.CheckStatus(ctx, gatewayRef)
 		if err != nil {
-			log.Printf("paymentreconcile: CheckStatus gagal (yuran pendaftaran, gateway=%s, ref=%s): %v", row.Gateway, row.GatewayRef, err)
+			log.Printf("paymentreconcile: CheckStatus gagal (yuran pendaftaran, gateway=%s, ref=%s): %v", row.Gateway, gatewayRef, err)
 			summary.Errors++
 			paymentlog.Record(ctx, r.queries, paymentlog.Entry{
 				Module:      paymentlog.ModuleRegistrationFee,
 				Event:       paymentlog.EventReconcileCheck,
 				Status:      paymentlog.StatusError,
 				Gateway:     row.Gateway,
-				GatewayRef:  row.GatewayRef,
+				GatewayRef:  gatewayRef,
 				AmountCents: &amount,
 				UserID:      &userID,
 				RelatedID:   &relatedID,
@@ -147,7 +201,7 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, cutoff p
 				Event:       paymentlog.EventReconcileCheck,
 				Status:      status,
 				Gateway:     row.Gateway,
-				GatewayRef:  row.GatewayRef,
+				GatewayRef:  gatewayRef,
 				AmountCents: &amount,
 				UserID:      &userID,
 				RelatedID:   &relatedID,
@@ -161,7 +215,7 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, cutoff p
 			Event:       paymentlog.EventReconcileMismatch,
 			Status:      paymentlog.StatusMismatch,
 			Gateway:     row.Gateway,
-			GatewayRef:  row.GatewayRef,
+			GatewayRef:  gatewayRef,
 			AmountCents: &amount,
 			UserID:      &userID,
 			RelatedID:   &relatedID,
@@ -174,7 +228,7 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, cutoff p
 			Status:     status,
 		}); err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
-				log.Printf("paymentreconcile: betulkan status yuran pendaftaran gagal (ref=%s): %v", row.GatewayRef, err)
+				log.Printf("paymentreconcile: betulkan status yuran pendaftaran gagal (ref=%s): %v", gatewayRef, err)
 				summary.Errors++
 			}
 			// pgx.ErrNoRows = proses lain (webhook) dah tolak baris ni ke
@@ -200,8 +254,12 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, cutoff p
 // "toyyibpay-activity" (lihat cmd/api/main.go: instance kredential SAMA
 // dengan "toyyibpay" tapi callbackURL/returnURL berbeza — ni PADANAN
 // wiring ActivityRegistrationPaymentHandler, bukan tekaan).
-func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, cutoff pgtype.Timestamptz, summary *ReconcileSummary) {
-	rows, err := r.queries.ListPendingActivityRegistrationsOlderThan(ctx, cutoff)
+func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, w window, summary *ReconcileSummary) {
+	rows, err := r.queries.ListPendingActivityRegistrationsOlderThan(ctx, sqlc.ListPendingActivityRegistrationsOlderThanParams{
+		StaleBefore: w.staleBefore,
+		Oldest:      w.oldest,
+		RowLimit:    batchSize,
+	})
 	if err != nil {
 		log.Printf("paymentreconcile: senarai yuran aktiviti pending gagal: %v", err)
 		summary.Errors++
@@ -313,8 +371,12 @@ func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, cutoff 
 // reconcileDonations — donation Stripe (jadual donations, CHECK status
 // IN ('pending','succeeded','failed') — set nilai SAMA dengan
 // Gateway.CheckStatus).
-func (r *Reconciler) reconcileDonations(ctx context.Context, cutoff pgtype.Timestamptz, summary *ReconcileSummary) {
-	rows, err := r.queries.ListPendingDonationsOlderThan(ctx, cutoff)
+func (r *Reconciler) reconcileDonations(ctx context.Context, w window, summary *ReconcileSummary) {
+	rows, err := r.queries.ListPendingDonationsOlderThan(ctx, sqlc.ListPendingDonationsOlderThanParams{
+		StaleBefore: w.staleBefore,
+		Oldest:      w.oldest,
+		RowLimit:    batchSize,
+	})
 	if err != nil {
 		log.Printf("paymentreconcile: senarai donation pending gagal: %v", err)
 		summary.Errors++
