@@ -71,6 +71,7 @@ func NewRouter(
 	registrationPaymentReturnURL string,
 	activityPaymentReturnURL string,
 	certificateVerifyURL string,
+	passwordResetURL string,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), middleware.RequestLogger(logger), middleware.MaxBodySize(1<<20))
@@ -80,13 +81,18 @@ func NewRouter(
 
 	r.GET("/healthz", handlers.Health)
 
-	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL)
+	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL, passwordResetURL)
 
 	// Satu factory, had bernama. Nama MESTI unik — dalam Redis ia
 	// yang mengasingkan baldi; tanpa itu login dan upload berkongsi kuota.
 	rateLimiter := middleware.NewRateLimiter(redisCli)
 	authRateLimiter := rateLimiter.Limit("auth", authRateLimit, authRateBurst)
 	authSessionRateLimiter := rateLimiter.Limit("auth-session", authSessionRateLimit, authSessionRateBurst)
+	// Baldi BERASINGAN daripada 'auth' (pengajaran L26): trafik reset tak
+	// patut menghabiskan kuota log masuk ahli, dan sebaliknya. Seketat
+	// 'auth' sebab setiap permintaan yang berjaya mencetuskan penghantaran
+	// emel.
+	passwordResetRateLimiter := rateLimiter.Limit("password-reset", authRateLimit, authRateBurst)
 	// Baldi berasingan drpd login/register — resend emel pengesahan
 	// sah, tak patut habiskan kuota auth. Had ketat per-akaun (60s +
 	// 5/24jam) duduk dalam handler; ni cuma elak flood dari satu IP.
@@ -104,6 +110,7 @@ func NewRouter(
 	authGroup.POST("/verify-email/confirm", verifyEmailCORS, authRateLimiter, authHandler.ConfirmEmailVerification)
 	authGroup.OPTIONS("/verify-email/confirm", verifyEmailCORS)
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
+	authGroup.POST("/password-reset/request", passwordResetRateLimiter, authHandler.RequestPasswordReset)
 
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)

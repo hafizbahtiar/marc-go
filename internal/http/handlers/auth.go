@@ -28,6 +28,11 @@ import (
 
 const emailVerificationTTL = time.Hour
 
+// passwordResetTTL — sama 1 jam dengan pengesahan emel. Token reset
+// memberi kawalan PENUH akaun, jadi tetingkapnya tak patut lebih longgar
+// daripada token yang cuma mengesahkan alamat.
+const passwordResetTTL = time.Hour
+
 // Had hantar emel pengesahan per akaun (bukan per IP). IP limiter
 // berasingan masih ada di router — ni lapisan kedua: jeda pendek elak
 // double-tap, siling 24 jam elak spam Resend dari akaun yang sama.
@@ -76,13 +81,14 @@ const dummyPasswordHash = "$2a$10$/8Dd.SDyfy2jxDvvxwPheeHLucYAitJ42OSSoz8wtyR1UT
 const refreshReuseGraceWindow = 5 * time.Second
 
 type AuthHandler struct {
-	pool           *pgxpool.Pool
-	queries        *sqlc.Queries
-	jwt            *auth.JWT
-	refreshTTL     time.Duration
-	emailClient    *email.Client
-	publicBaseURL  string
-	emailVerifyURL string
+	pool             *pgxpool.Pool
+	queries          *sqlc.Queries
+	jwt              *auth.JWT
+	refreshTTL       time.Duration
+	emailClient      *email.Client
+	publicBaseURL    string
+	emailVerifyURL   string
+	passwordResetURL string
 }
 
 func NewAuthHandler(
@@ -92,15 +98,17 @@ func NewAuthHandler(
 	emailClient *email.Client,
 	publicBaseURL string,
 	emailVerifyURL string,
+	passwordResetURL string,
 ) *AuthHandler {
 	return &AuthHandler{
-		pool:           pool,
-		queries:        sqlc.New(pool),
-		jwt:            jwtSvc,
-		refreshTTL:     refreshTTL,
-		emailClient:    emailClient,
-		publicBaseURL:  publicBaseURL,
-		emailVerifyURL: emailVerifyURL,
+		pool:             pool,
+		queries:          sqlc.New(pool),
+		jwt:              jwtSvc,
+		refreshTTL:       refreshTTL,
+		emailClient:      emailClient,
+		publicBaseURL:    publicBaseURL,
+		emailVerifyURL:   emailVerifyURL,
+		passwordResetURL: passwordResetURL,
 	}
 }
 
@@ -628,4 +636,110 @@ func verificationHTMLPage(message string) string {
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+type passwordResetRequestBody struct {
+	// TIADA tag `email`: validator go-playground tolak format tu kalau
+	// nilai ada ruang lingkung (cth " foo@bar.com "), sebelum sempat kita
+	// trim di bawah. `required` je cukup — emel salah format cuma takkan
+	// padan mana-mana akaun (GetUserByEmail pulang ErrNoRows), lalu jatuh
+	// ke laluan 204 "akaun tiada" yang sama macam biasa.
+	Email string `json:"email" binding:"required"`
+}
+
+// RequestPasswordReset — POST /auth/password-reset/request. AWAM.
+//
+// Pulang 204 SENTIASA, sama ada akaun wujud atau tidak. Kalau ia
+// membezakan, endpoint ni jadi alat menyenaraikan emel mana yang
+// berdaftar. UI mengimbangi dgn mesej "Kalau emel itu berdaftar, kami
+// dah hantar pautan reset" — ahli yang tersilap taip tetap dapat maklum
+// balas berguna tanpa server mengesahkan kewujudan akaun.
+//
+// TIADA gate status: ahli `pending`/`rejected` yang paling mungkin
+// terkunci keluar, dan tiada laluan lain untuk mereka pulih. Alasan sama
+// dengan `/me` (lihat ARCHITECTURE.md, Lapisan akses).
+func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
+	// Ciri dimatikan bila halaman belum dikonfigur — disemak SEBELUM
+	// sebarang kerja DB supaya tiada token ditulis untuk pautan yang
+	// takkan pernah boleh dibuka.
+	if h.passwordResetURL == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "reset kata laluan belum tersedia",
+		})
+		return
+	}
+
+	var req passwordResetRequestBody
+	if !bindJSON(c, &req) {
+		return
+	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	ctx := c.Request.Context()
+	user, err := h.queries.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		// Akaun tiada. Pulang 204 yang SAMA — lihat komen fungsi.
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	// Permintaan baharu membunuh pautan lama: tanpa ni, setiap permintaan
+	// menambah satu lagi kelayakan hidup pada akaun yang sama.
+	if err := h.queries.DeletePasswordResetTokensByUser(ctx, user.ID); err != nil {
+		log.Printf("padam token reset lama (user=%s): %v", user.ID, err)
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	token, err := auth.GenerateOpaqueToken()
+	if err != nil {
+		log.Printf("jana token reset (user=%s): %v", user.ID, err)
+		c.Status(http.StatusNoContent)
+		return
+	}
+	if _, err := h.queries.CreatePasswordResetToken(ctx, sqlc.CreatePasswordResetTokenParams{
+		UserID:    user.ID,
+		TokenHash: auth.HashToken(token),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(passwordResetTTL), Valid: true},
+	}); err != nil {
+		log.Printf("simpan token reset (user=%s): %v", user.ID, err)
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	link := fmt.Sprintf("%s?token=%s", h.passwordResetURL, token)
+	if !h.emailClient.Enabled() {
+		log.Printf("reset kata laluan (provider belum configure) untuk user %s: %s", user.ID, link)
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	// Dihantar dalam GOROUTINE untuk MASA, bukan latensi. Kalau akaun
+	// wujud kita panggil Resend (~200ms); kalau tidak kita pulang
+	// serta-merta. Perbezaan itu ialah oracle enumerasi yang mengalahkan
+	// keputusan 204 di atas.
+	//
+	// Mitigasi SEPARA: kerja DB masih berbeza beberapa milisaat antara
+	// dua laluan. Jauh di bawah bunyi rangkaian, jadi diterima — tapi
+	// bukan sifar, dan tiada siapa patut membaca ni dan menganggap
+	// masanya seragam.
+	//
+	// ctx permintaan SENGAJA tidak digunakan: ia dibatalkan sebaik
+	// respons ditulis (padanan notifyMembers, activities.go).
+	html := fmt.Sprintf(
+		`<p>Kami terima permintaan untuk reset kata laluan akaun MARC anda. `+
+			`Klik pautan di bawah untuk tetapkan kata laluan baharu (luput dalam 1 jam):</p>`+
+			`<p><a href="%s">%s</a></p>`+
+			`<p>Kalau bukan anda yang minta, abaikan emel ni — kata laluan anda tak berubah.</p>`,
+		link, link,
+	)
+	go func(to string) {
+		sendCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.emailClient.Send(sendCtx, to, "Reset Kata Laluan MARC", html); err != nil {
+			log.Printf("gagal hantar emel reset kata laluan: %v", err)
+		}
+	}(user.Email)
+
+	c.Status(http.StatusNoContent)
 }

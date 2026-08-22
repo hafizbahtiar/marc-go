@@ -24,14 +24,21 @@ type Config struct {
 	RegistrationPaymentReturnURL string
 	ActivityPaymentReturnURL     string
 	CertificateVerifyURL         string
-	R2AccountID                  string
-	R2AccessKeyID                string
-	R2SecretKey                  string
-	R2Bucket                     string
-	R2PublicURL                  string
-	StripeSecretKey              string
-	StripePublishableKey         string
-	StripeWebhookSecret          string
+	// PasswordResetURL — URL PENUH halaman Astro tempat ahli menaip kata
+	// laluan baharu (token dilampir sebagai `?token=`). Padanan pola
+	// EmailVerifyURL, TAPI dengan satu perbezaan: kosong bermakna ciri
+	// DIMATIKAN (503), bukan jatuh balik ke halaman Go sendiri. Borang
+	// kata laluan bukan sesuatu yang patut muncul daripada halaman
+	// sandaran yang tiada siapa reka.
+	PasswordResetURL     string
+	R2AccountID          string
+	R2AccessKeyID        string
+	R2SecretKey          string
+	R2Bucket             string
+	R2PublicURL          string
+	StripeSecretKey      string
+	StripePublishableKey string
+	StripeWebhookSecret  string
 
 	// ToyyibPay — yuran ahli (Stage 12, belum wired ke handler; lihat
 	// TODO.md bahagian Payment untuk keputusan produk yang belum dibuat).
@@ -107,6 +114,7 @@ func Load() (Config, error) {
 		// jejas sijil yang dijana SELEPAS nilai ditukar — sijil dicetak
 		// sedia ada tak boleh dibetulkan (lihat komen VerifyCertificateRoute).
 		CertificateVerifyURL: os.Getenv("CERTIFICATE_VERIFY_URL"),
+		PasswordResetURL:     os.Getenv("PASSWORD_RESET_URL"),
 		// Optional — kalau kosong, upload post image (R2) jadi disabled
 		// (endpoint pulang error jelas, bukan crash).
 		R2AccountID:   os.Getenv("R2_ACCOUNT_ID"),
