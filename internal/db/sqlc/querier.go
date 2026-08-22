@@ -83,6 +83,7 @@ type Querier interface {
 	CountAttendanceByRegistration(ctx context.Context, registrationID uuid.UUID) (int64, error)
 	CountCommentLikesByCommentIDs(ctx context.Context, commentIds []uuid.UUID) ([]CountCommentLikesByCommentIDsRow, error)
 	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
+	CountEmailVerificationSendsSince(ctx context.Context, arg CountEmailVerificationSendsSinceParams) (int32, error)
 	CountPostLikes(ctx context.Context, postID uuid.UUID) (int64, error)
 	CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountPostLikesByPostIDsRow, error)
 	// Menghalang penggantian set sesi yang akan membuang kehadiran yang sudah
@@ -158,6 +159,7 @@ type Querier interface {
 	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
 	GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
+	GetLatestEmailVerificationSendAt(ctx context.Context, userID uuid.UUID) (pgtype.Timestamptz, error)
 	// Untuk `/me` — Flutter perlukan ni supaya ahli nampak bayaran mereka
 	// berjaya/gagal/menunggu, bukan senyap (gap ditemui 2026-08-15: bayaran
 	// gagal/berjaya dua-dua direkod betul dalam DB tapi client tak pernah
@@ -213,6 +215,7 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
+	InsertEmailVerificationSend(ctx context.Context, userID uuid.UUID) error
 	// Semakan pendaftaran (/auth/register) — pelengkap kpd senarai statik
 	// terbenam (internal/disposableemail), utk domain tambahan management.
 	IsEmailDomainBlocked(ctx context.Context, domain string) (bool, error)

@@ -168,6 +168,12 @@ type Donation struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type EmailVerificationSend struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type EmailVerificationToken struct {
 	ID        uuid.UUID          `json:"id"`
 	UserID    uuid.UUID          `json:"user_id"`

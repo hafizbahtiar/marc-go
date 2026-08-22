@@ -28,6 +28,38 @@ import (
 
 const emailVerificationTTL = time.Hour
 
+// Had hantar emel pengesahan per akaun (bukan per IP). IP limiter
+// berasingan masih ada di router — ni lapisan kedua: jeda pendek elak
+// double-tap, siling 24 jam elak spam Resend dari akaun yang sama.
+const (
+	emailVerifySendCooldown = 60 * time.Second
+	emailVerifySendDailyMax = 5
+	emailVerifySendWindow   = 24 * time.Hour
+)
+
+type emailVerifyLimitError struct {
+	status  int
+	message string
+}
+
+func (e *emailVerifyLimitError) Error() string { return e.message }
+
+func checkEmailVerifySendLimit(lastSend *time.Time, sendsLastWindow int, now time.Time) *emailVerifyLimitError {
+	if lastSend != nil && now.Sub(*lastSend) < emailVerifySendCooldown {
+		return &emailVerifyLimitError{
+			status:  http.StatusTooManyRequests,
+			message: "tunggu sebentar sebelum minta emel pengesahan semula",
+		}
+	}
+	if sendsLastWindow >= emailVerifySendDailyMax {
+		return &emailVerifyLimitError{
+			status:  http.StatusTooManyRequests,
+			message: "had harian emel pengesahan tercapai. Cuba lagi esok.",
+		}
+	}
+	return nil
+}
+
 // dummyPasswordHash — bcrypt hash tetap (bukan password sebenar
 // sesiapa) dipakai untuk "bakar" masa bcrypt yang sama pada path
 // email-tak-wujud di Login, elak timing oracle yang boleh bezakan
@@ -390,6 +422,27 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 	userID := middleware.UserID(c)
 	ctx := c.Request.Context()
+	now := time.Now()
+
+	var lastSend *time.Time
+	if ts, err := h.queries.GetLatestEmailVerificationSendAt(ctx, userID); err == nil && ts.Valid {
+		lastSend = &ts.Time
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
+		return
+	}
+	sends, err := h.queries.CountEmailVerificationSendsSince(ctx, sqlc.CountEmailVerificationSendsSinceParams{
+		UserID:    userID,
+		CreatedAt: pgtype.Timestamptz{Time: now.Add(-emailVerifySendWindow), Valid: true},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
+		return
+	}
+	if limErr := checkEmailVerifySendLimit(lastSend, int(sends), now); limErr != nil {
+		c.JSON(limErr.status, gin.H{"error": limErr.message})
+		return
+	}
 
 	if err := h.queries.DeleteEmailVerificationTokensByUser(ctx, userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
@@ -405,10 +458,15 @@ func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 	if _, err := h.queries.CreateEmailVerificationToken(ctx, sqlc.CreateEmailVerificationTokenParams{
 		UserID:    userID,
 		TokenHash: auth.HashToken(token),
-		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(emailVerificationTTL), Valid: true},
+		ExpiresAt: pgtype.Timestamptz{Time: now.Add(emailVerificationTTL), Valid: true},
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana token pengesahan"})
 		return
+	}
+	if err := h.queries.InsertEmailVerificationSend(ctx, userID); err != nil {
+		// Token dah wujud; jejak had gagal ditulis. Jangan sekat hantar
+		// emel — lebih baik satu resend "percuma" drpd user tersekat.
+		log.Printf("gagal catat email verification send untuk user %s: %v", userID, err)
 	}
 
 	// Kalau EMAIL_VERIFY_URL configure (Stage 8, portfolio-astro), link

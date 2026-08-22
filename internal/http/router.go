@@ -82,11 +82,15 @@ func NewRouter(
 
 	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL)
 
-	// Satu factory, tiga had bernama. Nama MESTI unik — dalam Redis ia
+	// Satu factory, had bernama. Nama MESTI unik — dalam Redis ia
 	// yang mengasingkan baldi; tanpa itu login dan upload berkongsi kuota.
 	rateLimiter := middleware.NewRateLimiter(redisCli)
 	authRateLimiter := rateLimiter.Limit("auth", authRateLimit, authRateBurst)
 	authSessionRateLimiter := rateLimiter.Limit("auth-session", authSessionRateLimit, authSessionRateBurst)
+	// Baldi berasingan drpd login/register — resend emel pengesahan
+	// sah, tak patut habiskan kuota auth. Had ketat per-akaun (60s +
+	// 5/24jam) duduk dalam handler; ni cuma elak flood dari satu IP.
+	verifyEmailRequestRateLimiter := rateLimiter.Limit("verify-email-request", rate.Every(10*time.Second), 3)
 
 	authGroup := r.Group("/auth")
 	authGroup.POST("/register", authRateLimiter, authHandler.Register)
@@ -102,7 +106,7 @@ func NewRouter(
 	authGroup.GET("/verify-email/confirm", authRateLimiter, authHandler.ConfirmEmailVerificationLink)
 
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
-	protectedAuthGroup.POST("/verify-email/request", authRateLimiter, authHandler.RequestEmailVerification)
+	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
 
 	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
