@@ -66,6 +66,7 @@ func NewRouter(
 	pushSvc *push.Service,
 	paymentGateways map[string]payment.Gateway,
 	registrationFeeCents int,
+	gatewayChargeCents int,
 	redisCli *redisclient.Client,
 	paymentReconciler *paymentreconcile.Reconciler,
 	corsAllowedOrigins []string,
@@ -193,7 +194,7 @@ func NewRouter(
 	approved.POST("/admin/payments/reconcile", handlers.NewPaymentReconcileHandler(paymentReconciler, sqlc.New(pool)).Run)
 
 	// Sejarah bayaran (bacaan sahaja) — lihat internal/http/handlers/payments.go.
-	paymentsHandler := handlers.NewPaymentsHandler(pool, r2Client)
+	paymentsHandler := handlers.NewPaymentsHandler(pool, r2Client, gatewayChargeCents)
 	// `protected` (bukan `approved`) SENGAJA — checkout yuran pendaftaran
 	// sendiri duduk atas `protected` (baris /registration-payments/checkout
 	// di bawah), jadi ahli `pending` yang DAH bayar mesti boleh tengok
@@ -353,6 +354,14 @@ func NewRouter(
 	protected.POST("/registration-payments/checkout", registrationCheckoutRateLimiter, middleware.BlockTesterWrites(sqlc.New(pool)), registrationPaymentHandler.Checkout)
 	r.POST("/registration-payments/webhook/toyyibpay", registrationWebhookRateLimiter, registrationPaymentHandler.Webhook)
 	r.GET("/registration-payments/return/toyyibpay", redirectIfConfigured(registrationPaymentReturnURL), registrationPaymentHandler.ReturnPage)
+
+	// Config checkout GENERIK (bukan spesifik satu modul) — client (mana-
+	// mana skrin checkout) papar breakdown invoice "Yuran"+"Caj
+	// Pemprosesan"="Jumlah". `protected` (RequireAuth sahaja) sama sebab
+	// sama di atas — ahli pending checkout yuran pendaftaran perlu nilai
+	// ni juga. Tiada rate limiter khusus: bacaan statik, tiada kerja DB.
+	paymentConfigHandler := handlers.NewPaymentConfigHandler(gatewayChargeCents)
+	protected.GET("/payment-config", paymentConfigHandler.Get)
 
 	// Yuran AKTIVITI (activities.fee_cents) — berasingan konseptual drpd
 	// yuran pendaftaran ahli di atas (padanan ActivityRegistrationPaymentHandler

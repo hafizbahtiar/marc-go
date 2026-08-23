@@ -29,12 +29,13 @@ import (
 )
 
 type PaymentsHandler struct {
-	queries *sqlc.Queries
-	r2      *storage.R2Client
+	queries            *sqlc.Queries
+	r2                 *storage.R2Client
+	gatewayChargeCents int64
 }
 
-func NewPaymentsHandler(pool *pgxpool.Pool, r2Client *storage.R2Client) *PaymentsHandler {
-	return &PaymentsHandler{queries: sqlc.New(pool), r2: r2Client}
+func NewPaymentsHandler(pool *pgxpool.Pool, r2Client *storage.R2Client, gatewayChargeCents int) *PaymentsHandler {
+	return &PaymentsHandler{queries: sqlc.New(pool), r2: r2Client, gatewayChargeCents: int64(gatewayChargeCents)}
 }
 
 // receiptUploadTimeout — had bagi SATU muat naik R2 resit (padanan
@@ -113,9 +114,10 @@ func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
 		// jadi 'succeeded' tanpa webhook yang memadankan ref — jadi ia
 		// sentiasa diisi di sini. `textOrEmpty` jaring keselamatan,
 		// bukan kes yang dijangka.
-		GatewayRef: textOrEmpty(row.GatewayRef),
-		PaidAt:     row.CreatedAt.Time,
-		Purpose:    "Yuran Pendaftaran Ahli",
+		GatewayRef:         textOrEmpty(row.GatewayRef),
+		PaidAt:             row.CreatedAt.Time,
+		Purpose:            "Yuran Pendaftaran Ahli",
+		GatewayChargeCents: h.gatewayChargeCents,
 	})
 	if err != nil {
 		log.Printf("resit yuran pendaftaran: gagal jana PDF (id=%s): %v", id, err)
@@ -180,8 +182,9 @@ func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
 		// pun tiada lajur "confirmed at" khusus. Timestamp SEBENAR wujud
 		// dalam payment_logs (event webhook), tapi resit sengaja tak
 		// query jadual log utk medan kosmetik ni (Opus verify 2026-08-15).
-		PaidAt:  row.RegisteredAt.Time,
-		Purpose: row.Title,
+		PaidAt:             row.RegisteredAt.Time,
+		Purpose:            row.Title,
+		GatewayChargeCents: h.gatewayChargeCents,
 	})
 	if err != nil {
 		log.Printf("resit yuran aktiviti: gagal jana PDF (id=%s): %v", id, err)

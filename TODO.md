@@ -202,6 +202,25 @@ ganti. Belum start; skopnya lebih besar daripada nampak.
 
 Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
 
+- [x] **`GATEWAY_CHARGE_CENTS` (config baharu, 2026-08-24) — nilai RM1
+      DISAHKAN pemilik produk.** Dedah via `GET /payment-config`
+      (generik, `protected`) untuk Flutter papar breakdown invoice
+      checkout ("Yuran" + "Caj Pemprosesan Pembayaran" = "Jumlah").
+      `GATEWAY_CHARGE_CENTS=100` ditulis eksplisit dalam `.env`/
+      `.env.example` (bukan bergantung default kod senyap).
+- [x] **Kontradik dgn resit pendaftaran — DISELESAIKAN 2026-08-24.**
+      `receipt.FeePayment` (`internal/receipt/receipt.go`) tambah
+      `GatewayChargeCents` — resit (`GET /me/payments/{registration,
+      activity}/:id/receipt`) kini papar baris "Yuran"/"Caj Pemprosesan
+      Pembayaran" SAMA dengan checkout invoice, panel jumlah besar
+      tak berubah. `PaymentsHandler` (`payments.go`) terima
+      `gatewayChargeCents` baharu. `DonationReceipt` TAK disentuh
+      (gateway Stripe berasingan). Ujian baharu
+      `receipt_test.go` (`TestGenerateFeePDF`/
+      `TestGenerateFeePDFTanpaBreakdown`), `go test ./...` penuh lulus.
+      Butiran penuh: `marc_flutter/TODO.md` bahagian "Invoice
+      breakdown".
+
 - [ ] **FPX: daftar SSM → BRN → aktifkan semula Stripe.** FPX
       `available: false` pada akaun (disahkan via API 2026-08-09) — bukan
       toggle yang terlepas. Stripe memerlukan **BRN** untuk memproses caj

@@ -49,7 +49,7 @@ func minePayments(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID) map[string
 	c.Request = httptest.NewRequest(http.MethodGet, "/me/payments", nil)
 	c.Set("userID", userID)
 
-	NewPaymentsHandler(pool, storage.NewR2Client("", "", "", "", "")).Mine(c)
+	NewPaymentsHandler(pool, storage.NewR2Client("", "", "", "", ""), 100).Mine(c)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("kod = %d, mahu 200. Badan: %s", rec.Code, rec.Body.String())

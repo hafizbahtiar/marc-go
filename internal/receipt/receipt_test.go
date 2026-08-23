@@ -39,6 +39,65 @@ func TestGeneratePDFAnonymous(t *testing.T) {
 	}
 }
 
+func TestGenerateFeePDF(t *testing.T) {
+	out, err := GenerateFeePDF(FeePayment{
+		MemberID:    "MARC-000123",
+		PayerName:   "Nurul Aïsyah binti Zulkifli",
+		PayerEmail:  "nurul@example.com",
+		AmountCents: 1000,
+		Currency:    "myr",
+		GatewayRef:  "billcode123",
+		PaidAt:      time.Date(2026, 8, 9, 14, 30, 0, 0, time.UTC),
+		Purpose:     "Yuran Pendaftaran Ahli",
+		// AmountCents (1000) > GatewayChargeCents (100) — breakdown
+		// "Yuran"/"Caj Pemprosesan Pembayaran" patut terpapar.
+		GatewayChargeCents: 100,
+	})
+	if err != nil {
+		t.Fatalf("GenerateFeePDF: %v", err)
+	}
+	if !bytes.HasPrefix(out, []byte("%PDF-")) {
+		t.Fatalf("output bukan PDF, 8 bait pertama: %q", out[:min(8, len(out))])
+	}
+	if len(out) < 1000 {
+		t.Fatalf("PDF terlalu kecil (%d bait) — kemungkinan halaman kosong", len(out))
+	}
+}
+
+// Kes tepi (padanan CheckoutPage `_InvoiceCard`): AmountCents <=
+// GatewayChargeCents (atau GatewayChargeCents=0/tak diisi) TAK boleh
+// panic/hasilkan baris "Yuran RM0.00"/negatif — cuma jadual butiran
+// biasa tanpa breakdown.
+func TestGenerateFeePDFTanpaBreakdown(t *testing.T) {
+	cases := []struct {
+		name               string
+		amountCents        int64
+		gatewayChargeCents int64
+	}{
+		{"jumlah sama dgn caj gateway", 100, 100},
+		{"jumlah kurang drpd caj gateway", 50, 100},
+		{"caj gateway tak diisi (0)", 1000, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := GenerateFeePDF(FeePayment{
+				AmountCents:        c.amountCents,
+				GatewayChargeCents: c.gatewayChargeCents,
+				Currency:           "myr",
+				GatewayRef:         "billcode123",
+				PaidAt:             time.Date(2026, 8, 9, 14, 30, 0, 0, time.UTC),
+				Purpose:            "Yuran Aktiviti",
+			})
+			if err != nil {
+				t.Fatalf("GenerateFeePDF: %v", err)
+			}
+			if !bytes.HasPrefix(out, []byte("%PDF-")) {
+				t.Fatal("output bukan PDF")
+			}
+		})
+	}
+}
+
 func TestFormatAmount(t *testing.T) {
 	cases := []struct {
 		cents    int64

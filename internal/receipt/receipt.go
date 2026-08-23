@@ -279,6 +279,15 @@ type FeePayment struct {
 	GatewayRef  string
 	PaidAt      time.Time
 	Purpose     string
+
+	// GatewayChargeCents — anggaran fi transaksi ToyyibPay (disahkan
+	// RM1/100 sen, `GATEWAY_CHARGE_CENTS`), untuk resit papar breakdown
+	// SAMA dengan invoice checkout dalam app ("Yuran" + "Caj Pemprosesan
+	// Pembayaran" = "Jumlah Dibayar" — panel jumlah TAK berubah, cuma
+	// jadual butiran tambah dua baris). `0` = tiada breakdown (padanan
+	// `CheckoutPage`: kes tepi `AmountCents <= GatewayChargeCents` pun
+	// jatuh balik ke sini via semakan dalam `drawFeeDetailsTable`).
+	GatewayChargeCents int64
 }
 
 const feeFooterNote = "Resit ini dijana secara automatik dan sah tanpa " +
@@ -406,11 +415,27 @@ func drawFeeDetailsTable(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
 		{"No. Rujukan Transaksi", fallback(p.GatewayRef, "-")},
 		{"No. Ahli MARC", fallback(p.MemberID, "-")},
 		{"Jenis Yuran", fallback(p.Purpose, "Yuran")},
-		{"Penerima", "MARC (Kelab)"},
-		{"Kaedah Pembayaran", "Dalam talian"},
-		{"Mata Wang", strings.ToUpper(fallback(p.Currency, "MYR"))},
-		{"Status Pembayaran", "Berjaya"},
 	}
+
+	// Breakdown "Yuran"/"Caj Pemprosesan Pembayaran" — SAMA syarat
+	// boundary dgn CheckoutPage (`_InvoiceCard`, marc_flutter): `>`
+	// ketat, bukan `>=`, elak baris "Yuran RM0.00"/negatif yang
+	// mengelirukan untuk yuran kecil. Panel "JUMLAH DIBAYAR"
+	// (drawFeeAmountPanel) TAK berubah — kekal papar `p.AmountCents`
+	// penuh, breakdown ni cuma jadual butiran tambahan.
+	if p.AmountCents > p.GatewayChargeCents && p.GatewayChargeCents > 0 {
+		rows = append(rows,
+			[2]string{"Yuran", formatAmount(p.AmountCents-p.GatewayChargeCents, p.Currency)},
+			[2]string{"Caj Pemprosesan Pembayaran", formatAmount(p.GatewayChargeCents, p.Currency)},
+		)
+	}
+
+	rows = append(rows,
+		[2]string{"Penerima", "MARC (Kelab)"},
+		[2]string{"Kaedah Pembayaran", "Dalam talian"},
+		[2]string{"Mata Wang", strings.ToUpper(fallback(p.Currency, "MYR"))},
+		[2]string{"Status Pembayaran", "Berjaya"},
+	)
 
 	label(pdf, "BUTIRAN TRANSAKSI", contentW)
 	pdf.Ln(1)
