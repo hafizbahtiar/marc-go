@@ -28,14 +28,16 @@ type ProfileHandler struct {
 	queries     *sqlc.Queries
 	emailClient *email.Client
 	r2          *storage.R2Client
+	feeCents    int64
 }
 
-func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client) *ProfileHandler {
+func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client, registrationFeeCents int) *ProfileHandler {
 	return &ProfileHandler{
 		pool:        pool,
 		queries:     sqlc.New(pool),
 		emailClient: emailClient,
 		r2:          r2,
+		feeCents:    int64(registrationFeeCents),
 	}
 }
 
@@ -58,8 +60,15 @@ type profileResponse struct {
 	// berlaku" walau hasil sebenar sentiasa betul di sisi pelayan. Cuma
 	// diisi untuk ahli `pending` (approved tak perlu, dah lepas gate).
 	RegistrationPaymentStatus *string `json:"registration_payment_status"`
-	TelegramLinked            bool    `json:"telegram_linked"`
-	TelegramUsername          *string `json:"telegram_username"`
+	// RegistrationFeeCents — jumlah (sen) yuran pendaftaran SEMASA
+	// (`REGISTRATION_FEE_CENTS`), supaya client boleh papar jumlah SEBELUM
+	// ahli tekan bayar (checkout ToyyibPay tak dedah jumlah dalam app —
+	// cuma redirect ke halaman ToyyibPay). Cuma diisi untuk ahli belum
+	// `approved`, padan skop `RegistrationPaymentStatus` di atas — ahli
+	// approved dah lepas gate, tak perlu tahu angka ni lagi.
+	RegistrationFeeCents *int64  `json:"registration_fee_cents"`
+	TelegramLinked       bool    `json:"telegram_linked"`
+	TelegramUsername     *string `json:"telegram_username"`
 }
 
 // Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
@@ -76,12 +85,14 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 	}
 
 	var paymentStatus *string
+	var feeCents *int64
 	if row.Status != "approved" {
 		if status, err := h.queries.GetLatestRegistrationPaymentStatus(ctx, userID); err == nil {
 			paymentStatus = &status
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("baca status bayaran pendaftaran (user=%s): %v", userID, err)
 		}
+		feeCents = &h.feeCents
 	}
 
 	c.JSON(http.StatusOK, profileResponse{
@@ -97,6 +108,7 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		RoleRank:                  row.RoleRank,
 		AvatarURL:                 h.avatarURL(ctx, row.AvatarR2Key),
 		RegistrationPaymentStatus: paymentStatus,
+		RegistrationFeeCents:      feeCents,
 		TelegramLinked:            row.TelegramChatID.Valid,
 		TelegramUsername:          textToPtr(row.TelegramUsername),
 	})

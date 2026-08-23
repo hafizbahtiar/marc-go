@@ -172,37 +172,12 @@ satu origin dlm senarai", ini kerja wiring CORS merentas seluruh
 
 ## Perlu tindakan kau (bukan kod)
 
-- [ ] **Deploy environment `production` Railway** — `staging` sahaja live.
-- [ ] **Migrate data lama dari Supabase** (2 profiles, 4 roles).
 - [x] **MATIKAN Public Development URL r2.dev di Cloudflare — DIBUAT
       2026-08-15** (terus di Cloudflare dashboard, bukan kod). `R2_PUBLIC_URL`
       boleh dikosongkan di env sekarang (belum disahkan sama ada dah
       dibuat).
 - [ ] **Rotate kunci test Stripe** yang sempat masuk git (commit `c170391`,
       dah di-amend sebelum push — tapi rotate tetap lebih selamat).
-- [ ] **Sambungkan Redis ke marc-go**: tambah pemboleh ubah rujukan
-      `REDIS_URL = ${{Redis.REDIS_URL}}` pada perkhidmatan marc-go.
-      Perkhidmatan Redis wujud tapi app tak nampak. Lihat bahagian Redis
-      di bawah untuk sama ada ia berbaloi buat masa ni.
-- [ ] **Cipta 3 akaun prod utama** (keputusan produk 2026-08-15) —
-      DAFTAR macam biasa (`/auth/register` menerusi app, atau Flutter),
-      sahkan email, lepas tu SATU superadmin sedia ada (atau kau sendiri
-      terus dlm psql sebelum ada superadmin lain) tukar role menerusi
-      skrin "Tukar role" management (`members_page.dart` → profile
-      `Ahli Pending`/senarai Ahli, cari akaun, tukar role). **JANGAN**
-      daftar terus dgn migration/SQL seed — password perlu dipilih
-      pemilik akaun sebenar, dan bcrypt hash tak patut dijana manual.
-      - [ ] `hafizbahtiar98@gmail.com` → role `superadmin`
-      - [ ] `google@yopmail.com` → role `tester` (akaun review Google Play)
-      - [ ] `apple@yopmail.com` → role `tester` (akaun review App Store)
-
-      **PERHATIAN keselamatan**: dua akaun tester guna domain
-      `yopmail.com` — domain emel PELUPUSAN (disposable), yang item
-      **"Sekat pendaftaran emel pelupusan"** di bawah akan block kalau
-      diimplement SEBELUM 3 akaun ni dicipta. Cipta akaun ni DAHULU
-      (atau tambah pengecualian eksplisit utk dua alamat ni) sebelum
-      sekatan disposable-email diaktifkan — jangan kunci diri sendiri
-      keluar drpd akaun tester yang kau perlukan utk app store review.
 
 ## Stage 9 — Postgres RLS (defense-in-depth)
 
@@ -371,9 +346,15 @@ Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
       - **`REGISTRATION_FEE_CENTS` sebenar** — default kod 1000 (RM10)
         ialah PLACEHOLDER teknikal, bukan angka yang management dah
         setuju.
-      - **`marc_flutter`**: skrin bayar dalam aliran daftar/skrin pending
-        belum dibina — backend `Checkout`/`Webhook` sedia tapi tiada UI
-        panggil.
+      - **`marc_flutter`**: skrin bayar DIBINA (disahkan 2026-08-24,
+        lihat `marc_flutter/TODO.md`) — butang "Bayar Yuran Pendaftaran"
+        dalam `_PendingStatusView` (`feed_page.dart`). `GET /me` kini
+        turut pulang `registration_fee_cents` (2026-08-24, cuma bila
+        `status != 'approved'`) supaya butang boleh papar jumlah
+        SEBELUM ahli tekan — ToyyibPay sendiri tak dedah jumlah dalam
+        app, cuma di halaman checkout luar. `ListMyRegistrations` turut
+        pulang `fee_cents`/`currency` untuk kes sama pada yuran
+        aktiviti.
       - **Yuran aktiviti** (guna kes 2) — **DIBINA DAN DISAHKAN 2026-08-15**,
         lihat entri "Yuran aktiviti tidak berfungsi" di bawah (bahagian
         Modul Aktiviti) untuk butiran penuh.
@@ -940,9 +921,10 @@ Redis disambung (`internal/redisclient`, pilihan, no-op bila `REDIS_URL`
 kosong) dan **digunakan oleh had kadar** — satu-satunya modul yang
 mendapat faedah.
 
-**Blocker**: perkhidmatan Redis wujud di Railway tapi `marc-go` tiada
-pemboleh ubah rujukan. Tambah pada perkhidmatan marc-go:
-`REDIS_URL = ${{Redis.REDIS_URL}}`.
+**`REDIS_URL` DISAMBUNG 2026-08-24** — disahkan wujud
+(`redis.railway.internal`) pada perkhidmatan marc-go di KEDUA-DUA
+`staging` dan `production` (`railway variables`). Had kadar teragih kini
+aktif merentas replika, bukan per-instance sahaja.
 
 Prinsip pemandu: **tiada apa dalam app ni yang menyimpan KEBENARAN dalam
 Redis.** Redis di sini pengganda skala, bukan simpanan. Kalau Redis

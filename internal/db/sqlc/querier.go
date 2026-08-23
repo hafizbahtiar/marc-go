@@ -331,6 +331,10 @@ type Querier interface {
 	// status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin
 	// "Sejarah Bayaran Saya".
 	ListMyRegistrationPayments(ctx context.Context, userID uuid.UUID) ([]RegistrationPayment, error)
+	// fee_cents guna coalesce(r.fee_cents_paid, a.fee_cents) — sama pola
+	// GetMyActivityFeeByID/ListMyActivityPayments: sebelum bayar, papar
+	// yuran SEMASA (a.fee_cents boleh berubah selepas PATCH); selepas bayar,
+	// kunci pada jumlah yang benar-benar dibayar.
 	ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyRegistrationsRow, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk

@@ -419,7 +419,8 @@ func (q *Queries) ListMyActivityPayments(ctx context.Context, userID uuid.UUID) 
 
 const listMyRegistrations = `-- name: ListMyRegistrations :many
 select r.id, r.activity_id, r.user_id, r.status, r.payment_status, r.payment_ref, r.checkin_token, r.registered_at, r.cancelled_at, r.fee_cents_paid, a.title, a.starts_at, a.ends_at, a.status as activity_status,
-  c.name as category_name
+  c.name as category_name, coalesce(r.fee_cents_paid, a.fee_cents) as fee_cents,
+  a.currency
 from activity_registrations r
 join activities a on a.id = r.activity_id
 join activity_categories c on c.id = a.category_id
@@ -443,8 +444,14 @@ type ListMyRegistrationsRow struct {
 	EndsAt         pgtype.Timestamptz `json:"ends_at"`
 	ActivityStatus string             `json:"activity_status"`
 	CategoryName   string             `json:"category_name"`
+	FeeCents       int32              `json:"fee_cents"`
+	Currency       string             `json:"currency"`
 }
 
+// fee_cents guna coalesce(r.fee_cents_paid, a.fee_cents) — sama pola
+// GetMyActivityFeeByID/ListMyActivityPayments: sebelum bayar, papar
+// yuran SEMASA (a.fee_cents boleh berubah selepas PATCH); selepas bayar,
+// kunci pada jumlah yang benar-benar dibayar.
 func (q *Queries) ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyRegistrationsRow, error) {
 	rows, err := q.db.Query(ctx, listMyRegistrations, userID)
 	if err != nil {
@@ -470,6 +477,8 @@ func (q *Queries) ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]
 			&i.EndsAt,
 			&i.ActivityStatus,
 			&i.CategoryName,
+			&i.FeeCents,
+			&i.Currency,
 		); err != nil {
 			return nil, err
 		}

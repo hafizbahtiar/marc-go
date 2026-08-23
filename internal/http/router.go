@@ -126,7 +126,7 @@ func NewRouter(
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
 
-	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client)
+	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client, registrationFeeCents)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
 
 	// profileUpdateRateLimiter (L25) — /me tak ada mekanisme dedup macam
