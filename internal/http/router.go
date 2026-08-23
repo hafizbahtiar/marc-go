@@ -194,7 +194,7 @@ func NewRouter(
 	approved.POST("/admin/payments/reconcile", handlers.NewPaymentReconcileHandler(paymentReconciler, sqlc.New(pool)).Run)
 
 	// Sejarah bayaran (bacaan sahaja) — lihat internal/http/handlers/payments.go.
-	paymentsHandler := handlers.NewPaymentsHandler(pool, r2Client, gatewayChargeCents)
+	paymentsHandler := handlers.NewPaymentsHandler(pool, gatewayChargeCents)
 	// `protected` (bukan `approved`) SENGAJA — checkout yuran pendaftaran
 	// sendiri duduk atas `protected` (baris /registration-payments/checkout
 	// di bawah), jadi ahli `pending` yang DAH bayar mesti boleh tengok
@@ -340,7 +340,7 @@ func NewRouter(
 	// diletak atas `approved` mereka takkan sampai ke sini langsung.
 	// Webhook AWAM, gateway dihardcode "toyyibpay" (satu-satunya gateway
 	// ciri ni guna) — lihat komen RegistrationPaymentHandler.Webhook.
-	registrationPaymentHandler := handlers.NewRegistrationPaymentHandler(pool, paymentGateways["toyyibpay"], registrationFeeCents)
+	registrationPaymentHandler := handlers.NewRegistrationPaymentHandler(pool, paymentGateways["toyyibpay"], registrationFeeCents, gatewayChargeCents, emailClient)
 	// Had kadar (Opus verify 2026-08-15 tandakan MEDIUM tanpanya): checkout
 	// padan bucket `donation` (sama corak — tindakan pembayaran sengaja,
 	// jarang berulang secara sah). Webhook padan `verifyRateLimiter`
@@ -376,7 +376,7 @@ func NewRouter(
 	// return BERBEZA) ialah satu-satunya cara ToyyibPay benar-benar panggil
 	// balik /activity-registrations/webhook/toyyibpay tanpa menyentuh
 	// toyyibpay.go atau registration_payment.go (dua-dua di luar skop).
-	activityRegistrationPaymentHandler := handlers.NewActivityRegistrationPaymentHandler(pool, paymentGateways["toyyibpay-activity"])
+	activityRegistrationPaymentHandler := handlers.NewActivityRegistrationPaymentHandler(pool, paymentGateways["toyyibpay-activity"], gatewayChargeCents, emailClient)
 	activityPaymentCheckoutRateLimiter := rateLimiter.Limit("activity-payment-checkout", rate.Every(6*time.Second), 5)
 	verified.POST("/activities/:id/registration/checkout", activityPaymentCheckoutRateLimiter, middleware.BlockTesterWrites(sqlc.New(pool)), activityRegistrationPaymentHandler.Checkout)
 	r.POST("/activity-registrations/webhook/toyyibpay", registrationWebhookRateLimiter, activityRegistrationPaymentHandler.Webhook)

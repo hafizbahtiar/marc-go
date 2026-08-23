@@ -221,6 +221,19 @@ Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
       Butiran penuh: `marc_flutter/TODO.md` bahagian "Invoice
       breakdown".
 
+      **Logo crest ditambah pada header, 2026-08-24.** `internal/
+      receipt/assets/logo.png` (disaiz turun 519px→240px/70KB drpd
+      sumber `marc_flutter/assets/splash/logo.png`, elak PDF besar
+      tanpa sebab), embed via `go:embed`, dilukis di sebelah kiri teks
+      "MARC" dalam `drawFeeHeader` (`logoW`/`logoGap` const, 22mm/6mm).
+      **SENGAJA HANYA `drawFeeHeader` (resit yuran)** — `drawHeader`
+      (resit donation) TAK disentuh: `footerNote` sedia ada eksplisit
+      kata donation "BUKAN sumbangan kepada MAIWP... resit tak boleh
+      nampak macam resit rasmi organisasi", jadi crest kelab rasmi
+      salah letak di situ. Sample PDF dijana + disahkan visual sebelum
+      commit (`sips` PDF→PNG, bukan cuma "PDF valid" macam ujian
+      automatik).
+
 - [ ] **FPX: daftar SSM → BRN → aktifkan semula Stripe.** FPX
       `available: false` pada akaun (disahkan via API 2026-08-09) — bukan
       toggle yang terlepas. Stripe memerlukan **BRN** untuk memproses caj
@@ -377,6 +390,136 @@ Lihat `marc_flutter/PAYMENT-STRIPE.md` untuk apa yang dah jalan.
       - **Yuran aktiviti** (guna kes 2) — **DIBINA DAN DISAHKAN 2026-08-15**,
         lihat entri "Yuran aktiviti tidak berfungsi" di bawah (bahagian
         Modul Aktiviti) untuk butiran penuh.
+
+## Resit — R2 dibuang, stream terus (2026-08-24)
+
+Pertanyaan pengguna: resit PDF disimpan di R2 setiap kali diminta —
+"nanti lama-lama berat", cadang simpan metadata dalam DB sahaja +
+generate on-demand. **Disahkan**: metadata MEMANG dah jadi sumber
+kebenaran sejak awal (`registration_payments`/`activity_registrations`/
+`donations`), R2 cuma lapisan penghantaran — tapi setiap panggilan
+resit (walau resit SAMA ditengok berulang kali) buat R2 PUT penuh ke
+kunci stabil (tulis ganti, jadi storan sendiri tak tumbuh tanpa had,
+tapi kerja PUT+baca-balik berlaku tanpa faedah setiap kali).
+
+**Keputusan pengguna**: buang R2 sepenuhnya untuk resit, stream bait
+PDF terus sebagai respons HTTP.
+
+- `internal/http/handlers/payments.go`: `respondReceiptURL` (jana PDF →
+  PutObject R2 → SignedURL → JSON `{"url":...}`) diganti
+  `respondReceiptPDF` (jana PDF → `c.Header("Content-Disposition",
+  "attachment; filename=...")` → `c.Data(200, "application/pdf",
+  bytes)`). `RegistrationReceipt`/`ActivityReceipt`/`DonationReceipt`
+  KETIGA-TIGA dikemas kini (konsisten — donation pun ikut sama walau
+  logo kelab TAK ditambah pada resit tu, dua keputusan berasingan).
+  `PaymentsHandler` buang field `r2 *storage.R2Client` (tak diperlukan
+  lagi langsung untuk resit) — `putReceiptObject`/`receiptUploadTimeout`
+  dibuang. `NewPaymentsHandler` kehilangan param `r2Client`
+  (`router.go`/test wiring dikemas kini).
+- `go build`/`go vet`/`gofmt -l .` bersih, `go test ./...` PENUH lulus.
+  **Jurang jujur**: tiada live handler test khusus untuk
+  Registration/Activity/DonationReceipt (pre-existing — endpoint ni
+  tak pernah ada test handler pun sebelum perubahan ni, cuma
+  `internal/receipt` package level yang diuji).
+
+**Flutter (`marc_flutter`)**: `PaymentReceiptRepository` (`payment_
+providers.dart`) — `ReceiptLinkResult` (URL) → `ReceiptBytesResult`
+(bait). `_fetch` guna `responseType: bytes`. `payment_history_page.dart`
+buang `launchUrl` pada URL luaran, guna pakej baharu `printing`
+(`Printing.layoutPdf`) — dialog preview/simpan/kongsi/cetak native
+terus drpd bait, elak perlu `path_provider`+`open_filex`+`share_plus`
+berasingan. `printing` bawa kod native (Android/iOS) — DISAHKAN
+`flutter build apk --debug` lulus pada siling compileSdk 35 projek ni
+(padanan disiplin `mobile_scanner`/`permission_handler`, lihat nota
+`pubspec.yaml`) sebelum commit.
+
+`flutter analyze` bersih, 258/258 ujian lulus (tiada regresi — tiada
+widget test sedia ada untuk `PaymentHistoryPage` yang perlu dikemas
+kini).
+
+**Naming fail lebih baik, 2026-08-24** — pertanyaan pengguna: nama fail
+generik (`resit-yuran-pendaftaran.pdf`, sama untuk SEMUA muat turun,
+tak boleh dibezakan kalau ahli simpan >1 salinan). Helper baharu
+`receiptFilename(label, ref, fallbackID)` (`payments.go`) bina
+`Resit-{Pendaftaran,Aktiviti,Sokongan}-MARC-{gateway_ref}.pdf` — padan
+PERSIS konvensyen lampiran emel resit donation sedia ada
+(`donations.go` `sendReceiptEmail`, `Resit-Sokongan-MARC-{ref}.pdf`),
+jadi SATU corak penamaan merentas emel dan muat turun app, bukan dua
+gaya. `unsafeFilenameChars` regex sanitize `gateway_ref` sebelum masuk
+header HTTP (defensif — ref ToyyibPay/Stripe biasanya selamat sendiri,
+tapi jangan percaya input luaran mentah dlm header). Fallback ke ID
+baris kalau ref kosong (jaring keselamatan, bukan kes dijangka).
+Ujian baharu `payments_test.go` (`TestReceiptFilename`, 4 kes termasuk
+aksara tak selamat + ref+fallback kosong serentak).
+
+### Pertanyaan pengguna 2026-08-24 — jawapan direkod
+
+- **Emel resit donation (`sendReceiptEmail`) — DISAHKAN MASIH UTUH.**
+  Laluan berasingan sepenuhnya drpd `PaymentsHandler` (dicetus webhook
+  Stripe dlm `donations.go`, jana PDF sendiri terus dlm memori, lampir
+  ke emel) — TAK PERNAH sentuh R2/`respondReceiptURL` yang dibuang di
+  atas, jadi perubahan R2 langsung tak jejaskan laluan emel ni.
+- **Rate limit resit** — dah wujud, tak tersentuh (`payment-receipt`,
+  6s/5 setiap IP, ketiga-tiga endpoint — `router.go`).
+- **Cache backend** — TAK disyorkan (jana PDF murah, traffic rendah).
+  **Local cache Flutter** — idea disahkan berbaloi, **BELUM dibina**,
+  **TAK PERLUKAN hash/signature** (resit bukan token pengesahan yang
+  disemak pihak lain, tak macam `activity_certificates`). Rasional
+  penuh + reka bentuk cadangan: `marc_flutter/TODO.md` bahagian
+  "Pertanyaan pengguna 2026-08-24 (rate limit/cache/local DB)".
+- [x] **Yuran pendaftaran/aktiviti kini hantar emel resit — DIBINA
+      2026-08-24, DISATUKAN dengan donation lepas tu (refactor kedua,
+      sama hari).** Permintaan susulan pengguna: "buat template untuk
+      yuran, aktiviti, donation, etc — loose coupling dan reusable".
+      `internal/receiptmail` kini SATU sistem templat untuk KETIGA-TIGA
+      jenis resit (bukan dua implementasi berasingan macam draf
+      pertama — lihat sejarah git kalau nak baca versi awal):
+      - **SATU skeleton HTML** (`htmlSkeleton`) dikongsi semua jenis —
+        dulu `donationReceiptHTML` (`donations.go`) dan `feeReceiptHTML`
+        (package ni) dua fungsi HAMPIR 100% SAMA struktur, cuma teks
+        berbeza. Sekarang tambah jenis resit baharu = tambah SATU entri
+        `kindConfigs` (map `Kind` → label/subject/tagline/intro/
+        amountLabel/footerHTML/defaultPayerName), bukan tulis HTML baharu.
+      - **`Receipt` struct + `Send(ctx, emailClient, r)`** — package
+        SENGAJA TAK TAHU bentuk `receipt.FeePayment`/`receipt.Donation`
+        (dua struct PDF berbeza bentuk, cth `GatewayChargeCents` cuma
+        wujud pada satu) — caller jana PDF SENDIRI (guna generator yang
+        sesuai dgn Kind dia) dan hantar bait siap (`Receipt.PDFBytes`).
+        Loose coupling dua hala: package tak tahu DB/PDF, caller tak
+        tahu templat HTML.
+      - **`donations.go` dikemas kini turut sekali** — `donationReceiptHTML`,
+        `formatRinggit` tempatan, dan logik attachment/hantar manual
+        SEMUA dibuang, `sendReceiptEmail` kini jana PDF (tak berubah)
+        lalu funnel ke `receiptmail.Send(..., Kind: KindDonation)`.
+        Ketiga-tiga webhook (pendaftaran/aktiviti/donation) kini kongsi
+        SATU laluan templat/hantar, sifar HTML berulang.
+      - **Bug DIBAIKI serentak** (dijumpai Opus verify pada draf
+        pertama sebelum disatukan): `formatRinggit` case-sensitive
+        (`currency != "myr"`) — `activities.currency` default
+        UPPERCASE ('MYR'), so emel resit yuran AKTIVITI papar
+        "MYR35.00" sedangkan PDF lampiran (yang lower-case dulu) papar
+        "RM35.00", bercanggah dalam emel yang SAMA. Dibaiki:
+        `strings.ToLower` sebelum banding. `GatewayRef` turut kini
+        di-escape HTML (konsisten dgn nama/purpose, walau tak
+        exploitable — ref lalui pengesahan server-side gateway dulu).
+      - Ujian: `TestFormatRinggit` (+ kes currency uppercase),
+        `TestRenderHTMLEscapeXSS`, `TestRenderHTMLKindCopyTidakBercampur`
+        (disclaimer MAIWP donation TAK bocor ke emel fee), `TestSendKindTakDikenaliTakPanic`.
+        `go build`/`go vet`/`gofmt -l .` bersih, `go test ./...` PENUH
+        lulus.
+      - **Disahkan visual KETIGA-TIGA jenis** (server `httptest` palsu
+        tangkap payload JSON sebenar) — subject/nama lampiran/HTML betul
+        untuk pendaftaran, aktiviti, DAN donation; disclaimer MAIWP
+        hadir hanya utk donation; currency uppercase kini betul "RM35.00".
+      - Kerja ni dibuat guna subagent (fork) atas permintaan pengguna
+        "kerja siap cepat tapi clean" — Opus verify + refactor dijalankan
+        selari, penemuan Opus di-relay terus ke fork sebelum ia siapkan
+        kerja, elak dua pusingan berasingan.
+      - [ ] **Belum dihantar/dilihat pada peranti/inbox sebenar** —
+            disahkan setakat payload/HTML dijana betul secara lokal,
+            belum lalui Resend sebenar + dibuka dalam Gmail/Outlook
+            (sesetengah email client render `<table>`/inline-style
+            berbeza).
 
 ## Skrin bayaran (2026-08-15) — sejarah + penapisan derma superadmin
 

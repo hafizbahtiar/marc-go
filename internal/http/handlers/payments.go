@@ -7,13 +7,11 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -25,51 +23,29 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
 	"marc/internal/receipt"
-	"marc/internal/storage"
 )
 
 type PaymentsHandler struct {
 	queries            *sqlc.Queries
-	r2                 *storage.R2Client
 	gatewayChargeCents int64
 }
 
-func NewPaymentsHandler(pool *pgxpool.Pool, r2Client *storage.R2Client, gatewayChargeCents int) *PaymentsHandler {
-	return &PaymentsHandler{queries: sqlc.New(pool), r2: r2Client, gatewayChargeCents: int64(gatewayChargeCents)}
+func NewPaymentsHandler(pool *pgxpool.Pool, gatewayChargeCents int) *PaymentsHandler {
+	return &PaymentsHandler{queries: sqlc.New(pool), gatewayChargeCents: int64(gatewayChargeCents)}
 }
 
-// receiptUploadTimeout — had bagi SATU muat naik R2 resit (padanan
-// certificateUploadTimeout, activity_certificates.go).
-const receiptUploadTimeout = 30 * time.Second
-
-// putReceiptObject bungkus PutObject dengan tempoh tamat per-panggilan.
-func putReceiptObject(ctx context.Context, r2 *storage.R2Client, key string, body []byte) error {
-	upCtx, cancel := context.WithTimeout(ctx, receiptUploadTimeout)
-	defer cancel()
-	return r2.PutObject(upCtx, key, "application/pdf", body)
-}
-
-// respondReceiptURL jana + muat naik PDF, pulangkan URL bertandatangan
-// (padanan corak CertificateHandler.Download — R2 yang sampaikan fail,
-// bukan backend). PDF SENGAJA dijana semula setiap panggilan (bukan
-// disimpan/ditanda "sudah dijana" dalam DB) — resit deterministik drpd
-// data yang dah tersimpan (jadual bayaran + payment_logs), jadi tiada
-// keadaan tambahan untuk diselaraskan; PutObject menulis ganti kunci
-// STABIL yang sama setiap kali, idempoten.
-func (h *PaymentsHandler) respondReceiptURL(c *gin.Context, r2Key string, pdfBytes []byte) {
-	ctx := c.Request.Context()
-	if err := putReceiptObject(ctx, h.r2, r2Key, pdfBytes); err != nil {
-		log.Printf("resit: muat naik R2 gagal (key=%s): %v", r2Key, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan resit"})
-		return
-	}
-	url := h.r2.SignedURL(ctx, r2Key)
-	if url == "" {
-		log.Printf("resit: tandatangan URL gagal (key=%s)", r2Key)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan pautan resit"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"url": url})
+// respondReceiptPDF stream PDF TERUS sebagai respons HTTP — TIADA
+// simpanan R2 (dibuang 2026-08-24, keputusan pengguna).
+// PDF SENGAJA dijana semula setiap panggilan (bukan disimpan/ditanda
+// "sudah dijana" dalam DB) — resit deterministik drpd data yang dah
+// tersimpan (jadual bayaran), jadi jana semula setiap kali selamat &
+// konsisten, dan storan tak pernah tumbuh (fail terbitan, bukan
+// sumber kebenaran). Sebelum ni setiap panggilan buat R2 PUT + baca
+// balik walau fail SAMA persis dgn yang sedia ada (kunci stabil,
+// tulis ganti) — kerja berlebihan tanpa faedah pada skala kelab ni.
+func respondReceiptPDF(c *gin.Context, filename string, pdfBytes []byte) {
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	c.Data(http.StatusOK, "application/pdf", pdfBytes)
 }
 
 // RegistrationReceipt — GET /me/payments/registration/:id/receipt. Hanya
@@ -125,7 +101,7 @@ func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
 		return
 	}
 
-	h.respondReceiptURL(c, fmt.Sprintf("receipts/registration/%s.pdf", row.ID), pdfBytes)
+	respondReceiptPDF(c, receipt.Filename("Pendaftaran", textOrEmpty(row.GatewayRef), row.ID.String()), pdfBytes)
 }
 
 // ActivityReceipt — GET /me/payments/activity/:id/receipt. `:id` ialah
@@ -192,7 +168,7 @@ func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
 		return
 	}
 
-	h.respondReceiptURL(c, fmt.Sprintf("receipts/activity/%s.pdf", row.ID), pdfBytes)
+	respondReceiptPDF(c, receipt.Filename("Aktiviti", textOrEmpty(row.PaymentRef), row.ID.String()), pdfBytes)
 }
 
 // DonationReceipt — GET /me/payments/donation/:id/receipt. Ahli LOG
@@ -249,7 +225,10 @@ func (h *PaymentsHandler) DonationReceipt(c *gin.Context) {
 		return
 	}
 
-	h.respondReceiptURL(c, fmt.Sprintf("receipts/donation/%s.pdf", d.ID), pdfBytes)
+	// Padanan PERSIS nama lampiran emel resit donation sedia ada
+	// (`donations.go` sendReceiptEmail) — ahli yang muat turun dari app
+	// dan yang terima emel nampak nama fail SAMA, bukan dua gaya.
+	respondReceiptPDF(c, receipt.Filename("Sokongan", d.GatewayRef, d.ID.String()), pdfBytes)
 }
 
 type registrationPaymentItem struct {

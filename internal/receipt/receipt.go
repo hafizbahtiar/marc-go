@@ -4,12 +4,55 @@ package receipt
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/go-pdf/fpdf"
 )
+
+// logoPNG — crest kelab MARC, dipapar di header RESIT YURAN sahaja
+// (`drawFeeHeader`/`GenerateFeePDF`) — BUKAN pada resit donation
+// (`drawHeader`/`GeneratePDF`). Sengaja: donation ni peribadi kepada
+// pembangun, BUKAN kepada kelab (lihat `footerNote` di atas — "Resit
+// tak boleh nampak macam resit rasmi organisasi"), jadi crest kelab
+// rasmi tak patut muncul di situ. Disaiz kecil (240px) sebelum
+// di-embed — sumber asal (marc_flutter/assets/splash/logo.png) 519px/
+// 344KB terlalu besar untuk header ~22mm, setiap PDF terjana akan bawa
+// bait penuh imej tu.
+//
+//go:embed assets/logo.png
+var logoPNG []byte
+
+// unsafeFilenameChars — apa-apa selain alphanumeric/`-`/`_` ditukar `-`.
+// `gateway_ref` (ToyyibPay billcode / Stripe PaymentIntent id) selalunya
+// selamat sendiri, tapi jangan percaya input luaran mentah terus dalam
+// header HTTP (Content-Disposition) atau nama lampiran emel — sanitize
+// defensif, bukan sebab ada kes sebenar dijumpai.
+var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+
+// Filename bina nama fail SATU corak dikongsi merentas SEMUA laluan
+// resit — muat turun dalam app (`handlers.respondReceiptPDF`) DAN
+// lampiran emel (`internal/receiptmail`, `donations.go`
+// sendReceiptEmail) — supaya ahli yang terima resit dua-dua cara nampak
+// nama fail SAMA, bukan dua gaya berlainan. `ref` fallback ke
+// `fallbackID` (biasanya `.String()` id baris) kalau gateway_ref kosong
+// (jaring keselamatan, bukan kes dijangka — dipanggil hanya lepas
+// status 'succeeded'/'paid').
+func Filename(label, ref, fallbackID string) string {
+	r := strings.TrimSpace(ref)
+	if r == "" {
+		r = fallbackID
+	}
+	r = unsafeFilenameChars.ReplaceAllString(r, "-")
+	r = strings.Trim(r, "-")
+	if r == "" {
+		r = "MARC"
+	}
+	return fmt.Sprintf("Resit-%s-MARC-%s.pdf", label, r)
+}
 
 // Warna jenama MARC (padanan AppSemanticColors/ColorScheme di
 // marc_flutter/lib/app/theme.dart).
@@ -324,18 +367,34 @@ func GenerateFeePDF(p FeePayment) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// logoW/logoGap — saiz crest + jarak ke teks "MARC" di header resit
+// yuran. `logoW+logoGap` ditolak drpd lebar sel teks sebelah kiri
+// (contentW/2) supaya teks tak bertindih crest.
+const (
+	logoW   = 22.0
+	logoGap = 6.0
+)
+
 func drawFeeHeader(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
 	pdf.SetFillColor(brandColor[0], brandColor[1], brandColor[2])
 	pdf.Rect(0, 0, pageW, headerH, "F")
 	pdf.SetFillColor(brandDark[0], brandDark[1], brandDark[2])
 	pdf.Rect(0, headerH, pageW, 1.6, "F")
 
+	// Crest kelab, tengah menegak dlm jalur header.
+	pdf.RegisterImageOptionsReader("marc-logo", fpdf.ImageOptions{ImageType: "PNG"}, bytes.NewReader(logoPNG))
+	pdf.ImageOptions("marc-logo", marginX, (headerH-logoW)/2, logoW, logoW, false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+
+	textX := marginX + logoW + logoGap
+	textW := contentW/2 - logoW - logoGap
+
 	pdf.SetTextColor(255, 255, 255)
-	pdf.SetXY(marginX, 11)
+	pdf.SetXY(textX, 11)
 	pdf.SetFont("Helvetica", "B", 24)
-	pdf.CellFormat(contentW/2, 10, "MARC", "", 2, "L", false, 0, "")
+	pdf.CellFormat(textW, 10, "MARC", "", 2, "L", false, 0, "")
+	pdf.SetX(textX)
 	pdf.SetFont("Helvetica", "", 9)
-	pdf.CellFormat(contentW/2, 5, tr("Bukti pembayaran yuran kelab"), "", 0, "L", false, 0, "")
+	pdf.CellFormat(textW, 5, tr("Bukti pembayaran yuran kelab"), "", 0, "L", false, 0, "")
 
 	pdf.SetXY(pageW/2, 12)
 	pdf.SetFont("Helvetica", "B", 13)

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -13,10 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"marc/internal/db/sqlc"
+	"marc/internal/email"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
 	"marc/internal/paymentlog"
 	"marc/internal/phone"
+	"marc/internal/receipt"
+	"marc/internal/receiptmail"
 )
 
 // ActivityRegistrationPaymentHandler — yuran AKTIVITI (activities.fee_cents),
@@ -33,13 +37,21 @@ import (
 // activity_registrations.go registerTx), checkout ni sekadar mulakan
 // bayaran untuk pendaftaran yang SUDAH wujud.
 type ActivityRegistrationPaymentHandler struct {
-	gw      payment.Gateway
-	queries *sqlc.Queries
-	pool    *pgxpool.Pool
+	gw                 payment.Gateway
+	queries            *sqlc.Queries
+	pool               *pgxpool.Pool
+	gatewayChargeCents int64
+	emailClient        *email.Client
 }
 
-func NewActivityRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway) *ActivityRegistrationPaymentHandler {
-	return &ActivityRegistrationPaymentHandler{gw: gw, queries: sqlc.New(pool), pool: pool}
+func NewActivityRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, gatewayChargeCents int, emailClient *email.Client) *ActivityRegistrationPaymentHandler {
+	return &ActivityRegistrationPaymentHandler{
+		gw:                 gw,
+		queries:            sqlc.New(pool),
+		pool:               pool,
+		gatewayChargeCents: int64(gatewayChargeCents),
+		emailClient:        emailClient,
+	}
 }
 
 // activityCheckoutRequest — Phone PILIHAN, sama padanan checkoutRequest
@@ -370,6 +382,61 @@ func (h *ActivityRegistrationPaymentHandler) Webhook(c *gin.Context) {
 			GatewayRef: event.GatewayRef,
 			RelatedID:  &updated.ID,
 		})
+
+		// Resit emel — cabang ni SATU-SATUNYA "paid" tulen (bukan
+		// replay/race-cancelled, dua-dua dah ditapis di atas).
+		// Kegagalan cari profil/aktiviti/hantar emel TAK menjejaskan
+		// respons 200 ke ToyyibPay — `receiptmail.Send` log sahaja.
+		ctx := c.Request.Context()
+		profile, perr := h.queries.GetProfileByUserID(ctx, updated.UserID)
+		activity, aerr := h.queries.GetActivityByID(ctx, updated.ActivityID)
+		if perr != nil || aerr != nil {
+			log.Printf("resit emel yuran aktiviti: gagal cari profil/aktiviti (registration=%s): profil=%v aktiviti=%v", updated.ID, perr, aerr)
+		} else {
+			displayName := ""
+			if profile.DisplayName.Valid {
+				displayName = profile.DisplayName.String
+			}
+			// FeeCentsPaid ialah snapshot jumlah SEBENAR dihantar ke
+			// gateway (lihat komen SetRegistrationPaymentRef di atas) —
+			// guna itu, bukan activity.FeeCents hidup, padan resit
+			// muat turun (payments.go ActivityReceipt).
+			amountCents := int64(activity.FeeCents)
+			if updated.FeeCentsPaid.Valid {
+				amountCents = int64(updated.FeeCentsPaid.Int32)
+			}
+			paidAt := time.Now()
+
+			// PDF dijana DI SINI (caller) — lihat komen padanan di
+			// RegistrationPaymentHandler.Webhook.
+			pdfBytes, perr := receipt.GenerateFeePDF(receipt.FeePayment{
+				MemberID:           profile.MemberID,
+				PayerName:          displayName,
+				PayerEmail:         profile.Email,
+				AmountCents:        amountCents,
+				Currency:           activity.Currency,
+				GatewayRef:         event.GatewayRef,
+				PaidAt:             paidAt,
+				Purpose:            activity.Title,
+				GatewayChargeCents: h.gatewayChargeCents,
+			})
+			if perr != nil {
+				log.Printf("resit emel yuran aktiviti: gagal jana PDF (ref=%s): %v", event.GatewayRef, perr)
+				pdfBytes = nil
+			}
+
+			receiptmail.Send(ctx, h.emailClient, receiptmail.Receipt{
+				Kind:        receiptmail.KindActivityFee,
+				To:          profile.Email,
+				PayerName:   displayName,
+				Purpose:     activity.Title,
+				AmountCents: amountCents,
+				Currency:    activity.Currency,
+				GatewayRef:  event.GatewayRef,
+				PaidAt:      paidAt,
+				PDFBytes:    pdfBytes,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})

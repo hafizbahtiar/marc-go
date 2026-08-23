@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"marc/internal/email"
 	"marc/internal/payment"
 )
 
@@ -79,7 +80,7 @@ func checkoutCall(t *testing.T, pool *pgxpool.Pool, gw payment.Gateway, userID u
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("userID", userID)
 
-	NewRegistrationPaymentHandler(pool, gw, 1000).Checkout(c)
+	NewRegistrationPaymentHandler(pool, gw, 1000, 100, email.NewClient("", "")).Checkout(c)
 	return rec
 }
 

@@ -3,8 +3,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"fmt"
-	htmlpkg "html"
 	"log"
 	"net/http"
 	"strings"
@@ -22,6 +20,7 @@ import (
 	"marc/internal/payment"
 	"marc/internal/paymentlog"
 	"marc/internal/receipt"
+	"marc/internal/receiptmail"
 )
 
 // DonationHandler bergantung interface `payment.Gateway` sahaja, BUKAN
@@ -262,7 +261,13 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 
 // sendReceiptEmail best-effort — kegagalan hantar emel TAK gagalkan
 // webhook (Stripe retry kalau bukan 200, dan donation dah pun berjaya
-// direkod, resit hilang bukan sebab kritikal untuk retry).
+// direkod, resit hilang bukan sebab kritikal untuk retry). Jana PDF DI
+// SINI (caller) lalu hantar bait ke `receiptmail.Send` — package tu
+// sengaja tak tahu bentuk `receipt.Donation` (loose coupling, lihat
+// komen `internal/receiptmail`); templat HTML/subjek/label fail dikongsi
+// dgn dua laluan resit fee (registration_payment.go/
+// activity_registration_payment.go) lalui `receiptmail.KindDonation`,
+// bukan disalin-tampal di sini lagi.
 func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation, paidAt time.Time) {
 	to := textToPtr(d.DonorEmail)
 	memberID := ""
@@ -312,92 +317,21 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation,
 		// PDF gagal jana — hantar resit tetap (versi HTML je) drpd
 		// langsung tak hantar apa-apa. Log untuk siasat kenapa gagal.
 		log.Printf("resit donation: gagal jana PDF (gateway_ref=%s): %v", d.GatewayRef, err)
+		pdfBytes = nil
 	}
 
-	displayName := donorName
-	if displayName == "" {
-		displayName = "Penyumbang"
-	}
-	subject := "Terima kasih kerana menyokong MARC"
-	body := donationReceiptHTML(displayName, formatRinggit(int64(d.AmountCents), d.Currency), d.GatewayRef, paidAt)
-
-	var attachments []email.Attachment
-	if pdfBytes != nil {
-		attachments = append(attachments, email.Attachment{
-			Filename: fmt.Sprintf("Resit-Sokongan-MARC-%s.pdf", d.GatewayRef),
-			Content:  pdfBytes,
-		})
-	}
-
-	if err := h.emailClient.SendWithAttachments(ctx, *to, subject, body, attachments); err != nil {
-		log.Printf("gagal hantar resit donation (gateway_ref=%s): %v", d.GatewayRef, err)
-	}
-}
-
-func formatRinggit(cents int64, currency string) string {
-	symbol := "RM"
-	if currency != "" && currency != "myr" {
-		symbol = currency
-	}
-	return fmt.Sprintf("%s%.2f", symbol, float64(cents)/100)
-}
-
-// donationReceiptHTML — templat emel bertema (padanan warna jenama
-// AppColors di marc_flutter/lib/app/theme.dart: #2F6B4F/#FAF9F6/
-// #1C1B19/#6B6B6B). Inline style sengaja (bukan `<style>`/class) — ramai
-// email client (Gmail, Outlook) buang `<style>` block atau CSS luaran.
-// `html.EscapeString` pada nilai user-supplied (nama) — donor_name asal
-// input pengguna, tanpa escape ni jadi HTML injection vector dlm emel
-// yang kita hantar.
-func donationReceiptHTML(name, amount, ref string, paidAt time.Time) string {
-	safeName := htmlpkg.EscapeString(name)
-	return fmt.Sprintf(`<!doctype html>
-<html>
-<body style="margin:0;padding:0;background-color:#FAF9F6;font-family:Helvetica,Arial,sans-serif;color:#1C1B19;">
-  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#FAF9F6;padding:32px 16px;">
-    <tr><td align="center">
-      <table role="presentation" width="100%%" style="max-width:480px;background-color:#FFFFFF;border-radius:12px;overflow:hidden;">
-        <tr><td style="background-color:#2F6B4F;padding:24px 32px;">
-          <span style="font-size:20px;font-weight:700;color:#FFFFFF;letter-spacing:0.5px;">MARC</span>
-          <div style="margin-top:4px;font-size:12px;color:#D7E5DC;">Resit sokongan penyelenggaraan</div>
-        </td></tr>
-        <tr><td style="padding:32px;">
-          <p style="margin:0 0 16px;font-size:15px;">Terima kasih, %s.</p>
-          <p style="margin:0 0 16px;font-size:15px;line-height:1.5;">
-            Sokongan anda untuk MARC dah selamat diterima. Duit ni pergi
-            terus kepada saya untuk menampung kos hosting, domain dan masa
-            penyelenggaraan supaya app ni kekal berjalan dan percuma untuk
-            semua ahli.
-          </p>
-          <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">
-            Resit (PDF) dilampirkan bersama emel ini.
-          </p>
-          <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#FAF9F6;border-radius:10px;margin-bottom:24px;">
-            <tr><td style="padding:20px 24px;">
-              <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;text-transform:uppercase;letter-spacing:0.5px;">Jumlah Sokongan</p>
-              <p style="margin:0;font-size:28px;font-weight:700;color:#1C1B19;">%s</p>
-            </td></tr>
-          </table>
-          <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;">No. Rujukan</p>
-          <p style="margin:0 0 16px;font-size:14px;color:#1C1B19;">%s</p>
-          <p style="margin:0 0 4px;font-size:12px;color:#6B6B6B;">Tarikh</p>
-          <p style="margin:0;font-size:14px;color:#1C1B19;">%s</p>
-        </td></tr>
-        <tr><td style="padding:20px 32px;border-top:1px solid #E4E1DA;">
-          <p style="margin:0 0 10px;font-size:12px;color:#6B6B6B;line-height:1.5;">
-            Sumbangan ini diberikan secara peribadi kepada pembangun MARC.
-            Ia <strong>bukan</strong> sumbangan kepada MAIWP atau mana-mana
-            badan amal, dan tidak layak untuk pelepasan cukai.
-          </p>
-          <p style="margin:0;font-size:12px;color:#6B6B6B;line-height:1.5;">
-            Emel ini dihantar automatik oleh sistem MARC. Sila simpan resit
-            PDF terlampir untuk rekod anda.<br>
-            &mdash; Hafiz, pembangun MARC
-          </p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`, safeName, amount, ref, receipt.FormatDateTime(paidAt))
+	receiptmail.Send(ctx, h.emailClient, receiptmail.Receipt{
+		Kind:        receiptmail.KindDonation,
+		To:          *to,
+		PayerName:   donorName,
+		AmountCents: int64(d.AmountCents),
+		Currency:    d.Currency,
+		GatewayRef:  d.GatewayRef,
+		// FallbackID — padanan tingkah laku ASAL (id baris donation),
+		// dua kind fee tinggalkan ni kosong (lihat komen `Receipt.
+		// FallbackID`).
+		FallbackID: d.ID.String(),
+		PaidAt:     paidAt,
+		PDFBytes:   pdfBytes,
+	})
 }
