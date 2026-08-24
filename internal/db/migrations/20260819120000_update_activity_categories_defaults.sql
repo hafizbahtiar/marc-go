@@ -21,7 +21,7 @@ on conflict (key) do update
       sort_order = excluded.sort_order,
       is_active = true;
 
--- Dropped from the default list — deactivated (not deleted) so existing
+-- Dropped from the default list - deactivated (not deleted) so existing
 -- activities that already reference these categories keep working.
 update activity_categories
   set is_active = false

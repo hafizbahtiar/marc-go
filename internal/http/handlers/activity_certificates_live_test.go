@@ -29,7 +29,7 @@ import (
 
 // ---- Helper seed ----
 
-// sesiLepas — tetingkap sesi ke-i yang SUDAH tamat tetapi masih dalam
+// sesiLepas - tetingkap sesi ke-i yang SUDAH tamat tetapi masih dalam
 // tetingkap check-in (±CheckinWindowPadding).
 //
 // Kedua-dua syarat perlu serentak: penerbitan sijil hanya dibenarkan
@@ -47,7 +47,7 @@ func sesiLepas(i int) (start, end time.Time) {
 // Dibina atas seedActivityWithCapacity (Task 7) dan seedSession (Task 8):
 // helper itu mencipta satu sesi masa hadapan, jadi sesi itu dibuang dan
 // diganti dengan `bilSesi` sesi lepas, kemudian invarian starts_at/ends_at
-// dikira semula melalui RecomputeActivityWindow — satu-satunya penulis sah
+// dikira semula melalui RecomputeActivityWindow - satu-satunya penulis sah
 // tetingkap aktiviti.
 //
 // registration_closes_at yang ditetapkan seedActivityWithCapacity (now+24h)
@@ -59,7 +59,7 @@ func seedAktivitiSelesai(t *testing.T, pool *pgxpool.Pool, ambangPct, bilSesi in
 
 	activityID := seedActivityWithCapacity(t, pool, 50)
 
-	// Sijil ialah `on delete restrict` atas activities — tanpa pembersihan
+	// Sijil ialah `on delete restrict` atas activities - tanpa pembersihan
 	// ini, cleanup seedActivityWithCapacity gagal secara senyap dan baris
 	// ujian bertimbun dalam DB yang dikongsi. LIFO t.Cleanup menjamin ia
 	// berjalan SEBELUM aktiviti dipadam.
@@ -91,7 +91,7 @@ func seedAktivitiSelesai(t *testing.T, pool *pgxpool.Pool, ambangPct, bilSesi in
 }
 
 // hadirkan daftarkan seorang ahli dan tandakan kehadirannya pada `bil` sesi
-// pertama, melalui registerTx/markAttendanceTx sebenar — bukan insert
+// pertama, melalui registerTx/markAttendanceTx sebenar - bukan insert
 // terus, supaya seed tidak boleh menghasilkan keadaan yang laluan sebenar
 // tak boleh capai.
 func hadirkan(t *testing.T, pool *pgxpool.Pool, activityID uuid.UUID, sessions []uuid.UUID, bil int) uuid.UUID {
@@ -111,7 +111,7 @@ func hadirkan(t *testing.T, pool *pgxpool.Pool, activityID uuid.UUID, sessions [
 	return userID
 }
 
-// seedSelesaiDenganKehadiran — aktiviti selesai (satu sesi) dengan n ahli
+// seedSelesaiDenganKehadiran - aktiviti selesai (satu sesi) dengan n ahli
 // yang semuanya hadir penuh.
 func seedSelesaiDenganKehadiran(t *testing.T, pool *pgxpool.Pool, n int) (uuid.UUID, []uuid.UUID) {
 	t.Helper()
@@ -123,7 +123,7 @@ func seedSelesaiDenganKehadiran(t *testing.T, pool *pgxpool.Pool, n int) (uuid.U
 	return activityID, users
 }
 
-// seedAktivitiTigaSesi — aktiviti selesai dengan tiga sesi dan ambang yang
+// seedAktivitiTigaSesi - aktiviti selesai dengan tiga sesi dan ambang yang
 // ditentukan pemanggil. Sesi dipulangkan melalui seedSesiAktiviti supaya
 // seedPesertaKehadiran boleh mencarinya semula.
 func seedAktivitiTigaSesi(t *testing.T, pool *pgxpool.Pool, ambangPct int) uuid.UUID {
@@ -132,7 +132,7 @@ func seedAktivitiTigaSesi(t *testing.T, pool *pgxpool.Pool, ambangPct int) uuid.
 	return activityID
 }
 
-// sesiAktiviti baca id sesi mengikut seq — seedAktivitiTigaSesi hanya
+// sesiAktiviti baca id sesi mengikut seq - seedAktivitiTigaSesi hanya
 // memulangkan id aktiviti (bentuk yang dipakai ujian), jadi peserta dicari
 // sesinya di sini.
 func sesiAktiviti(t *testing.T, pool *pgxpool.Pool, activityID uuid.UUID) []uuid.UUID {
@@ -155,7 +155,7 @@ func sesiAktiviti(t *testing.T, pool *pgxpool.Pool, activityID uuid.UUID) []uuid
 }
 
 // seedPesertaKehadiran daftarkan tiga ahli dengan bilangan kehadiran
-// berlainan — bentuk yang diperlukan untuk menguji ambang.
+// berlainan - bentuk yang diperlukan untuk menguji ambang.
 func seedPesertaKehadiran(
 	t *testing.T, pool *pgxpool.Pool, activityID uuid.UUID, hadirA, hadirB, hadirC int,
 ) (a, b, c uuid.UUID) {
@@ -167,7 +167,7 @@ func seedPesertaKehadiran(
 }
 
 // bacaSequence baca nilai semasa satu kaunter `sequences`. Kunci yang belum
-// wujud ialah 0 — NextSequence pertama akan memulangkan 1.
+// wujud ialah 0 - NextSequence pertama akan memulangkan 1.
 func bacaSequence(t *testing.T, pool *pgxpool.Pool, key string) int64 {
 	t.Helper()
 	var v int64
@@ -196,12 +196,12 @@ func TestTerbitSijilIdempoten(t *testing.T) {
 	}
 
 	// Panggilan kedua tak boleh menerbitkan pendua ATAU membazirkan nombor
-	// siri — unik (activity_id, user_id) menghalang baris, dan siri hanya
+	// siri - unik (activity_id, user_id) menghalang baris, dan siri hanya
 	// diambil untuk baris yang benar-benar dimasukkan.
 	//
 	// Kaunter dikepit di sekeliling panggilan kedua DENGAN SENGAJA. Tanpa
 	// pengapit ini, versi yang melukis satu siri bagi setiap calon dan
-	// memasukkan sifar baris tetap lulus ujian ini — dan `Issue` ialah
+	// memasukkan sifar baris tetap lulus ujian ini - dan `Issue` ialah
 	// laluan menyambung yang direka untuk dipanggil berulang kali, jadi
 	// setiap percubaan semula akan membakar satu blok nombor secara kekal.
 	seqBefore := bacaSequence(t, pool, certificateSerialSequence)
@@ -278,7 +278,7 @@ func TestFasaDuaMenyambungBarisTanpaR2Key(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCertificatesPendingFile: %v", err)
 	}
-	// Fasa 1 sengaja meninggalkan r2_key null — muat naik berlaku SELEPAS
+	// Fasa 1 sengaja meninggalkan r2_key null - muat naik berlaku SELEPAS
 	// komit, sebab rollback Postgres tidak boleh memadam objek R2.
 	if len(pending) != 2 {
 		t.Errorf("sijil menunggu fail = %d, mahu 2", len(pending))
@@ -303,7 +303,7 @@ func TestNomborSiriTidakMelompatBilaTiadaSijil(t *testing.T) {
 	}
 }
 
-// TestNomborSiriBerundurBilaTransaksiGagal — inti sebab `sequences` dipakai
+// TestNomborSiriBerundurBilaTransaksiGagal - inti sebab `sequences` dipakai
 // dan bukan `create sequence` Postgres. Nombor siri diambil DALAM transaksi;
 // kalau mana-mana penerima gagal, keseluruhan penerbitan berundur dan
 // kaunter mesti kekal di tempat asalnya. Nextval Postgres tidak berundur.
@@ -315,7 +315,7 @@ func TestNomborSiriBerundurBilaTransaksiGagal(t *testing.T) {
 
 	// Nama yang tidak boleh dicetak pada fon terbina PDF. ListEligible...
 	// mengisih ikut display_name, jadi nama yang bermula dengan 'Z' datang
-	// SELEPAS ahli tanpa nama paparan — sekurang-kurangnya satu siri sudah
+	// SELEPAS ahli tanpa nama paparan - sekurang-kurangnya satu siri sudah
 	// diambil sebelum kegagalan berlaku.
 	if _, err := pool.Exec(ctx,
 		`update profiles set display_name = $2 where user_id = $1`,
@@ -341,7 +341,7 @@ func TestNomborSiriBerundurBilaTransaksiGagal(t *testing.T) {
 	}
 }
 
-// TestTajukTidakBolehDicetakDitolakSebelumBarisWujud — fasa 1 MENSNAPSHOT
+// TestTajukTidakBolehDicetakDitolakSebelumBarisWujud - fasa 1 MENSNAPSHOT
 // activity_title ke dalam baris sijil, dan fasa 2 membaca snapshot itu.
 // Kalau tajuk yang rosak sempat masuk ke baris, membetulkan tajuk aktiviti
 // melalui API tidak akan menyentuhnya dan setiap pusingan fasa 2 gagal
@@ -390,7 +390,7 @@ func TestTerbitSijilSebelumAktivitiTamatDitolak(t *testing.T) {
 	}
 }
 
-// TestTerbitSijilSerentakTidakMelompatkanNomborSiri — pasangan kepada
+// TestTerbitSijilSerentakTidakMelompatkanNomborSiri - pasangan kepada
 // TestRegisterPerlumbaanSlotTerakhir, untuk laluan penerbitan.
 //
 // issueCertificatesTx dahulunya membaca aktiviti, bilangan sesi, calon
@@ -398,7 +398,7 @@ func TestTerbitSijilSebelumAktivitiTamatDitolak(t *testing.T) {
 // membuka `pool.Begin`. Dua pengurus yang menekan Terbitkan serentak
 // mensnapshot `sudahBersijil` kosong pada kedua-dua belah, kedua-duanya
 // melukis NextSequence bagi setiap calon, dan yang kalah jatuh ke
-// `on conflict do nothing` → `continue` → dan TETAP komit — kaunter siri
+// `on conflict do nothing` → `continue` → dan TETAP komit - kaunter siri
 // bergerak dua kali ganda dan lompang kekal dalam penomboran. Itulah bug
 // yang jadual `sequences` (Task 9) dibina untuk menutupnya.
 //
@@ -416,7 +416,7 @@ func TestTerbitSijilSerentakTidakMelompatkanNomborSiri(t *testing.T) {
 	// Panaskan pool DAHULU. pgxpool lalai MinConns = 0 dan mencipta
 	// sambungan secara malas; beberapa milisaat untuk mewujudkan setiap
 	// satu sudah cukup untuk menyerikan goroutine secara tak sengaja, dan
-	// ujian ini akan LULUS walaupun kunci dibuang. Ditetapkan di Task 7 —
+	// ujian ini akan LULUS walaupun kunci dibuang. Ditetapkan di Task 7 -
 	// bukan pilihan.
 	warmPool(t, pool, 2)
 
@@ -452,7 +452,7 @@ func TestTerbitSijilSerentakTidakMelompatkanNomborSiri(t *testing.T) {
 	// walaupun hanya bilAhli baris wujud.
 	seqSelepas := bacaSequence(t, pool, certificateSerialSequence)
 	if delta := seqSelepas - seqSebelum; delta != bilAhli {
-		t.Errorf("sequence bergerak %d, mahu tepat %d — nombor siri dibakar oleh penerbitan yang kalah",
+		t.Errorf("sequence bergerak %d, mahu tepat %d - nombor siri dibakar oleh penerbitan yang kalah",
 			delta, bilAhli)
 	}
 
@@ -506,7 +506,7 @@ func TestTarikBalikSijilKekalkanBarisDanGilirkanFail(t *testing.T) {
 	cert := certs[0]
 
 	// Fasa 2 tidak dijalankan di sini (tiada R2), jadi r2_key ditetapkan
-	// terus — yang diuji ialah gilir pemadaman, bukan muat naik.
+	// terus - yang diuji ialah gilir pemadaman, bukan muat naik.
 	key := "certificates/" + cert.ID.String() + ".pdf"
 	if err := sqlc.New(pool).SetCertificateR2Key(ctx, sqlc.SetCertificateR2KeyParams{
 		ID: cert.ID, R2Key: pgText(key),
@@ -553,7 +553,7 @@ func TestTarikBalikSijilKekalkanBarisDanGilirkanFail(t *testing.T) {
 		t.Errorf("catatan audit tarik balik = %d, mahu 1", auditCount)
 	}
 
-	// Tarik balik kedua kali bukan ralat pelayan — ia konflik.
+	// Tarik balik kedua kali bukan ralat pelayan - ia konflik.
 	if err := revokeCertificateTx(ctx, pool, cert.ID, "lagi", audit.Actor{}); err != errCertificateAlreadyRevoked {
 		t.Errorf("tarik balik kedua = %v, mahu errCertificateAlreadyRevoked", err)
 	}
@@ -616,7 +616,7 @@ func TestTarikBalikSijilPerluPengurusan(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, mahu 403 (badan: %s)", rec.Code, rec.Body.String())
 	}
-	// Gerbang mesti menghalang SEBELUM apa-apa perubahan — 403 yang datang
+	// Gerbang mesti menghalang SEBELUM apa-apa perubahan - 403 yang datang
 	// selepas baris ditarik balik tiada nilai.
 	after, err := sqlc.New(pool).GetCertificateByID(ctx, certs[0].ID)
 	if err != nil {
@@ -735,7 +735,7 @@ func doGET(t *testing.T, pool *pgxpool.Pool, path string) []byte {
 }
 
 // Endpoint AWAM pertama yang mendedahkan nama ahli. Ujian ini ditulis
-// sebagai penegasan atas SET medan, bukan atas nilai — supaya sesiapa yang
+// sebagai penegasan atas SET medan, bukan atas nilai - supaya sesiapa yang
 // menambah medan pada masa depan memecahkan ujian ini dan terpaksa
 // memikirkannya semula. Semakan privasi yang bergantung pada ingatan tidak
 // bertahan.
@@ -762,7 +762,7 @@ func TestVerifyTidakMendedahkanPII(t *testing.T) {
 	}
 	for key := range payload {
 		if !dibenarkan[key] {
-			t.Errorf("respons awam mengandungi medan tak dibenarkan %q — "+
+			t.Errorf("respons awam mengandungi medan tak dibenarkan %q - "+
 				"semak semula sama ada ia patut awam sebelum meluaskan senarai", key)
 		}
 	}
@@ -785,7 +785,7 @@ func TestVerifyTokenTidakDikenaliSentiasa404(t *testing.T) {
 	salah := doVerify(t, pool, "/verify/certificates/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	if tiada.Code != http.StatusNotFound || salah.Code != http.StatusNotFound {
-		t.Errorf("status = %d dan %d, kedua-duanya mahu 404 — respons berbeza "+
+		t.Errorf("status = %d dan %d, kedua-duanya mahu 404 - respons berbeza "+
 			"menjadi oracle yang mengesahkan token mana yang pernah wujud",
 			tiada.Code, salah.Code)
 	}
@@ -796,7 +796,7 @@ func TestVerifyTokenTidakDikenaliSentiasa404(t *testing.T) {
 	}
 }
 
-// TestVerifySijilDitarikBalikKekalBolehDisemak — pengecualian yang disengajakan.
+// TestVerifySijilDitarikBalikKekalBolehDisemak - pengecualian yang disengajakan.
 // Sijil yang ditarik balik pulang 200 dengan status "ditarik_balik", bukan
 // 404: sijil yang lenyap senyap-senyap lebih buruk bagi orang yang sedang
 // menyemaknya daripada satu yang menyatakan ia telah ditarik.
@@ -830,7 +830,7 @@ func TestVerifySijilDitarikBalikKekalBolehDisemak(t *testing.T) {
 // ---- Fasa 2 (perlu R2 sebenar) ----
 
 // TestFasaDuaMuatNaikSebenar ialah SATU-SATUNYA ujian yang menyentuh R2.
-// Ia di-skip melainkan R2_LIVE_TEST=1 — pemisahan dua fasa itu sendiri yang
+// Ia di-skip melainkan R2_LIVE_TEST=1 - pemisahan dua fasa itu sendiri yang
 // membolehkan semua ujian di atas berjalan tanpa kredential objek storan.
 func TestFasaDuaMuatNaikSebenar(t *testing.T) {
 	if os.Getenv("R2_LIVE_TEST") != "1" {
@@ -873,7 +873,7 @@ func TestFasaDuaMuatNaikSebenar(t *testing.T) {
 		t.Errorf("masih menunggu fail = %d, mahu 0", len(pending))
 	}
 
-	// Pusingan kedua tidak sepatutnya melakukan apa-apa — itu maksud
+	// Pusingan kedua tidak sepatutnya melakukan apa-apa - itu maksud
 	// "boleh disambung semula". err == nil sahaja tak cukup: fasa 2
 	// pulang awal bila gilir kosong, jadi keadaan selepasnya yang
 	// disemak semula.
@@ -911,7 +911,7 @@ func TestFasaDuaMuatNaikSebenar(t *testing.T) {
 
 // Pengurus yang turut menyertai aktiviti ialah penerima sijil seperti orang
 // lain. notifyMembers melangkau pelaku (betul untuk activity_published dan
-// activity_cancelled — pelaku yang menyebabkan peristiwa itu), tetapi
+// activity_cancelled - pelaku yang menyebabkan peristiwa itu), tetapi
 // certificate_ready mengenai artifak penerima SENDIRI, dan peralihan
 // pending→siap berlaku sekali sahaja: melangkaunya di sini bermakna dia
 // tidak akan pernah diberitahu, dan menjalankan semula penerbitan tidak

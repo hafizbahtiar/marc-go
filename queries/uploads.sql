@@ -21,7 +21,7 @@ order by next_attempt_at
 limit $1;
 
 -- name: MarkDeletedUploadDone :exec
--- Tandakan, jangan padam baris — lihat komen 'deleted_at' dlm migration.
+-- Tandakan, jangan padam baris - lihat komen 'deleted_at' dlm migration.
 update deleted_uploads set deleted_at = now() where r2_key = $1;
 
 -- name: MarkDeletedUploadFailed :exec
@@ -39,7 +39,7 @@ where r2_key = $1;
 -- 2026-08-22, L28). Baris yang dipulangkan di sini ialah senarai PADAM:
 -- semuanya akan digilir ke `deleted_uploads` dan objek R2nya dibuang.
 -- Sebelum ni query cuma menapis ikut UMUR dan bergantung SEPENUHNYA pada
--- baris dikeluarkan semasa post dicipta — sedangkan laluan itu
+-- baris dikeluarkan semasa post dicipta - sedangkan laluan itu
 -- (`posts.go`) mengabaikan ralat `DeletePendingUpload`, jadi satu DELETE
 -- yang gagal bermakna gambar post yang MASIH dipaparkan dipadam 6 jam
 -- kemudian, kekal, tanpa ralat di mana-mana.
@@ -50,7 +50,7 @@ where r2_key = $1;
 -- mana-mana laluan tulis MASA HADAPAN yang terlupa mengeluarkan barisnya.
 --
 -- Laluan avatar (`applyAvatar`) sentiasa menyemak ralatnya, jadi klausa
--- `profiles` lebih kepada simetri drpd pembaikan pepijat — tapi tanpa ia,
+-- `profiles` lebih kepada simetri drpd pembaikan pepijat - tapi tanpa ia,
 -- query ni betul atas sebab yang bergantung pada fail LAIN, dan itulah
 -- tepatnya bentuk kelemahan yang L28 wujud untuk hapuskan.
 select pu.* from pending_uploads pu
@@ -65,7 +65,7 @@ order by pu.created_at
 limit $2;
 
 -- name: DeletePendingUploadByKey :exec
--- Tanpa skop user — untuk penyapu latar, bukan permintaan pengguna.
+-- Tanpa skop user - untuk penyapu latar, bukan permintaan pengguna.
 delete from pending_uploads where r2_key = $1;
 
 -- name: DeleteDoneDeletedUploadsBefore :execrows

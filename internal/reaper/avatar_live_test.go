@@ -69,7 +69,7 @@ func TestAvatarLamaBetulBetulDipadamDariR2(t *testing.T) {
 	New(q, r2, time.Minute).RunOnce(ctx)
 
 	if err := r2.VerifyImageFormat(ctx, oldKey); err == nil {
-		t.Fatal("avatar lama MASIH dalam R2 — storan bocor setiap kali tukar gambar")
+		t.Fatal("avatar lama MASIH dalam R2 - storan bocor setiap kali tukar gambar")
 	}
 
 	// Gilir mesti ditanda selesai, bukan dicuba berulang selamanya.

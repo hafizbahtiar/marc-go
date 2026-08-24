@@ -119,12 +119,12 @@ func (h *CommentHandler) Create(c *gin.Context) {
 // authorOf bina blok `author` untuk respons komen tunggal (Create/Update).
 //
 // Best-effort dengan sengaja: profil yang gagal dibaca memulangkan blok
-// kosong dan bukan menggagalkan permintaan — komen SUDAH tersimpan pada
+// kosong dan bukan menggagalkan permintaan - komen SUDAH tersimpan pada
 // tahap ni, jadi 500 di sini akan membuat klien fikir suntingannya gagal
 // sedangkan ia berjaya.
 //
 // Dikongsi antara Create dan Update supaya kedua-duanya tak boleh
-// terpesong — Update dulu tak mengisi medan ni langsung (L34).
+// terpesong - Update dulu tak mengisi medan ni langsung (L34).
 func (h *CommentHandler) authorOf(ctx context.Context, userID uuid.UUID) authorResponse {
 	author := authorResponse{}
 	profile, err := h.queries.GetProfileByUserID(ctx, userID)
@@ -259,7 +259,7 @@ func (h *CommentHandler) Update(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
 
-	// GetCommentByID (bukan GetCommentAuthorID) — kandungan lama diperlukan
+	// GetCommentByID (bukan GetCommentAuthorID) - kandungan lama diperlukan
 	// untuk jejak audit, dan baris yang sama dah bawa author_id.
 	existing, err := h.queries.GetCommentByID(ctx, id)
 	if err != nil {
@@ -304,14 +304,14 @@ func (h *CommentHandler) Update(c *gin.Context) {
 	}
 
 	// Author + kiraan like DIISI (Opus verify 2026-08-22, L34). Sebelum
-	// ni respons PATCH tinggalkan ketiga-tiganya pada nilai sifar —
+	// ni respons PATCH tinggalkan ketiga-tiganya pada nilai sifar -
 	// `authorResponse` ialah struct NILAI, jadi ia bersiri sebagai
 	// {"member_id":"","display_name":null,"avatar_url":null} dan bukan
 	// tiada. Klien yang menulis ganti komen dalam senarai daripada
 	// respons ni (corak biasa selepas edit) nampak nama, avatar DAN
 	// kiraan like penulis lenyap sehingga muat semula.
 	//
-	// Bentuknya kini padan Create dan List — ketiga-tiga laluan komen
+	// Bentuknya kini padan Create dan List - ketiga-tiga laluan komen
 	// memulangkan `commentResponse` yang LENGKAP.
 	likeCount, likedByMe := h.likeStateOf(ctx, id, userID)
 
@@ -362,7 +362,7 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// Snapshot penuh pada padam — selepas ni kandungan tak dapat dibaca
+	// Snapshot penuh pada padam - selepas ni kandungan tak dapat dibaca
 	// semula melalui API, jadi jejak audit satu-satunya rekod apa yang
 	// dibuang dan oleh siapa (management boleh padam comment orang lain).
 	if err := audit.Record(ctx, q, audit.Entry{
@@ -409,13 +409,13 @@ func (h *CommentHandler) Like(c *gin.Context) {
 		return
 	}
 
-	// Beritahu penulis komen (L35, keputusan produk 2026-08-22) —
+	// Beritahu penulis komen (L35, keputusan produk 2026-08-22) -
 	// padanan gelagat like pada POST, yang sudah memberitahu sejak awal.
 	//
 	// `rows > 0` WAJIB, bukan kemasan: `LikeComment` ialah `on conflict
 	// do nothing`, jadi menghantar like berulang ialah no-op di DB.
 	// Memberitahu tanpa syarat menjadikan endpoint ni gelung harassment
-	// bersasar — tepat pepijat yang L18 baiki pada laluan post. Rate
+	// bersasar - tepat pepijat yang L18 baiki pada laluan post. Rate
 	// limiter TIADA pada route like (dedup inilah mekanismenya), jadi
 	// guard ni satu-satunya yang menahannya.
 	if rows > 0 {

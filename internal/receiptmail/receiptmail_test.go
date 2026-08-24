@@ -16,7 +16,7 @@ func TestFormatRinggit(t *testing.T) {
 		{1000, "", "RM10.00"},
 		{2500, "usd", "USD25.00"},
 		// `activities.currency` default UPPERCASE ('MYR', beza drpd
-		// `donations`/`registration_payments` yang lowercase 'myr') —
+		// `donations`/`registration_payments` yang lowercase 'myr') -
 		// tanpa lower-case dulu sebelum banding, ni tersalah anggap
 		// mata wang ASING dan cetak "MYR35.00" bukan "RM35.00" (Opus
 		// verify 2026-08-24, dijumpai pada versi SEBELUM refactor ni).
@@ -29,7 +29,7 @@ func TestFormatRinggit(t *testing.T) {
 	}
 }
 
-// Nama/tajuk aktiviti (Purpose)/ref datang drpd input pengguna/gateway —
+// Nama/tajuk aktiviti (Purpose)/ref datang drpd input pengguna/gateway -
 // tanpa escape, jadi HTML injection vector dlm emel yang kita hantar.
 func TestRenderHTMLEscapeXSS(t *testing.T) {
 	html := renderHTML(
@@ -41,13 +41,13 @@ func TestRenderHTMLEscapeXSS(t *testing.T) {
 		time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC),
 	)
 	if strings.Contains(html, "<script>") {
-		t.Fatal("nama tak di-escape — <script> tag mentah lolos ke HTML emel")
+		t.Fatal("nama tak di-escape - <script> tag mentah lolos ke HTML emel")
 	}
 	if strings.Contains(html, `<b>2026</b>`) {
-		t.Fatal("purpose tak di-escape — tag HTML mentah lolos ke HTML emel")
+		t.Fatal("purpose tak di-escape - tag HTML mentah lolos ke HTML emel")
 	}
 	if strings.Contains(html, "<img src=x") {
-		t.Fatal("gateway_ref tak di-escape — tag HTML mentah lolos ke HTML emel")
+		t.Fatal("gateway_ref tak di-escape - tag HTML mentah lolos ke HTML emel")
 	}
 	if !strings.Contains(html, "&lt;script&gt;") {
 		t.Fatal("nama sepatutnya muncul dlm bentuk di-escape")
@@ -55,7 +55,7 @@ func TestRenderHTMLEscapeXSS(t *testing.T) {
 }
 
 // Merger templat (fee + donation -> satu skeleton) senang tercemar
-// silang tanpa disedari — kunci copy PALING sensitif setiap kind: nota
+// silang tanpa disedari - kunci copy PALING sensitif setiap kind: nota
 // MAIWP (disclaimer undang-undang) WAJIB pada donation, WAJIB TIADA
 // pada fee (yuran ialah bayaran rasmi kelab, bukan sumbangan peribadi).
 func TestRenderHTMLKindCopyTidakBercampur(t *testing.T) {
@@ -73,7 +73,7 @@ func TestRenderHTMLKindCopyTidakBercampur(t *testing.T) {
 	for _, k := range []Kind{KindRegistrationFee, KindActivityFee} {
 		feeHTML := renderHTML(kindConfigs[k], "Ali", "Yuran Pendaftaran Ahli", "RM10.00", "ref1", time.Now())
 		if strings.Contains(feeHTML, "MAIWP") {
-			t.Errorf("resit fee (%s) TAK patut bawa disclaimer MAIWP — itu konteks donation sahaja", k)
+			t.Errorf("resit fee (%s) TAK patut bawa disclaimer MAIWP - itu konteks donation sahaja", k)
 		}
 		if !strings.Contains(feeHTML, "Jumlah Dibayar") {
 			t.Errorf("resit fee (%s) sepatutnya label \"Jumlah Dibayar\"", k)
@@ -86,7 +86,7 @@ func TestRenderHTMLKindCopyTidakBercampur(t *testing.T) {
 
 func TestSendKindTakDikenaliTakPanic(t *testing.T) {
 	// Kind rekaan (bukan salah satu KindRegistrationFee/KindActivityFee/
-	// KindDonation) — kindConfigs lookup gagal (`ok == false`). Send
+	// KindDonation) - kindConfigs lookup gagal (`ok == false`). Send
 	// mesti log + return, BUKAN panic/pulang ralat ke caller.
 	Send(t.Context(), nil, Receipt{Kind: Kind("tidak-wujud"), To: "a@b.com"})
 }

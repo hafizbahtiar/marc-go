@@ -26,12 +26,12 @@ type CreateRegistrationPaymentParams struct {
 }
 
 // SENGAJA tanpa `gateway_ref` (L29, 2026-08-22). Baris ditulis SEBELUM
-// bil gateway dicipta, jadi ref belum wujud pada titik ni — ia diisi
+// bil gateway dicipta, jadi ref belum wujud pada titik ni - ia diisi
 // oleh `SetRegistrationPaymentGatewayRef` sebaik createBill pulang.
 //
 // Susunan ni yang menjadikan bil yatim mustahil: kalau proses mati
 // antara INSERT dan createBill, yang tinggal ialah baris 'pending' tanpa
-// ref — kelihatan, boleh diaudit, dan TIADA bil untuk dibayar. Susunan
+// ref - kelihatan, boleh diaudit, dan TIADA bil untuk dibayar. Susunan
 // lama (createBill dahulu) meninggalkan yang sebaliknya: bil yang boleh
 // dibayar tanpa baris, yang webhook mahupun reconcile tak dapat lihat.
 func (q *Queries) CreateRegistrationPayment(ctx context.Context, arg CreateRegistrationPaymentParams) (RegistrationPayment, error) {
@@ -63,7 +63,7 @@ returning id, user_id, amount_cents, currency, gateway, gateway_ref, status, cre
 `
 
 // Tandakan percubaan bayaran 'pending' sebagai 'failed' (bil tamat tempoh
-// atau dibatalkan admin). Guard `status = 'pending'` — 'succeeded'
+// atau dibatalkan admin). Guard `status = 'pending'` - 'succeeded'
 // terminal; reconcile/webhook lewat boleh naik 'failed'->'succeeded'.
 func (q *Queries) ExpireRegistrationPayment(ctx context.Context, id uuid.UUID) (RegistrationPayment, error) {
 	row := q.db.QueryRow(ctx, expireRegistrationPayment, id)
@@ -88,7 +88,7 @@ order by created_at desc
 limit 1
 `
 
-// Bil yuran pendaftaran 'pending' TERKINI untuk seorang ahli — admin
+// Bil yuran pendaftaran 'pending' TERKINI untuk seorang ahli - admin
 // batalkan bil sebelum langkau bayaran, atau sapuan lapuk.
 func (q *Queries) GetLatestPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (RegistrationPayment, error) {
 	row := q.db.QueryRow(ctx, getLatestPendingRegistrationPayment, userID)
@@ -113,18 +113,18 @@ order by (status = 'succeeded') desc, created_at desc
 limit 1
 `
 
-// Untuk `/me` — Flutter perlukan ni supaya ahli nampak bayaran mereka
+// Untuk `/me` - Flutter perlukan ni supaya ahli nampak bayaran mereka
 // berjaya/gagal/menunggu, bukan senyap (gap ditemui 2026-08-15: bayaran
 // gagal/berjaya dua-dua direkod betul dalam DB tapi client tak pernah
 // baca, jadi ahli nampak "tiada apa berlaku" tak kira hasil sebenar).
-// `pgx.ErrNoRows` bermakna ahli tak pernah cuba bayar langsung — caller
+// `pgx.ErrNoRows` bermakna ahli tak pernah cuba bayar langsung - caller
 // (Go) layan tu sebagai null, bukan ralat.
 //
 // Utamakan 'succeeded' dulu (Opus verify 2026-08-15): `Checkout` cuma
-// sekat bayaran BERULANG bila dah ada baris 'succeeded' — kalau ahli
+// sekat bayaran BERULANG bila dah ada baris 'succeeded' - kalau ahli
 // tekan Bayar dua kali (baris A, lepas tu B) dan bayar bil A dulu,
 // 'order by created_at desc' semata-mata akan pulang B ('pending', baris
-// LEBIH BAHARU) walhal A dah 'succeeded' — ahli nampak "sedang disahkan"
+// LEBIH BAHARU) walhal A dah 'succeeded' - ahli nampak "sedang disahkan"
 // selama-lamanya walau dah bayar. `(status = 'succeeded') desc` letak
 // baris succeeded MANA-MANA PUN di atas dulu; `created_at desc` cuma
 // pemisah antara baris tak-succeeded (paparkan percubaan TERKINI).
@@ -162,7 +162,7 @@ type GetMyRegistrationPaymentByIDRow struct {
 	Email       string             `json:"email"`
 }
 
-// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
+// Resit - hanya baris SENDIRI (user_id caller), sertakan medan papar
 // (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
 func (q *Queries) GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error) {
 	row := q.db.QueryRow(ctx, getMyRegistrationPaymentByID, arg.ID, arg.UserID)
@@ -189,19 +189,19 @@ select exists(
 )
 `
 
-// Baris 'pending' MANA-MANA PUN — SENGAJA TANPA tapisan `gateway_ref is
+// Baris 'pending' MANA-MANA PUN - SENGAJA TANPA tapisan `gateway_ref is
 // not null` (Opus verify 2026-08-24: tak macam
 // ListPendingRegistrationPaymentsOlderThan, baris `gateway_ref` NULL di
 // sini BUKAN bukti "tiada bil sebenar". Lihat komen "TETINGKAP BAKI" di
-// `registration_payment.go` `Checkout` — createBill BOLEH berjaya
+// `registration_payment.go` `Checkout` - createBill BOLEH berjaya
 // [bil sebenar wujud di ToyyibPay] tapi `SetRegistrationPaymentGatewayRef`
 // gagal selepas tu, meninggalkan baris 'pending' TANPA ref walaupun bil
 // boleh dibayar. Tapisan ref bertujuan bagi query reconcile [nak tahu
 // bil MANA nak poll], bukan bagi gate ni [nak tahu ADA-TAK bil terbuka
-// langsung] — dua soalan berbeza.
+// langsung] - dua soalan berbeza.
 //
 // Dipakai oleh gate langkau-bayaran (`ApproveMember` bypass, admin/
-// superadmin) — kalau baris begini wujud, ahli boleh terima 2 pengesahan
+// superadmin) - kalau baris begini wujud, ahli boleh terima 2 pengesahan
 // bayaran (tunai + bil online lama yang masih dibayar lepas approve),
 // jadi bypass MESTI ditolak sehingga baris lama diselesaikan (webhook/
 // pautan manual tandakan succeeded/failed) atau tamat tempoh
@@ -233,7 +233,7 @@ order by created_at desc
 `
 
 // Sejarah PENUH percubaan yuran pendaftaran seorang ahli (bukan cuma
-// status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin
+// status terkini macam GetLatestRegistrationPaymentStatus) - utk skrin
 // "Sejarah Bayaran Saya".
 func (q *Queries) ListMyRegistrationPayments(ctx context.Context, userID uuid.UUID) ([]RegistrationPayment, error) {
 	rows, err := q.db.Query(ctx, listMyRegistrationPayments, userID)
@@ -281,11 +281,11 @@ type ListPendingRegistrationPaymentsOlderThanParams struct {
 }
 
 // Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
-// pada gateway (internal/paymentreconcile) — bukan `status <> 'succeeded'`
+// pada gateway (internal/paymentreconcile) - bukan `status <> 'succeeded'`
 // macam query UPDATE di atas, sengaja `status = 'pending'` sahaja: baris
 // 'failed' TAK perlu disemak semula (terminal jugak, sama macam
 // 'succeeded', reconcile tak sepatutnya "hidupkan semula" bayaran gagal
-// tanpa ahli cuba lagi secara eksplisit — bayaran baharu akan hasilkan
+// tanpa ahli cuba lagi secara eksplisit - bayaran baharu akan hasilkan
 // baris baharu).
 //
 // TINGKAP ATAS + LIMIT (L30, 2026-08-22). Sebelum ni query ni ada had
@@ -293,12 +293,12 @@ type ListPendingRegistrationPaymentsOlderThanParams struct {
 // daripada 'pending': bil ToyyibPay yang tak dibayar pulang
 // `No data found!` selama-lamanya, jadi `CheckStatus` pulang "pending"
 // selama-lamanya. Setiap checkout terbiar kekal dalam senarai semakan
-// SELAMANYA, dan setiap 30 minit ia satu panggilan HTTP keluar lagi —
+// SELAMANYA, dan setiap 30 minit ia satu panggilan HTTP keluar lagi -
 // bebanan yang membesar secara monotonik sepanjang hayat sistem.
 //
 // `stale_before` = had bawah (cukup umur untuk layak disemak).
 // `oldest` = had atas: lebih tua drpd ni bukan lagi kerja rekonsiliasi,
-// ia kerja pembersihan. Baris begitu TIDAK hilang — ia kekal dalam DB
+// ia kerja pembersihan. Baris begitu TIDAK hilang - ia kekal dalam DB
 // dan tetap kelihatan melalui /admin/payments; ia cuma berhenti dipoll.
 // `gateway_ref is not null` (L29, 2026-08-22): baris tanpa ref bermakna
 // createBill tak pernah berjaya, jadi tiada bil untuk ditanya pada
@@ -346,7 +346,7 @@ type ListStalePendingRegistrationPaymentsParams struct {
 	Limit     int32              `json:"limit"`
 }
 
-// Baris 'pending' lebih tua drpd cutoff — internal/registrationsweep.
+// Baris 'pending' lebih tua drpd cutoff - internal/registrationsweep.
 // TIADA tapisan gateway_ref: baris tanpa ref (createBill gagal sebelum
 // ref) turut perlu ditandakan 'failed' supaya gate bypass/admin tak
 // tersekat. Baris dengan ref disemak gateway DULU dalam Go sebelum
@@ -388,7 +388,7 @@ where id = $1 and gateway_ref is null
 
 // Dipanggil bila createBill GAGAL selepas baris dicipta. Baris dikekalkan
 // (bukan dipadam) supaya sejarah "Bayaran Saya" ahli menunjukkan
-// percubaan itu benar-benar berlaku — dan `ListPendingRegistrationPayments
+// percubaan itu benar-benar berlaku - dan `ListPendingRegistrationPayments
 // OlderThan` tak perlu menapis baris yang takkan pernah ada bil.
 //
 // Guard `gateway_ref is null` memastikan ni tak boleh menjatuhkan bayaran

@@ -128,7 +128,7 @@ type LikeCommentParams struct {
 }
 
 // `:execrows`, bukan `:exec` (L35, 2026-08-22). Handler perlu tahu sama
-// ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen —
+// ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen -
 // `on conflict do nothing` bermakna like berulang ialah no-op, dan
 // memberitahu tanpa syarat menjadikan endpoint ni gelung spam push
 // bersasar. Corak SAMA yang L18 tegakkan pada `LikePost`; ia dibawa ke
@@ -186,7 +186,7 @@ type PostsLikedByUserParams struct {
 	PostIds []uuid.UUID `json:"post_ids"`
 }
 
-// Untuk tandakan "liked_by_me" bila list post — pulang subset post_ids
+// Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
 // yang user ni dah like.
 func (q *Queries) PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, postsLikedByUser, arg.UserID, arg.PostIds)

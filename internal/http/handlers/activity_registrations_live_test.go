@@ -28,7 +28,7 @@ import (
 // semakan "aktiviti belum dibuka"/"pendaftaran ditutup" dan bukan pada
 // perkara yang ia niat uji.
 //
-// Dikongsi dengan ujian kehadiran/sijil (Task 8-9) — jangan tukar
+// Dikongsi dengan ujian kehadiran/sijil (Task 8-9) - jangan tukar
 // tandatangan tanpa periksa pemanggil lain.
 func seedActivityWithCapacity(t *testing.T, pool *pgxpool.Pool, capacity int) uuid.UUID {
 	t.Helper()
@@ -37,7 +37,7 @@ func seedActivityWithCapacity(t *testing.T, pool *pgxpool.Pool, capacity int) uu
 	var categoryID uuid.UUID
 	if err := pool.QueryRow(ctx,
 		`select id from activity_categories where key = 'badminton'`).Scan(&categoryID); err != nil {
-		t.Fatalf("kategori seed tiada — jalankan migration atas DB ujian: %v", err)
+		t.Fatalf("kategori seed tiada - jalankan migration atas DB ujian: %v", err)
 	}
 
 	start := time.Now().Add(720 * time.Hour)
@@ -68,9 +68,9 @@ func seedActivityWithCapacity(t *testing.T, pool *pgxpool.Pool, capacity int) uu
 
 // seedUsers cipta n pengguna approved (users + profiles), ikut corak
 // seedMember dalam profile_status_live_test.go, dan buang semuanya semula
-// melalui t.Cleanup — DB ujian dikongsi antara ujian dalam pakej ini.
+// melalui t.Cleanup - DB ujian dikongsi antara ujian dalam pakej ini.
 //
-// Dikongsi dengan Task 8-9 — jangan tukar tandatangan tanpa periksa
+// Dikongsi dengan Task 8-9 - jangan tukar tandatangan tanpa periksa
 // pemanggil lain.
 func seedUsers(t *testing.T, pool *pgxpool.Pool, n int) []uuid.UUID {
 	t.Helper()
@@ -90,7 +90,7 @@ func seedUsers(t *testing.T, pool *pgxpool.Pool, n int) []uuid.UUID {
 
 // warmPool paksa pgxpool mewujudkan n sambungan sebelum ujian perlumbaan
 // bermula, dan pulangkan semula ke pool. Kalau n melebihi had pool, ia
-// dikepit — meminta lebih daripada MaxConns akan tergantung.
+// dikepit - meminta lebih daripada MaxConns akan tergantung.
 func warmPool(t *testing.T, pool *pgxpool.Pool, n int) {
 	t.Helper()
 	if max := int(pool.Config().MaxConns); n > max {
@@ -112,7 +112,7 @@ func warmPool(t *testing.T, pool *pgxpool.Pool, n int) {
 // ---- registerTx ----
 
 // Ujian paling penting dalam modul ini. Tanpa ia, `select ... for update`
-// dalam registerTx hanya niat baik — tiada apa yang membuktikan dua ahli
+// dalam registerTx hanya niat baik - tiada apa yang membuktikan dua ahli
 // tidak boleh merebut slot terakhir yang sama.
 func TestRegisterPerlumbaanSlotTerakhir(t *testing.T) {
 	pool := activityTestPool(t)
@@ -123,7 +123,7 @@ func TestRegisterPerlumbaanSlotTerakhir(t *testing.T) {
 
 	// Panaskan pool DAHULU. pgxpool mencipta sambungan secara malas, dan
 	// beberapa milisaat untuk mewujudkan setiap satu sudah cukup untuk
-	// menyerikan goroutine secara tak sengaja — perlumbaan yang tak pernah
+	// menyerikan goroutine secara tak sengaja - perlumbaan yang tak pernah
 	// berlaku, dan ujian yang lulus atas sebab yang salah.
 	warmPool(t, pool, len(users))
 
@@ -164,7 +164,7 @@ func TestRegisterPerlumbaanSlotTerakhir(t *testing.T) {
 		t.Errorf("ditolak 'penuh' = %d, mahu %d", penuh, len(users)-1)
 	}
 
-	// Semakan kedua terhadap DB — kaunter dalam-memori boleh menipu.
+	// Semakan kedua terhadap DB - kaunter dalam-memori boleh menipu.
 	q := sqlc.New(pool)
 	n, err := q.CountActiveRegistrations(ctx, activityID)
 	if err != nil {
@@ -203,7 +203,7 @@ func TestDaftarSemulaSelepasBatal(t *testing.T) {
 }
 
 // Token check-in menentukan siapa boleh ditandakan hadir, dan kehadiran
-// menentukan siapa dapat sijil — jadi ia mesti legap dan tak berulang.
+// menentukan siapa dapat sijil - jadi ia mesti legap dan tak berulang.
 func TestCheckinTokenUnikDanLegap(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -313,7 +313,7 @@ func TestRegisterHandlerMemetakanRalat(t *testing.T) {
 		t.Errorf("daftar berulang: status = %d, mahu 409 (badan: %s)", rec.Code, rec.Body.String())
 	}
 
-	// Kapasiti 1 — ahli kedua mesti ditolak 409, bukan 500.
+	// Kapasiti 1 - ahli kedua mesti ditolak 409, bukan 500.
 	rec = registrationCall(t, pool, users[1], http.MethodPost, "/activities/x/registration",
 		idParam(activityID), (*RegistrationHandler).Register)
 	if rec.Code != http.StatusConflict {
@@ -350,7 +350,7 @@ func TestCancelHandler(t *testing.T) {
 	}
 }
 
-// Senarai pendaftar mendedahkan nama sebenar ahli lain — pengurusan sahaja.
+// Senarai pendaftar mendedahkan nama sebenar ahli lain - pengurusan sahaja.
 func TestListForActivityPerluPengurusan(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -382,7 +382,7 @@ func TestListForActivityPerluPengurusan(t *testing.T) {
 
 // attendedSessionIDs baca medan attended_session_ids satu baris respons dan
 // pulangkan ia sebagai set. Type assertion pada []any ialah separuh ujian:
-// `null` menyahkod kepada nil dan GAGAL assertion itu — itulah bentuk yang
+// `null` menyahkod kepada nil dan GAGAL assertion itu - itulah bentuk yang
 // akan meletupkan `.map` pada klien Flutter.
 func attendedSessionIDs(t *testing.T, row map[string]any) map[string]bool {
 	t.Helper()
@@ -404,7 +404,7 @@ func attendedSessionIDs(t *testing.T, row map[string]any) map[string]bool {
 
 // Skrin kehadiran pengurusan membaca senarai ini untuk MENYEMAI suisnya.
 // Tanpa attended_session_ids setiap suis bermula OFF walau siapa pun sudah
-// ditanda — dan kerana suis hanya boleh dihidupkan, laluan DELETE
+// ditanda - dan kerana suis hanya boleh dihidupkan, laluan DELETE
 // .../attendance/:rid menjadi kod mati.
 //
 // Silang-cemar di sini ialah kelas pepijat yang sama seperti pautan sijil
@@ -418,7 +418,7 @@ func TestListForActivityMembawaKehadiranSetiapSesi(t *testing.T) {
 
 	// Tetingkap check-in terbuka supaya markAttendanceTx tidak ditolak atas
 	// sebab masa. Sesi seq-1 daripada seedActivityWithCapacity (720 jam ke
-	// hadapan) kekal tanpa kehadiran — ia menguji bahawa sesi tanpa tanda
+	// hadapan) kekal tanpa kehadiran - ia menguji bahawa sesi tanpa tanda
 	// tidak menyelinap masuk.
 	now := time.Now()
 	sesi1 := seedSession(t, pool, activityID, now.Add(-time.Hour), now.Add(time.Hour))
@@ -494,7 +494,7 @@ func TestListForActivityMembawaKehadiranSetiapSesi(t *testing.T) {
 		}
 	}
 
-	// Kosong mesti bersiri sebagai [] dan bukan null — klien yang memanggil
+	// Kosong mesti bersiri sebagai [] dan bukan null - klien yang memanggil
 	// .map atas null akan terhempas.
 	if !strings.Contains(rec.Body.String(), `"attended_session_ids":[]`) {
 		t.Errorf("badan tiada `\"attended_session_ids\":[]` untuk pendaftaran tanpa kehadiran: %s",

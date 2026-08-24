@@ -123,7 +123,7 @@ func TestAutoCompleteAktivitiYangDahTamat(t *testing.T) {
 
 	tamat := seedActivity(t, ctx, pool, "published", -48*time.Hour, 2*time.Hour)
 	akanDatang := seedActivity(t, ctx, pool, "published", 48*time.Hour, 2*time.Hour)
-	// Sedang BERJALAN — sudah bermula tapi belum tamat.
+	// Sedang BERJALAN - sudah bermula tapi belum tamat.
 	sedangJalan := seedActivity(t, ctx, pool, "published", -1*time.Hour, 3*time.Hour)
 
 	r.RunOnce(ctx)
@@ -135,12 +135,12 @@ func TestAutoCompleteAktivitiYangDahTamat(t *testing.T) {
 		t.Errorf("aktiviti AKAN DATANG ditanda %q", got)
 	}
 	if got := statusOf(t, ctx, pool, sedangJalan); got != "published" {
-		t.Errorf("aktiviti yang SEDANG BERJALAN ditanda %q — kehadiran masih "+
+		t.Errorf("aktiviti yang SEDANG BERJALAN ditanda %q - kehadiran masih "+
 			"boleh ditanda, ia belum selesai", got)
 	}
 }
 
-// Guard `status = 'published'` — draf dan yang dibatalkan tak boleh
+// Guard `status = 'published'` - draf dan yang dibatalkan tak boleh
 // dinaikkan ke 'completed' hanya kerana tarikhnya berlalu. Aktiviti yang
 // DIBATALKAN khususnya: menandanya 'completed' akan menjadikannya layak
 // untuk penerbitan sijil.
@@ -183,7 +183,7 @@ func TestPeringatanDihantarSekaliSahaja(t *testing.T) {
 	r.RunOnce(ctx)
 
 	if got := countNotifications(t, ctx, pool, id); got != 2 {
-		t.Errorf("notifikasi selepas pusingan KEDUA = %d, mahu kekal 2 — "+
+		t.Errorf("notifikasi selepas pusingan KEDUA = %d, mahu kekal 2 - "+
 			"tapisan `reminder_sent_at is null` hilang, setiap ticker akan "+
 			"membanjiri pendaftar dgn push berulang", got)
 	}
@@ -194,7 +194,7 @@ func TestPeringatanDihantarSekaliSahaja(t *testing.T) {
 // `RunOnce` yang dijalankan dua kali dalam satu proses TIDAK menguji ini:
 // pusingan kedua tak pernah melihat aktiviti itu langsung, kerana
 // `ListActivitiesNeedingReminder` sudah menapisnya. Yang menahan race
-// SEBENAR ialah `where reminder_sent_at is null` pada UPDATE — bila DUA
+// SEBENAR ialah `where reminder_sent_at is null` pada UPDATE - bila DUA
 // replika menyenaraikan baris yang sama SEBELUM salah satu sempat
 // menandanya.
 //
@@ -222,7 +222,7 @@ func TestMarkReminderGuardMenangRaceReplika(t *testing.T) {
 		t.Fatalf("MarkActivityReminderSent (kedua): %v", err)
 	}
 	if kedua != 0 {
-		t.Errorf("baris terjejas (kedua) = %d, mahu 0 — guard "+
+		t.Errorf("baris terjejas (kedua) = %d, mahu 0 - guard "+
 			"`reminder_sent_at is null` hilang daripada UPDATE, jadi N replika "+
 			"akan menghantar N push kepada setiap pendaftar", kedua)
 	}
@@ -230,8 +230,8 @@ func TestMarkReminderGuardMenangRaceReplika(t *testing.T) {
 
 // Tetingkap H-1 ialah `starts_at > now() and starts_at <= now() + 24h`.
 // Sempadan bawah (`starts_at > now()`) penting: tanpanya, aktiviti yang
-// SUDAH bermula — atau yang sudah lama berlalu, kalau sapuan tak jalan
-// sekian lama — akan mencetuskan peringatan "bermula tidak lama lagi".
+// SUDAH bermula - atau yang sudah lama berlalu, kalau sapuan tak jalan
+// sekian lama - akan mencetuskan peringatan "bermula tidak lama lagi".
 func TestPeringatanHanyaDalamTetingkapH1(t *testing.T) {
 	pool, _, r, ctx := setup(t)
 
@@ -243,7 +243,7 @@ func TestPeringatanHanyaDalamTetingkapH1(t *testing.T) {
 	r.RunOnce(ctx)
 
 	if got := countNotifications(t, ctx, pool, terlaluAwal); got != 0 {
-		t.Errorf("aktiviti 72 jam lagi dapat %d peringatan — terlalu awal", got)
+		t.Errorf("aktiviti 72 jam lagi dapat %d peringatan - terlalu awal", got)
 	}
 	if got := countNotifications(t, ctx, pool, sudahBermula); got != 0 {
 		t.Errorf("aktiviti yang SUDAH bermula dapat %d peringatan "+
@@ -251,7 +251,7 @@ func TestPeringatanHanyaDalamTetingkapH1(t *testing.T) {
 	}
 }
 
-// Draf tak boleh menghantar peringatan — ahli tak sepatutnya tahu ia
+// Draf tak boleh menghantar peringatan - ahli tak sepatutnya tahu ia
 // wujud pun.
 func TestPeringatanTidakDihantarUntukDraf(t *testing.T) {
 	pool, _, r, ctx := setup(t)
@@ -262,13 +262,13 @@ func TestPeringatanTidakDihantarUntukDraf(t *testing.T) {
 	r.RunOnce(ctx)
 
 	if got := countNotifications(t, ctx, pool, id); got != 0 {
-		t.Errorf("aktiviti DRAF menghantar %d peringatan — ahli tak sepatutnya "+
+		t.Errorf("aktiviti DRAF menghantar %d peringatan - ahli tak sepatutnya "+
 			"tahu ia wujud", got)
 	}
 }
 
 // Pendaftaran yang DIBATALKAN tak boleh menerima peringatan.
-// `ListRegistrationsByActivity` yang menapisnya — ujian ni mengunci
+// `ListRegistrationsByActivity` yang menapisnya - ujian ni mengunci
 // kebergantungan itu supaya menukar query tu tak senyap memulakan
 // penghantaran push kepada orang yang sudah batal.
 func TestPeringatanTidakDihantarKepadaYangSudahBatal(t *testing.T) {

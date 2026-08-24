@@ -21,14 +21,14 @@ import (
 // ---- Helper seed ----
 
 // seedSession tambah satu sesi kepada aktiviti sedia ada dengan tetingkap
-// masa yang ditentukan pemanggil — itulah yang membolehkan ujian meletakkan
+// masa yang ditentukan pemanggil - itulah yang membolehkan ujian meletakkan
 // sesi di dalam atau di luar tetingkap check-in.
 //
 // seq dikira daripada sesi sedia ada kerana unique(activity_id, seq):
 // seedActivityWithCapacity sudah memasukkan seq 1, jadi seq tetap akan
 // berlanggar pada pemanggil kedua.
 //
-// Dikongsi dengan Task 9 — jangan tukar tandatangan tanpa periksa pemanggil
+// Dikongsi dengan Task 9 - jangan tukar tandatangan tanpa periksa pemanggil
 // lain.
 func seedSession(t *testing.T, pool *pgxpool.Pool, activityID uuid.UUID, start, end time.Time) uuid.UUID {
 	t.Helper()
@@ -52,7 +52,7 @@ func seedSession(t *testing.T, pool *pgxpool.Pool, activityID uuid.UUID, start, 
 }
 
 // attendanceAuditRows baca jejak audit kehadiran untuk satu pendaftaran.
-// entity_id ialah id baris kehadiran, yang hilang selepas Unmark — jadi
+// entity_id ialah id baris kehadiran, yang hilang selepas Unmark - jadi
 // carian dibuat melalui new_values/old_values.registration_id.
 func attendanceAuditRows(t *testing.T, pool *pgxpool.Pool, registrationID uuid.UUID) []map[string]any {
 	t.Helper()
@@ -109,7 +109,7 @@ func TestTandaKehadiranDiLuarTetingkapDitolak(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
 
-	// Sesi yang tamat tiga hari lalu — jauh di luar padding 2 jam.
+	// Sesi yang tamat tiga hari lalu - jauh di luar padding 2 jam.
 	activityID := seedActivityWithCapacity(t, pool, 10)
 	sessionID := seedSession(t, pool, activityID,
 		time.Now().Add(-72*time.Hour), time.Now().Add(-70*time.Hour))
@@ -140,7 +140,7 @@ func TestTandaKehadiranDuaKaliIdempoten(t *testing.T) {
 	}
 
 	// QR dipegang di depan lens menghantar permintaan berulang. Yang kedua
-	// bukan ralat — ia hanya tiada kerja, dan UI perlu tahu bezanya supaya
+	// bukan ralat - ia hanya tiada kerja, dan UI perlu tahu bezanya supaya
 	// ia boleh menunjukkan "sudah hadir" berbanding "✓ baru ditanda".
 	second, err := markAttendanceTx(ctx, pool, sessionID, reg.ID, "scan", audit.Actor{UserID: reg.UserID}, nil)
 	if err != nil {
@@ -166,7 +166,7 @@ func TestTandaKehadiranDuaKaliIdempoten(t *testing.T) {
 // Tiada FK yang merentasi kedua-dua hubungan: `activity_attendances` merujuk
 // registration dan session secara berasingan, jadi tiada apa dalam skema
 // menghalang kehadiran aktiviti A direkod atas sesi aktiviti B. Semakan itu
-// hidup dalam markAttendanceTx sahaja — kalau ia hilang, kiraan kelayakan
+// hidup dalam markAttendanceTx sahaja - kalau ia hilang, kiraan kelayakan
 // sijil akan terlebih kira secara senyap.
 func TestTandaKehadiranSesiAktivitiLain(t *testing.T) {
 	pool := activityTestPool(t)
@@ -174,7 +174,7 @@ func TestTandaKehadiranSesiAktivitiLain(t *testing.T) {
 
 	_, _, reg := seedKehadiran(t, pool)
 
-	// Aktiviti kedua, sesi kedua — pendaftaran di atas langsung tiada
+	// Aktiviti kedua, sesi kedua - pendaftaran di atas langsung tiada
 	// kaitan dengannya.
 	lainID := seedActivityWithCapacity(t, pool, 10)
 	sesiLain := seedSession(t, pool, lainID,
@@ -197,8 +197,8 @@ func TestTandaKehadiranSesiAktivitiLain(t *testing.T) {
 // penggantian sesi hilang tanpa jejak. Kunci pada SATU belah sahaja tidak
 // menutup lubang itu.
 //
-// Ujian memegang `for update` atas baris aktiviti — persis apa yang laluan
-// penggantian sesi buat — dan menuntut markAttendanceTx TERSEKAT di situ.
+// Ujian memegang `for update` atas baris aktiviti - persis apa yang laluan
+// penggantian sesi buat - dan menuntut markAttendanceTx TERSEKAT di situ.
 func TestTandaKehadiranMenungguKunciAktiviti(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -207,7 +207,7 @@ func TestTandaKehadiranMenungguKunciAktiviti(t *testing.T) {
 
 	// Tanpa ini pgxpool mewujudkan sambungan secara malas dan pemegang
 	// kunci di bawah boleh menghabiskan kerjanya sebelum markAttendanceTx
-	// sempat memintanya — ujian yang lulus tanpa sebarang pertandingan.
+	// sempat memintanya - ujian yang lulus tanpa sebarang pertandingan.
 	warmPool(t, pool, 4)
 
 	holder, err := pool.Begin(ctx)
@@ -225,7 +225,7 @@ func TestTandaKehadiranMenungguKunciAktiviti(t *testing.T) {
 
 	_, err = markAttendanceTx(tersekat, pool, sessionID, reg.ID, "scan", audit.Actor{UserID: reg.UserID}, nil)
 	if err == nil {
-		t.Fatal("tanda berjaya semasa baris aktiviti dikunci — " +
+		t.Fatal("tanda berjaya semasa baris aktiviti dikunci - " +
 			"markAttendanceTx tidak mengambil LockActivityForRegistration")
 	}
 	if tersekat.Err() == nil {
@@ -243,7 +243,7 @@ func TestTandaKehadiranMenungguKunciAktiviti(t *testing.T) {
 	}
 }
 
-// Pendaftaran yang dibatalkan bukan lagi pendaftaran — kehadirannya akan
+// Pendaftaran yang dibatalkan bukan lagi pendaftaran - kehadirannya akan
 // menjadi bukti untuk sijil yang ahli itu sudah tarik diri daripadanya.
 func TestTandaKehadiranPendaftaranDibatalkan(t *testing.T) {
 	pool := activityTestPool(t)
@@ -307,7 +307,7 @@ func attendanceParams(activityID, sessionID uuid.UUID) gin.Params {
 	}
 }
 
-// Kehadiran ialah bukti yang menentukan siapa dapat sijil — ahli biasa tidak
+// Kehadiran ialah bukti yang menentukan siapa dapat sijil - ahli biasa tidak
 // boleh menandanya, untuk dirinya mahupun untuk orang lain.
 func TestTandaKehadiranPerluPengurusan(t *testing.T) {
 	pool := activityTestPool(t)
@@ -549,7 +549,7 @@ func TestBuangKehadiran(t *testing.T) {
 		t.Errorf("buang kedua: status = %d, mahu 404 (badan: %s)", rec.Code, rec.Body.String())
 	}
 
-	// Membuang kehadiran memadam bukti — jejaknya mesti kekal.
+	// Membuang kehadiran memadam bukti - jejaknya mesti kekal.
 	entries := attendanceAuditRows(t, pool, reg.ID)
 	if len(entries) != 2 {
 		t.Fatalf("catatan audit = %d, mahu 2 (create + delete)", len(entries))
@@ -564,7 +564,7 @@ func TestBuangKehadiran(t *testing.T) {
 
 // ---- Pindaan di luar tetingkap (Task 11b, Bahagian A) ----
 
-// seedKehadiranLuarTetingkap — aktiviti dengan sesi yang tamat tiga hari
+// seedKehadiranLuarTetingkap - aktiviti dengan sesi yang tamat tiga hari
 // lalu (jauh di luar padding 2 jam) dan seorang ahli berdaftar. Itulah
 // keadaan yang laluan pindaan wujud untuknya: kehadiran yang terlepas
 // ditanda semasa sesi berjalan.
@@ -619,7 +619,7 @@ func TestPindaanKehadiranDiLuarTetingkapBerjayaDanDiaudit(t *testing.T) {
 	}
 	newValues, _ := entries[0]["new"].(map[string]any)
 	if newValues["amendment"] != true {
-		t.Errorf("new.amendment = %v, mahu true — pindaan yang kelihatan seperti "+
+		t.Errorf("new.amendment = %v, mahu true - pindaan yang kelihatan seperti "+
 			"check-in biasa dalam jejak lebih buruk daripada tiada laluan pindaan",
 			newValues["amendment"])
 	}
@@ -648,7 +648,7 @@ func TestPindaanKehadiranDiLuarTetingkapBerjayaDanDiaudit(t *testing.T) {
 }
 
 // Sebab wajib. Pindaan tanpa sebab ialah tepat perkara yang jejak audit
-// sepatutnya halang — jadi ia ditolak SEBELUM sebarang baris kehadiran
+// sepatutnya halang - jadi ia ditolak SEBELUM sebarang baris kehadiran
 // wujud, bukan selepas.
 func TestPindaanKehadiranTanpaSebabDitolak(t *testing.T) {
 	pool := activityTestPool(t)
@@ -675,7 +675,7 @@ func TestPindaanKehadiranTanpaSebabDitolak(t *testing.T) {
 
 			q := sqlc.New(pool)
 			if n, _ := q.CountAttendanceByRegistration(ctx, reg.ID); n != 0 {
-				t.Errorf("baris kehadiran = %d, mahu 0 — 400 yang datang selepas "+
+				t.Errorf("baris kehadiran = %d, mahu 0 - 400 yang datang selepas "+
 					"baris dicipta tiada nilai", n)
 			}
 		})
@@ -705,7 +705,7 @@ func TestPindaanKehadiranOlehBukanPengurusanDitolak(t *testing.T) {
 	}
 }
 
-// Tanpa `amend`, tetingkap masih dikuatkuasakan seperti sebelum ini —
+// Tanpa `amend`, tetingkap masih dikuatkuasakan seperti sebelum ini -
 // laluan pindaan tidak boleh melonggarkan laluan biasa.
 func TestTanpaPindaanDiLuarTetingkapMasih422(t *testing.T) {
 	pool := activityTestPool(t)
@@ -736,7 +736,7 @@ func TestTanpaPindaanDiLuarTetingkapMasih422(t *testing.T) {
 }
 
 // Pindaan melangkau SATU semakan sahaja. Semakan
-// sesi-dan-pendaftaran-milik-aktiviti-sama kekal — tanpanya, kiraan
+// sesi-dan-pendaftaran-milik-aktiviti-sama kekal - tanpanya, kiraan
 // kelayakan sijil terlebih kira secara senyap.
 func TestPindaanKehadiranMasihTertaklukSemakanAktiviti(t *testing.T) {
 	pool := activityTestPool(t)

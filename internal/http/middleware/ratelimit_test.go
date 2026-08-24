@@ -41,7 +41,7 @@ func countOK(codes []int) int {
 	return n
 }
 
-// Tanpa Redis, middleware mesti tetap berfungsi guna baldi setempat —
+// Tanpa Redis, middleware mesti tetap berfungsi guna baldi setempat -
 // app boleh boot dan berjalan tanpa Redis dikonfigur.
 func TestTanpaRedisGunaBaldiSetempat(t *testing.T) {
 	rl := NewRateLimiter(nil)
@@ -56,7 +56,7 @@ func TestTanpaRedisGunaBaldiSetempat(t *testing.T) {
 	}
 }
 
-// Had di-skop per IP — satu penyalahguna tak boleh menyekat orang lain.
+// Had di-skop per IP - satu penyalahguna tak boleh menyekat orang lain.
 func TestBaldiBerasinganSetiapIP(t *testing.T) {
 	rl := NewRateLimiter(nil)
 	mw := rl.Limit("auth", rate.Every(time.Hour), 2)
@@ -83,10 +83,10 @@ func TestClientRedisDimatikanJatuhBalikSetempat(t *testing.T) {
 	}
 }
 
-// Redis tak dapat dicapai MESTI gagal-terbuka kepada had setempat —
+// Redis tak dapat dicapai MESTI gagal-terbuka kepada had setempat -
 // Redis mati tak boleh mengunci ahli keluar daripada log masuk.
 func TestRedisTakBolehDicapaiGagalTerbuka(t *testing.T) {
-	// Port yang tiada apa-apa mendengar (bukan 6399 — itu Redis ujian).
+	// Port yang tiada apa-apa mendengar (bukan 6399 - itu Redis ujian).
 	c, err := redisclient.New("redis://127.0.0.1:6301/0")
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestRedisTakBolehDicapaiGagalTerbuka(t *testing.T) {
 
 	codes := serve(t, rl.Limit("auth", rate.Every(time.Hour), 2), "7.7.7.7", 4)
 	if got := countOK(codes); got != 2 {
-		t.Fatalf("%d lulus, mahu 2 — patut jatuh balik ke baldi setempat, "+
+		t.Fatalf("%d lulus, mahu 2 - patut jatuh balik ke baldi setempat, "+
 			"bukan tolak semua (gagal-tertutup) atau benarkan semua", got)
 	}
 }
@@ -144,7 +144,7 @@ func TestRedisDikongsiAntaraInstance(t *testing.T) {
 	okB := countOK(serve(t, b, "10.0.0.2", 2))
 
 	if okA+okB != 3 {
-		t.Fatalf("jumlah lulus = %d (A=%d B=%d), mahu 3 — baldi tak dikongsi",
+		t.Fatalf("jumlah lulus = %d (A=%d B=%d), mahu 3 - baldi tak dikongsi",
 			okA+okB, okA, okB)
 	}
 }
@@ -158,7 +158,7 @@ func TestRedisNamaMengasingkanBaldi(t *testing.T) {
 
 	serve(t, auth, "10.0.0.3", 3) // habiskan baldi auth
 	if got := countOK(serve(t, upload, "10.0.0.3", 1)); got != 1 {
-		t.Fatal("baldi upload terjejas oleh auth — nama tak mengasingkan")
+		t.Fatal("baldi upload terjejas oleh auth - nama tak mengasingkan")
 	}
 }
 

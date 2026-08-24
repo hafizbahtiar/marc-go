@@ -17,7 +17,7 @@ select count(*) from member_addresses where user_id = $1
 `
 
 // Had 3 alamat/ahli disemak app-layer (bukan constraint DB, "3" ialah
-// peraturan produk boleh berubah) — dipanggil dalam transaksi yang sama
+// peraturan produk boleh berubah) - dipanggil dalam transaksi yang sama
 // sebelum INSERT, padanan cara sequences/nombor ahli dikira.
 func (q *Queries) CountAddressesByUser(ctx context.Context, userID uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countAddressesByUser, userID)
@@ -112,7 +112,7 @@ type GetAddressByIDAndUserParams struct {
 }
 
 // Ownership dikuatkuasakan DALAM query (bukan cuma filter selepas fetch)
-// — padanan corak `authz` package: query yang tak filter guna user id
+// - padanan corak `authz` package: query yang tak filter guna user id
 // dari token bermakna ownership tak dikuatkuasakan.
 func (q *Queries) GetAddressByIDAndUser(ctx context.Context, arg GetAddressByIDAndUserParams) (MemberAddress, error) {
 	row := q.db.QueryRow(ctx, getAddressByIDAndUser, arg.ID, arg.UserID)
@@ -149,7 +149,7 @@ type GetOldestOtherByUserParams struct {
 	ID     uuid.UUID `json:"id"`
 }
 
-// Auto-promote lepas default dipadam — baris PALING LAMA (created_at)
+// Auto-promote lepas default dipadam - baris PALING LAMA (created_at)
 // selain baris yang baru dipadam jadi default baharu.
 func (q *Queries) GetOldestOtherByUser(ctx context.Context, arg GetOldestOtherByUserParams) (MemberAddress, error) {
 	row := q.db.QueryRow(ctx, getOldestOtherByUser, arg.UserID, arg.ID)
@@ -256,7 +256,7 @@ where user_id = $1 and is_default
 `
 
 // Nyahtetapkan default LAMA sebelum tetapkan default BAHARU, dalam
-// transaksi yang sama — partial unique index (satu default/ahli) akan
+// transaksi yang sama - partial unique index (satu default/ahli) akan
 // tolak dua baris `is_default=true` serentak kalau susunan ni songsang.
 func (q *Queries) UnsetDefaultForUser(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, unsetDefaultForUser, userID)
@@ -296,8 +296,8 @@ type UpdateAddressParams struct {
 	UserID      uuid.UUID   `json:"user_id"`
 }
 
-// Partial update — medan tak dihantar (narg NULL) kekal nilai asal,
-// padanan pola UpdateProfile. `is_default` sengaja TIDAK di sini —
+// Partial update - medan tak dihantar (narg NULL) kekal nilai asal,
+// padanan pola UpdateProfile. `is_default` sengaja TIDAK di sini -
 // ditetapkan berasingan (SetDefault) dalam transaksi yang turut
 // nyahtetapkan default lama, supaya invariant "paling banyak SATU
 // default" sentiasa dikekalkan sepanjang transaksi.

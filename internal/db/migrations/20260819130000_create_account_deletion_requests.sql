@@ -4,7 +4,7 @@
 -- cara ahli MEMINTA pemadaman akaun + data berkaitan. Ni v1 sengaja
 -- REQUEST-sahaja: rekod permintaan + jejak audit, staff tindak secara
 -- manual (akses DB terus) buat masa ni. TIADA cascading/auto-purge post,
--- bayaran, pendaftaran aktiviti dsb — reka bentuk & uji pemadaman merentas
+-- bayaran, pendaftaran aktiviti dsb - reka bentuk & uji pemadaman merentas
 -- jadual yang selamat perlukan lebih masa drpd yang ada sekarang.
 create table account_deletion_requests (
   id uuid primary key default gen_random_uuid(),

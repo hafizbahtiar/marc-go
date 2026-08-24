@@ -15,7 +15,7 @@ import (
 )
 
 // fakeQuerier embed sqlc.Querier (nil) supaya cuma perlu override method
-// yang dipakai NotifyUser — method lain akan panic kalau dipanggil, yang
+// yang dipakai NotifyUser - method lain akan panic kalau dipanggil, yang
 // mana bermaksud test tersasar skop kalau itu berlaku.
 type fakeQuerier struct {
 	sqlc.Querier

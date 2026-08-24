@@ -17,7 +17,7 @@ import (
 	"marc/internal/email"
 )
 
-// L32 — reset kata laluan.
+// L32 - reset kata laluan.
 //
 // `emailClient` dibina TANPA kredential (`Enabled()` false) jadi
 // penghantaran jadi no-op senyap tanpa rangkaian; token tetap ditulis ke
@@ -77,7 +77,7 @@ func TestRequestResetEmelTakDikenaliPulang204(t *testing.T) {
 	rec := resetRequestCall(t, pool, `{"email":"tiada-`+uuid.NewString()+`@test.local"}`)
 
 	if rec.Code != http.StatusNoContent {
-		t.Fatalf("kod = %d, mahu 204 — respons membocorkan sama ada akaun wujud. Badan: %s",
+		t.Fatalf("kod = %d, mahu 204 - respons membocorkan sama ada akaun wujud. Badan: %s",
 			rec.Code, rec.Body.String())
 	}
 }
@@ -98,7 +98,7 @@ func TestRequestResetMenciptaToken(t *testing.T) {
 	}
 }
 
-// Permintaan kedua mesti membunuh pautan pertama — kalau tidak, setiap
+// Permintaan kedua mesti membunuh pautan pertama - kalau tidak, setiap
 // permintaan menambah satu lagi kelayakan hidup pada akaun yang sama.
 func TestRequestResetKeduaMembatalkanYangPertama(t *testing.T) {
 	pool := activityTestPool(t)
@@ -111,7 +111,7 @@ func TestRequestResetKeduaMembatalkanYangPertama(t *testing.T) {
 	resetRequestCall(t, pool, `{"email":"`+emel+`"}`)
 
 	if got := countResetTokens(t, pool, userID); got != 1 {
-		t.Fatalf("token = %d selepas dua permintaan, mahu 1 — pautan lama "+
+		t.Fatalf("token = %d selepas dua permintaan, mahu 1 - pautan lama "+
 			"kekal hidup, jadi setiap permintaan menambah kelayakan", got)
 	}
 }
@@ -131,7 +131,7 @@ func TestRequestResetEmelDinormalkan(t *testing.T) {
 	resetRequestCall(t, pool, `{"email":"`+strings.ToUpper(emel)+`"}`)
 
 	if got := countResetTokens(t, pool, userID); got != 1 {
-		t.Fatalf("token = %d — emel huruf besar tak dipadan case-insensitive", got)
+		t.Fatalf("token = %d - emel huruf besar tak dipadan case-insensitive", got)
 	}
 }
 
@@ -252,7 +252,7 @@ func TestConfirmResetSekaliGuna(t *testing.T) {
 	rec := resetConfirmCall(t, pool, token, "kedua-456")
 
 	if rec.Code == http.StatusNoContent {
-		t.Fatal("pautan yang SAMA mereset dua kali — token bukan sekali-guna")
+		t.Fatal("pautan yang SAMA mereset dua kali - token bukan sekali-guna")
 	}
 	if !passwordSah(t, pool, userID, "pertama-123") {
 		t.Error("guna kedua menukar kata laluan walaupun ditolak")
@@ -290,7 +290,7 @@ func TestConfirmResetSekaliGunaDiBawahPerlumbaan(t *testing.T) {
 		}
 	}
 	if berjaya != 1 {
-		t.Fatalf("%d permintaan serentak berjaya, mahu TEPAT 1 — token "+
+		t.Fatalf("%d permintaan serentak berjaya, mahu TEPAT 1 - token "+
 			"boleh dituntut lebih drpd sekali di bawah perlumbaan", berjaya)
 	}
 }
@@ -317,14 +317,14 @@ func TestConfirmResetTokenLuputDitolak(t *testing.T) {
 func TestConfirmResetTokenTidakSahDitolak(t *testing.T) {
 	pool := activityTestPool(t)
 
-	// Lihat nota pada TestConfirmResetTokenLuputDitolak — 400 TEPAT.
+	// Lihat nota pada TestConfirmResetTokenLuputDitolak - 400 TEPAT.
 	if rec := resetConfirmCall(t, pool, "token-rekaan-yang-tak-wujud", "baharu-123"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("token rekaan: kod = %d, mahu 400", rec.Code)
 	}
 }
 
 // INTI: reset MESTI membatalkan setiap sesi. Sebab orang reset selalunya
-// kerana syak akaun dikompromi — membiarkan refresh token penyerang hidup
+// kerana syak akaun dikompromi - membiarkan refresh token penyerang hidup
 // mengalahkan tujuannya.
 func TestConfirmResetMembatalkanSemuaRefreshToken(t *testing.T) {
 	pool := activityTestPool(t)
@@ -351,7 +351,7 @@ func TestConfirmResetMembatalkanSemuaRefreshToken(t *testing.T) {
 		t.Fatalf("kira refresh token: %v", err)
 	}
 	if n != 0 {
-		t.Fatalf("refresh token tinggal = %d, mahu 0 — sesi penyerang kekal "+
+		t.Fatalf("refresh token tinggal = %d, mahu 0 - sesi penyerang kekal "+
 			"hidup selepas mangsa reset kata laluan", n)
 	}
 }
@@ -369,7 +369,7 @@ func TestConfirmResetBerfungsiUntukAhliPending(t *testing.T) {
 }
 
 // Reset TIDAK menanda emel disahkan. Mengklik pautan memang membuktikan
-// kawalan emel — tapi menggabungkan keduanya bermakna akaun yang
+// kawalan emel - tapi menggabungkan keduanya bermakna akaun yang
 // dikompromi lalu direset senyap memperoleh status disahkan.
 func TestConfirmResetTidakMenandaEmailVerified(t *testing.T) {
 	pool := activityTestPool(t)
@@ -390,7 +390,7 @@ func TestConfirmResetTidakMenandaEmailVerified(t *testing.T) {
 	}
 }
 
-// Kata laluan pendek ditolak — peraturan sama dengan /auth/register.
+// Kata laluan pendek ditolak - peraturan sama dengan /auth/register.
 func TestConfirmResetTolakKataLaluanPendek(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -402,6 +402,6 @@ func TestConfirmResetTolakKataLaluanPendek(t *testing.T) {
 		t.Fatalf("kod = %d, mahu 400", rec.Code)
 	}
 	if got := countResetTokens(t, pool, userID); got != 1 {
-		t.Errorf("token = %d — permintaan tak sah tak patut membakar token", got)
+		t.Errorf("token = %d - permintaan tak sah tak patut membakar token", got)
 	}
 }

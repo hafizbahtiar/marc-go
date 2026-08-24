@@ -11,7 +11,7 @@ import (
 const RequestIDHeader = "X-Request-ID"
 
 // RequestLogger log setiap request sebagai satu baris JSON structured
-// (method, path, status, latency, client_ip, request_id) — gantian
+// (method, path, status, latency, client_ip, request_id) - gantian
 // gin.Default() punya plain-text logger, senang di-parse/query oleh log
 // aggregator (Railway logs, dsb). request_id turut dihantar balik dalam
 // response header supaya client boleh rujuk bila report isu.

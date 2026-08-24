@@ -12,7 +12,7 @@ import (
 )
 
 type Querier interface {
-	// `on conflict do nothing` — idempoten, tambah domain yang dah wujud
+	// `on conflict do nothing` - idempoten, tambah domain yang dah wujud
 	// bukan ralat (padanan pola ApproveProfile `status <> 'approved'`).
 	AddBlockedEmailDomain(ctx context.Context, arg AddBlockedEmailDomainParams) (BlockedEmailDomain, error)
 	AddDepartment(ctx context.Context, arg AddDepartmentParams) (Department, error)
@@ -23,7 +23,7 @@ type Querier interface {
 	// Sebabnya bukan kekemasan. `ListEligibleForCertificate` menuntut
 	// `r.status = 'registered'`, jadi ahli yang hadir setiap sesi lalu
 	// menekan "Batal pendaftaran" pada aktiviti yang sudah tamat akan
-	// memusnahkan kelayakan sijilnya sendiri — secara senyap, tanpa jejak
+	// memusnahkan kelayakan sijilnya sendiri - secara senyap, tanpa jejak
 	// audit (pembatalan sengaja tak diaudit: volum tinggi, baris sendiri
 	// simpan `cancelled_at`), dan tanpa laluan pulih dalam app. Baris
 	// kehadiran kekal, tapi ia tak lagi dikira.
@@ -31,35 +31,35 @@ type Querier interface {
 	// Guard diletak dalam SQL dan bukan HANYA dalam handler supaya tiada
 	// laluan tulis masa hadapan boleh memintasnya. Handler turut menyemak
 	// lebih awal semata-mata untuk memulangkan mesej yang membezakan
-	// "tidak berdaftar" daripada "aktiviti sudah tamat" — di sini kedua-dua
+	// "tidak berdaftar" daripada "aktiviti sudah tamat" - di sini kedua-dua
 	// kes menghasilkan sifar baris.
 	CancelRegistration(ctx context.Context, arg CancelRegistrationParams) (ActivityRegistration, error)
 	// Batal pendaftaran yang DAH cuba checkout (payment_ref wujud, bil
-	// ToyyibPay sebenar dicipta) selepas cutoff PANJANG — sengaja lain drpd
+	// ToyyibPay sebenar dicipta) selepas cutoff PANJANG - sengaja lain drpd
 	// CancelStaleUnstartedPayments.
 	//
 	// Kenapa cutoff PANJANG di sini: bil ToyyibPay yang dah dicipta boleh
 	// disahkan bila-bila masa oleh webhook (FPX/bank kadang ambil lebih 45
-	// minit — pembayar boleh tinggalkan app lama sebelum sambung semula ke
+	// minit - pembayar boleh tinggalkan app lama sebelum sambung semula ke
 	// laman bank). Kalau baris ni dibatal pada cutoff PENDEK yang sama
 	// macam "tak pernah cuba", webhook yang tiba LEPAS itu (UPDATE ...
 	// WHERE payment_ref = $1 AND payment_status <> 'paid', TIADA
-	// `status <> 'cancelled'` guard dengan sengaja — lihat komen
+	// `status <> 'cancelled'` guard dengan sengaja - lihat komen
 	// UpdateRegistrationPaymentStatusByPaymentRef) akan tetap tanda
-	// payment_status='paid' atas baris yang `status='cancelled'` — ahli
+	// payment_status='paid' atas baris yang `status='cancelled'` - ahli
 	// dah BAYAR tapi slotnya HILANG, tiada jejak melainkan seseorang cari
 	// baris cancelled+paid secara manual. Cutoff panjang kurangkan
 	// kebarangkalian tetingkap lumba ni secara drastik (bukan hapuskan
-	// 100% — itu perlukan reka bentuk lebih kompleks, dianggap tak
+	// 100% - itu perlukan reka bentuk lebih kompleks, dianggap tak
 	// berbaloi buat masa ini: risiko kapasiti terikat lebih lama jauh
 	// lebih kecil drpd risiko kehilangan bayaran ahli).
 	CancelStaleUnpaidBills(ctx context.Context, registeredAt pgtype.Timestamptz) ([]ActivityRegistration, error)
 	// Batal pendaftaran berbayar yang ahli TAK PERNAH cuba checkout
-	// (payment_ref masih NULL — tiada bil ToyyibPay pernah dicipta) selepas
+	// (payment_ref masih NULL - tiada bil ToyyibPay pernah dicipta) selepas
 	// cutoff PENDEK. Selamat dibatal cepat: tiada webhook akan datang untuk
 	// baris ni sebab tiada bil wujud langsung.
 	//
-	// `and status <> 'cancelled'` — tanpa ni, baris yang DAH dibatal pusingan
+	// `and status <> 'cancelled'` - tanpa ni, baris yang DAH dibatal pusingan
 	// sebelum kena UPDATE semula setiap 15 minit selama-lamanya, tulis ganti
 	// `cancelled_at` (rosakkan jejak audit "bila SEBENAR ia dibatal") dan
 	// kembungkan bilangan baris dilaporkan log tanpa sebab.
@@ -67,7 +67,7 @@ type Querier interface {
 	ClearTelegramLink(ctx context.Context, userID uuid.UUID) error
 	CommentsLikedByUser(ctx context.Context, arg CommentsLikedByUserParams) ([]uuid.UUID, error)
 	// Peralihan status automatik 'published' -> 'completed' bila aktiviti
-	// dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) —
+	// dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) -
 	// sapuan berjadual (internal/activitylifecycle). Guard `status =
 	// 'published'` buat kemas kini idempoten merentas replika, padanan
 	// gaya `CancelStaleUnstartedPayments` (activitysweep).
@@ -75,7 +75,7 @@ type Querier interface {
 	// Tuntut token secara ATOMIK: satu pernyataan, `delete ... returning`.
 	//
 	// Padanan `ConsumeRefreshToken` (queries/refresh_tokens.sql) dan atas
-	// sebab yang SAMA: baca-dahulu-kemudian-tulis ada jurang TOCTOU — dua
+	// sebab yang SAMA: baca-dahulu-kemudian-tulis ada jurang TOCTOU - dua
 	// permintaan serentak dgn hash yang sama kedua-duanya lulus bacaan lalu
 	// kedua-duanya menulis. Dengan `delete ... returning`, kunci baris
 	// Postgres menjamin hanya SATU dapat baris; yang lain dapat 0 baris.
@@ -83,7 +83,7 @@ type Querier interface {
 	// Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 	// "consumed_at is null" jamin cuma SATU concurrent request menang kalau
 	// hash sama dihantar serentak (row-level lock Postgres). Row TAK
-	// dipadam (beza dari sebelum ni) — kekal untuk reuse detection: kalau
+	// dipadam (beza dari sebelum ni) - kekal untuk reuse detection: kalau
 	// hash yang SAMA cuba consume LAGI selepas ni, row dah wujud tapi
 	// consumed_at dah bukan null, so 0 rows returned di sini -> caller
 	// boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
@@ -96,7 +96,7 @@ type Querier interface {
 	CountActiveRegistrations(ctx context.Context, activityID uuid.UUID) (int64, error)
 	CountActivitySessions(ctx context.Context, activityID uuid.UUID) (int64, error)
 	// Had 3 alamat/ahli disemak app-layer (bukan constraint DB, "3" ialah
-	// peraturan produk boleh berubah) — dipanggil dalam transaksi yang sama
+	// peraturan produk boleh berubah) - dipanggil dalam transaksi yang sama
 	// sebelum INSERT, padanan cara sequences/nombor ahli dikira.
 	CountAddressesByUser(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountAttendanceByRegistration(ctx context.Context, registrationID uuid.UUID) (int64, error)
@@ -108,10 +108,10 @@ type Querier interface {
 	// Menghalang penggantian set sesi yang akan membuang kehadiran yang sudah
 	// direkod.
 	CountSessionsWithAttendance(ctx context.Context, activityID uuid.UUID) (int64, error)
-	// `on conflict do nothing` — idempoten, ahli boleh tekan "padam akaun"
+	// `on conflict do nothing` - idempoten, ahli boleh tekan "padam akaun"
 	// berkali-kali tanpa ralat (padanan pola AddBlockedEmailDomain). Baris
 	// SEDIA ADA (bukan yang baru dicuba) yang perlu dipulangkan pada
-	// konflik — lihat GetAccountDeletionRequestByUserID di handler.
+	// konflik - lihat GetAccountDeletionRequestByUserID di handler.
 	CreateAccountDeletionRequest(ctx context.Context, userID uuid.UUID) (AccountDeletionRequest, error)
 	CreateActivity(ctx context.Context, arg CreateActivityParams) (Activity, error)
 	CreateActivityCategory(ctx context.Context, arg CreateActivityCategoryParams) (ActivityCategory, error)
@@ -132,12 +132,12 @@ type Querier interface {
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateRegistration(ctx context.Context, arg CreateRegistrationParams) (ActivityRegistration, error)
 	// SENGAJA tanpa `gateway_ref` (L29, 2026-08-22). Baris ditulis SEBELUM
-	// bil gateway dicipta, jadi ref belum wujud pada titik ni — ia diisi
+	// bil gateway dicipta, jadi ref belum wujud pada titik ni - ia diisi
 	// oleh `SetRegistrationPaymentGatewayRef` sebaik createBill pulang.
 	//
 	// Susunan ni yang menjadikan bil yatim mustahil: kalau proses mati
 	// antara INSERT dan createBill, yang tinggal ialah baris 'pending' tanpa
-	// ref — kelihatan, boleh diaudit, dan TIADA bil untuk dibayar. Susunan
+	// ref - kelihatan, boleh diaudit, dan TIADA bil untuk dibayar. Susunan
 	// lama (createBill dahulu) meninggalkan yang sebaliknya: bil yang boleh
 	// dibayar tanpa baris, yang webhook mahupun reconcile tak dapat lihat.
 	CreateRegistrationPayment(ctx context.Context, arg CreateRegistrationPaymentParams) (RegistrationPayment, error)
@@ -157,14 +157,14 @@ type Querier interface {
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
 	// Dipanggil DUA tempat, atas sebab berbeza:
-	//   request — permintaan baharu membunuh pautan lama
-	//   confirm — sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
+	//   request - permintaan baharu membunuh pautan lama
+	//   confirm - sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
 	DeletePasswordResetTokensByUser(ctx context.Context, userID uuid.UUID) error
-	// Retention 3 bulan (keputusan produk 2026-08-15) — dipanggil
+	// Retention 3 bulan (keputusan produk 2026-08-15) - dipanggil
 	// internal/retention, padanan pola sapuan audit_logs sedia ada.
 	DeletePaymentLogsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
-	// Tanpa skop user — untuk penyapu latar, bukan permintaan pengguna.
+	// Tanpa skop user - untuk penyapu latar, bukan permintaan pengguna.
 	DeletePendingUploadByKey(ctx context.Context, r2Key string) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
@@ -174,7 +174,7 @@ type Querier interface {
 	// patut gagal, dan objek tu memang dah dalam gilir.
 	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
 	// Tandakan percubaan bayaran 'pending' sebagai 'failed' (bil tamat tempoh
-	// atau dibatalkan admin). Guard `status = 'pending'` — 'succeeded'
+	// atau dibatalkan admin). Guard `status = 'pending'` - 'succeeded'
 	// terminal; reconcile/webhook lewat boleh naik 'failed'->'succeeded'.
 	ExpireRegistrationPayment(ctx context.Context, id uuid.UUID) (RegistrationPayment, error)
 	// Guna oleh CreateAccountDeletionRequest bila insert kena `on conflict do
@@ -185,7 +185,7 @@ type Querier interface {
 	GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error)
 	GetActivitySessionByID(ctx context.Context, id uuid.UUID) (ActivitySession, error)
 	// Ownership dikuatkuasakan DALAM query (bukan cuma filter selepas fetch)
-	// — padanan corak `authz` package: query yang tak filter guna user id
+	// - padanan corak `authz` package: query yang tak filter guna user id
 	// dari token bermakna ownership tak dikuatkuasakan.
 	GetAddressByIDAndUser(ctx context.Context, arg GetAddressByIDAndUserParams) (MemberAddress, error)
 	GetAttendance(ctx context.Context, arg GetAttendanceParams) (ActivityAttendance, error)
@@ -197,49 +197,49 @@ type Querier interface {
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
 	GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
 	GetLatestEmailVerificationSendAt(ctx context.Context, userID uuid.UUID) (pgtype.Timestamptz, error)
-	// Bil yuran pendaftaran 'pending' TERKINI untuk seorang ahli — admin
+	// Bil yuran pendaftaran 'pending' TERKINI untuk seorang ahli - admin
 	// batalkan bil sebelum langkau bayaran, atau sapuan lapuk.
 	GetLatestPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (RegistrationPayment, error)
-	// Untuk `/me` — Flutter perlukan ni supaya ahli nampak bayaran mereka
+	// Untuk `/me` - Flutter perlukan ni supaya ahli nampak bayaran mereka
 	// berjaya/gagal/menunggu, bukan senyap (gap ditemui 2026-08-15: bayaran
 	// gagal/berjaya dua-dua direkod betul dalam DB tapi client tak pernah
 	// baca, jadi ahli nampak "tiada apa berlaku" tak kira hasil sebenar).
-	// `pgx.ErrNoRows` bermakna ahli tak pernah cuba bayar langsung — caller
+	// `pgx.ErrNoRows` bermakna ahli tak pernah cuba bayar langsung - caller
 	// (Go) layan tu sebagai null, bukan ralat.
 	//
 	// Utamakan 'succeeded' dulu (Opus verify 2026-08-15): `Checkout` cuma
-	// sekat bayaran BERULANG bila dah ada baris 'succeeded' — kalau ahli
+	// sekat bayaran BERULANG bila dah ada baris 'succeeded' - kalau ahli
 	// tekan Bayar dua kali (baris A, lepas tu B) dan bayar bil A dulu,
 	// 'order by created_at desc' semata-mata akan pulang B ('pending', baris
-	// LEBIH BAHARU) walhal A dah 'succeeded' — ahli nampak "sedang disahkan"
+	// LEBIH BAHARU) walhal A dah 'succeeded' - ahli nampak "sedang disahkan"
 	// selama-lamanya walau dah bayar. `(status = 'succeeded') desc` letak
 	// baris succeeded MANA-MANA PUN di atas dulu; `created_at desc` cuma
 	// pemisah antara baris tak-succeeded (paparkan percubaan TERKINI).
 	GetLatestRegistrationPaymentStatus(ctx context.Context, userID uuid.UUID) (string, error)
-	// Resit — hanya pendaftaran SENDIRI (user_id caller), sertakan medan
+	// Resit - hanya pendaftaran SENDIRI (user_id caller), sertakan medan
 	// papar (tajuk aktiviti/yuran/no. ahli/nama/emel). `fee_cents` guna
-	// `coalesce(r.fee_cents_paid, a.fee_cents)` — SENGAJA bukan
+	// `coalesce(r.fee_cents_paid, a.fee_cents)` - SENGAJA bukan
 	// `a.fee_cents` hidup terus: yuran aktiviti boleh ditukar SELEPAS ahli
 	// bayar (`PATCH /activities/:id`), dan resit dijana SEMULA setiap muat
-	// turun (tulis ganti kunci R2 stabil) — tanpa snapshot ni, resit sedia
+	// turun (tulis ganti kunci R2 stabil) - tanpa snapshot ni, resit sedia
 	// wujud akan senyap papar jumlah yang ahli tak pernah bayar (Opus
 	// verify 2026-08-15). Fallback ke `a.fee_cents` cuma utk baris lama
 	// sebelum lajur `fee_cents_paid` wujud. `title` SENGAJA kekal hidup
-	// (bukan snapshot) — nama aktiviti bukan tuntutan kewangan, papar nama
+	// (bukan snapshot) - nama aktiviti bukan tuntutan kewangan, papar nama
 	// TERKINI lebih berguna drpd bekukan typo asal.
 	GetMyActivityFeeByID(ctx context.Context, arg GetMyActivityFeeByIDParams) (GetMyActivityFeeByIDRow, error)
-	// Resit — hanya donation SENDIRI (ahli log masuk, user_id = caller).
-	// Donation anonymous (user_id null) TIADA laluan muat turun resit sini —
+	// Resit - hanya donation SENDIRI (ahli log masuk, user_id = caller).
+	// Donation anonymous (user_id null) TIADA laluan muat turun resit sini -
 	// emel resit yang dihantar semasa webhook satu-satunya jejak mereka ada,
 	// tiada akaun untuk log masuk dan tuntut baris ni.
 	GetMyDonationByID(ctx context.Context, arg GetMyDonationByIDParams) (Donation, error)
-	// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
+	// Resit - hanya baris SENDIRI (user_id caller), sertakan medan papar
 	// (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
 	GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error)
-	// Auto-promote lepas default dipadam — baris PALING LAMA (created_at)
+	// Auto-promote lepas default dipadam - baris PALING LAMA (created_at)
 	// selain baris yang baru dipadam jadi default baharu.
 	GetOldestOtherByUser(ctx context.Context, arg GetOldestOtherByUserParams) (MemberAddress, error)
-	// UJIAN SAHAJA — tiada pemanggil produksi, dan jangan tambah satu. Kod
+	// UJIAN SAHAJA - tiada pemanggil produksi, dan jangan tambah satu. Kod
 	// produksi MESTI guna ConsumePasswordResetToken: membaca token
 	// dgn SELECT lalu memadamnya kemudian ialah tepat jurang TOCTOU yang
 	// Consume wujud untuk menutup.
@@ -254,7 +254,7 @@ type Querier interface {
 	GetRoleByID(ctx context.Context, id int16) (Role, error)
 	GetRoleByKey(ctx context.Context, key string) (Role, error)
 	GetRoleCategoryByUserID(ctx context.Context, userID uuid.UUID) (string, error)
-	// Utk semakan berasaskan role SPESIFIK (bukan kategori umum) — cth
+	// Utk semakan berasaskan role SPESIFIK (bukan kategori umum) - cth
 	// middleware.BlockTesterWrites, yang perlu tahu role 'tester' tepat
 	// (category 'ahli' sengaja sama dengan ahli biasa, jadi
 	// GetRoleCategoryByUserID tak boleh bezakan dua-dua).
@@ -263,19 +263,19 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserIDByTelegramChatID(ctx context.Context, telegramChatID pgtype.Int8) (uuid.UUID, error)
-	// Baris 'pending' MANA-MANA PUN — SENGAJA TANPA tapisan `gateway_ref is
+	// Baris 'pending' MANA-MANA PUN - SENGAJA TANPA tapisan `gateway_ref is
 	// not null` (Opus verify 2026-08-24: tak macam
 	// ListPendingRegistrationPaymentsOlderThan, baris `gateway_ref` NULL di
 	// sini BUKAN bukti "tiada bil sebenar". Lihat komen "TETINGKAP BAKI" di
-	// `registration_payment.go` `Checkout` — createBill BOLEH berjaya
+	// `registration_payment.go` `Checkout` - createBill BOLEH berjaya
 	// [bil sebenar wujud di ToyyibPay] tapi `SetRegistrationPaymentGatewayRef`
 	// gagal selepas tu, meninggalkan baris 'pending' TANPA ref walaupun bil
 	// boleh dibayar. Tapisan ref bertujuan bagi query reconcile [nak tahu
 	// bil MANA nak poll], bukan bagi gate ni [nak tahu ADA-TAK bil terbuka
-	// langsung] — dua soalan berbeza.
+	// langsung] - dua soalan berbeza.
 	//
 	// Dipakai oleh gate langkau-bayaran (`ApproveMember` bypass, admin/
-	// superadmin) — kalau baris begini wujud, ahli boleh terima 2 pengesahan
+	// superadmin) - kalau baris begini wujud, ahli boleh terima 2 pengesahan
 	// bayaran (tunai + bil online lama yang masih dibayar lepas approve),
 	// jadi bypass MESTI ditolak sehingga baris lama diselesaikan (webhook/
 	// pautan manual tandakan succeeded/failed) atau tamat tempoh
@@ -283,25 +283,25 @@ type Querier interface {
 	HasPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	InsertEmailVerificationSend(ctx context.Context, userID uuid.UUID) error
-	// Semakan pendaftaran (/auth/register) — pelengkap kpd senarai statik
+	// Semakan pendaftaran (/auth/register) - pelengkap kpd senarai statik
 	// terbenam (internal/disposableemail), utk domain tambahan management.
 	IsEmailDomainBlocked(ctx context.Context, domain string) (bool, error)
 	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
 	// `:execrows`, bukan `:exec` (L35, 2026-08-22). Handler perlu tahu sama
-	// ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen —
+	// ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen -
 	// `on conflict do nothing` bermakna like berulang ialah no-op, dan
 	// memberitahu tanpa syarat menjadikan endpoint ni gelung spam push
 	// bersasar. Corak SAMA yang L18 tegakkan pada `LikePost`; ia dibawa ke
 	// sini SERENTAK dengan notifikasi ditambah, bukan selepasnya.
 	LikeComment(ctx context.Context, arg LikeCommentParams) (int64, error)
 	LikePost(ctx context.Context, arg LikePostParams) (int64, error)
-	// Keyset pagination atas (starts_at, id) — sama corak dengan ListPosts,
+	// Keyset pagination atas (starts_at, id) - sama corak dengan ListPosts,
 	// elak baris terlepas bila dua aktiviti berkongsi timestamp tepat.
 	// upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir
 	// dahulu). upcoming=false → yang dah tamat, isih menurun.
 	ListActivities(ctx context.Context, arg ListActivitiesParams) ([]ListActivitiesRow, error)
 	// Aktiviti akan bermula dlm ~24 jam (H-1) yang belum pernah dihantar
-	// peringatan — sapuan berjadual (internal/activitylifecycle). Guard
+	// peringatan - sapuan berjadual (internal/activitylifecycle). Guard
 	// `reminder_sent_at is null` buat kemas kini idempoten merentas
 	// replika. `starts_at > now()` elak hantar peringatan utk aktiviti yang
 	// dah bermula (cth aktiviti baharu diterbitkan lepas tetingkap H-1
@@ -311,7 +311,7 @@ type Querier interface {
 	ListActivitySessions(ctx context.Context, activityID uuid.UUID) ([]ActivitySession, error)
 	ListActivitySessionsByIDs(ctx context.Context, activityIds []uuid.UUID) ([]ActivitySession, error)
 	ListAddressesByUser(ctx context.Context, userID uuid.UUID) ([]MemberAddress, error)
-	// Untuk skrin pengurusan CRUD kategori (manager ke atas) — TERMASUK yang
+	// Untuk skrin pengurusan CRUD kategori (manager ke atas) - TERMASUK yang
 	// tidak aktif, supaya boleh diaktifkan semula. Borang cipta aktiviti guna
 	// ListActivityCategories (aktif sahaja) di atas.
 	ListAllActivityCategories(ctx context.Context) ([]ActivityCategory, error)
@@ -319,7 +319,7 @@ type Querier interface {
 	ListApprovedUserIDs(ctx context.Context) ([]uuid.UUID, error)
 	ListAttendanceByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityAttendance, error)
 	// Feed audit global dengan tapisan pilihan. Pagination keyset guna
-	// `before_id` (bukan OFFSET) — stabil walaupun baris baharu masuk
+	// `before_id` (bukan OFFSET) - stabil walaupun baris baharu masuk
 	// semasa pengguna membelek.
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// Timeline satu entiti (cth semua suntingan pada satu post).
@@ -337,19 +337,19 @@ type Querier interface {
 	ListDepartments(ctx context.Context) ([]Department, error)
 	ListDeviceTokensByUser(ctx context.Context, userID uuid.UUID) ([]DeviceToken, error)
 	ListDueDeletedUploads(ctx context.Context, limit int32) ([]DeletedUpload, error)
-	// Server mengira sendiri siapa layak — management tidak menyenaraikan.
+	// Server mengira sendiri siapa layak - management tidak menyenaraikan.
 	// Klausa payment_status kekal walaupun payment belum diintegrasikan:
 	// fee_cents sentiasa 0 buat masa ini, jadi ia sentiasa benar.
-	// display_name boleh null, tapi recipient_name pada sijil not null —
+	// display_name boleh null, tapi recipient_name pada sijil not null -
 	// jatuh balik ke member_id supaya ahli tanpa nama paparan tetap dapat
 	// nama yang boleh dicetak.
 	ListEligibleForCertificate(ctx context.Context, activityID uuid.UUID) ([]ListEligibleForCertificateRow, error)
 	ListManagementUserIDs(ctx context.Context, category string) ([]uuid.UUID, error)
-	// Sejarah yuran aktiviti seorang ahli — TERMASUK pendaftaran yang telah
+	// Sejarah yuran aktiviti seorang ahli - TERMASUK pendaftaran yang telah
 	// dibatalkan (beza sengaja drpd ListMyRegistrations di atas, yang tolak
 	// baris 'cancelled' sebab tab "Aktiviti Saya" tu untuk pendaftaran AKTIF
 	// sahaja): sejarah bayaran patut tetap tunjuk percubaan yang gagal/tak
-	// sempat dibayar sebelum disapu, bukan senyap hilang. `fee_cents` —
+	// sempat dibayar sebelum disapu, bukan senyap hilang. `fee_cents` -
 	// lihat komen `coalesce` di GetMyActivityFeeByID di atas, sebab sama.
 	ListMyActivityPayments(ctx context.Context, userID uuid.UUID) ([]ListMyActivityPaymentsRow, error)
 	ListMyCertificates(ctx context.Context, userID uuid.UUID) ([]ListMyCertificatesRow, error)
@@ -361,7 +361,7 @@ type Querier interface {
 	// awal; yang hilang cuma cara menemuinya.
 	//
 	// Diskop `user_id`, jadi derma TANPA NAMA (user_id null) tak pernah
-	// muncul — betul: penderma itu tiada akaun untuk menuntut baris ni, dan
+	// muncul - betul: penderma itu tiada akaun untuk menuntut baris ni, dan
 	// emel resit yang dihantar semasa webhook ialah satu-satunya jejak mereka
 	// ada, mengikut reka bentuk (lihat komen `GetMyDonationByID`).
 	//
@@ -371,10 +371,10 @@ type Querier interface {
 	// digate pada status di sisi klien.
 	ListMyDonations(ctx context.Context, userID pgtype.UUID) ([]Donation, error)
 	// Sejarah PENUH percubaan yuran pendaftaran seorang ahli (bukan cuma
-	// status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin
+	// status terkini macam GetLatestRegistrationPaymentStatus) - utk skrin
 	// "Sejarah Bayaran Saya".
 	ListMyRegistrationPayments(ctx context.Context, userID uuid.UUID) ([]RegistrationPayment, error)
-	// fee_cents guna coalesce(r.fee_cents_paid, a.fee_cents) — sama pola
+	// fee_cents guna coalesce(r.fee_cents_paid, a.fee_cents) - sama pola
 	// GetMyActivityFeeByID/ListMyActivityPayments: sebelum bayar, papar
 	// yuran SEMASA (a.fee_cents boleh berubah selepas PATCH); selepas bayar,
 	// kunci pada jumlah yang benar-benar dibayar.
@@ -385,23 +385,23 @@ type Querier interface {
 	// pembersihan wujud, dan mana-mana kunci yang terlepas sejak itu.
 	ListOrphanedPostImageKeys(ctx context.Context, limit int32) ([]string, error)
 	// Sejarah penuh satu bayaran (semua peristiwa: checkout, webhook,
-	// reconcile) — untuk diagnosis satu insiden, bukan tinjauan am.
+	// reconcile) - untuk diagnosis satu insiden, bukan tinjauan am.
 	ListPaymentLogsByGatewayRef(ctx context.Context, arg ListPaymentLogsByGatewayRefParams) ([]PaymentLog, error)
 	// Baris 'pending' YANG DAH cuba checkout (payment_ref wujud) dan dah
 	// cukup umur untuk layak disemak semula terus pada gateway
-	// (internal/paymentreconcile) — padanan `CancelStaleUnpaidBills` dari
+	// (internal/paymentreconcile) - padanan `CancelStaleUnpaidBills` dari
 	// segi skop (payment_ref is not null), tapi cutoff jauh lebih pendek
 	// (reconcile MEMBETULKAN state, bukan membatalkan secara musnah, jadi
-	// semak awal selamat — lihat internal/paymentreconcile untuk alasan
+	// semak awal selamat - lihat internal/paymentreconcile untuk alasan
 	// penuh). Baris `payment_ref is null` (tak pernah cuba checkout) dilangkau
-	// — tiada apa nak disemak pada gateway untuk baris begitu.
+	// - tiada apa nak disemak pada gateway untuk baris begitu.
 	//
 	// Tingkap atas + limit + `status <> 'cancelled'` (L30, 2026-08-22).
 	// Lihat komen penuh pada `ListPendingRegistrationPaymentsOlderThan`.
 	//
 	// Guard `status <> 'cancelled'` PENTING khusus di sini:
 	// `CancelStaleUnpaidBills` menetapkan `status='cancelled'` tetapi
-	// MEMBIARKAN `payment_status='pending'` (sengaja — lihat komennya), jadi
+	// MEMBIARKAN `payment_status='pending'` (sengaja - lihat komennya), jadi
 	// tanpa guard ni setiap baris yang pernah dibatalkan sapuan kekal dipoll
 	// pada ToyyibPay selama-lamanya walaupun ia sudah mati secara muktamad.
 	//
@@ -412,21 +412,21 @@ type Querier interface {
 	// `CancelStaleUnpaidBills`.
 	ListPendingActivityRegistrationsOlderThan(ctx context.Context, arg ListPendingActivityRegistrationsOlderThanParams) ([]ActivityRegistration, error)
 	// Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
-	// pada gateway (internal/paymentreconcile) — padanan alasan
+	// pada gateway (internal/paymentreconcile) - padanan alasan
 	// ListPendingRegistrationPaymentsOlderThan (registration_payments.sql):
 	// cuma 'pending', bukan 'failed' (terminal, tak perlu disemak semula).
 	//
-	// Tingkap atas + limit — lihat komen penuh pada
+	// Tingkap atas + limit - lihat komen penuh pada
 	// `ListPendingRegistrationPaymentsOlderThan` (L30). Sebab sama terpakai:
 	// PaymentIntent Stripe yang ditinggalkan kekal `requires_payment_method`,
 	// yang `CheckStatus` petakan kepada "pending" selama-lamanya.
 	ListPendingDonationsOlderThan(ctx context.Context, arg ListPendingDonationsOlderThanParams) ([]Donation, error)
 	// Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
-	// pada gateway (internal/paymentreconcile) — bukan `status <> 'succeeded'`
+	// pada gateway (internal/paymentreconcile) - bukan `status <> 'succeeded'`
 	// macam query UPDATE di atas, sengaja `status = 'pending'` sahaja: baris
 	// 'failed' TAK perlu disemak semula (terminal jugak, sama macam
 	// 'succeeded', reconcile tak sepatutnya "hidupkan semula" bayaran gagal
-	// tanpa ahli cuba lagi secara eksplisit — bayaran baharu akan hasilkan
+	// tanpa ahli cuba lagi secara eksplisit - bayaran baharu akan hasilkan
 	// baris baharu).
 	//
 	// TINGKAP ATAS + LIMIT (L30, 2026-08-22). Sebelum ni query ni ada had
@@ -434,12 +434,12 @@ type Querier interface {
 	// daripada 'pending': bil ToyyibPay yang tak dibayar pulang
 	// `No data found!` selama-lamanya, jadi `CheckStatus` pulang "pending"
 	// selama-lamanya. Setiap checkout terbiar kekal dalam senarai semakan
-	// SELAMANYA, dan setiap 30 minit ia satu panggilan HTTP keluar lagi —
+	// SELAMANYA, dan setiap 30 minit ia satu panggilan HTTP keluar lagi -
 	// bebanan yang membesar secara monotonik sepanjang hayat sistem.
 	//
 	// `stale_before` = had bawah (cukup umur untuk layak disemak).
 	// `oldest` = had atas: lebih tua drpd ni bukan lagi kerja rekonsiliasi,
-	// ia kerja pembersihan. Baris begitu TIDAK hilang — ia kekal dalam DB
+	// ia kerja pembersihan. Baris begitu TIDAK hilang - ia kekal dalam DB
 	// dan tetap kelihatan melalui /admin/payments; ia cuma berhenti dipoll.
 	// `gateway_ref is not null` (L29, 2026-08-22): baris tanpa ref bermakna
 	// createBill tak pernah berjaya, jadi tiada bil untuk ditanya pada
@@ -448,23 +448,23 @@ type Querier interface {
 	ListPendingRegistrationPaymentsOlderThan(ctx context.Context, arg ListPendingRegistrationPaymentsOlderThanParams) ([]RegistrationPayment, error)
 	ListPostImageKeys(ctx context.Context, postID uuid.UUID) ([]string, error)
 	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
-	// Keyset pagination atas (created_at, id) — bukan created_at je, elak
+	// Keyset pagination atas (created_at, id) - bukan created_at je, elak
 	// row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 	// (null cursor = page pertama).
 	ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error)
-	// Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
-	// `modules` — SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
-	// yang KIRA senarai modul dibenarkan (bukan SQL) — donation cuma untuk
+	// Tinjauan am terkini merentas modul - endpoint admin (GET /admin/payments).
+	// `modules` - SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
+	// yang KIRA senarai modul dibenarkan (bukan SQL) - donation cuma untuk
 	// superadmin (keputusan produk 2026-08-15), jadi handler hantar
 	// {registration_fee, activity_fee} untuk management biasa, atau ketiga-
 	// tiga (termasuk donation) untuk superadmin, atau satu modul tunggal
-	// kalau caller tapis eksplisit. Query ni buta pada perbezaan tu — ia
+	// kalau caller tapis eksplisit. Query ni buta pada perbezaan tu - ia
 	// cuma tapis `= any(modules)`, kawalan kebenaran 100% di Go.
 	// `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
 	// id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
 	// semasa pengurus menatal.
 	ListRecentPaymentLogs(ctx context.Context, arg ListRecentPaymentLogsParams) ([]PaymentLog, error)
-	// attended_session_ids menjawab "sesi mana pendaftaran ini sudah hadir?" —
+	// attended_session_ids menjawab "sesi mana pendaftaran ini sudah hadir?" -
 	// skrin kehadiran pengurusan menyemai suisnya daripada medan ini. Satu
 	// boolean per peserta tidak mencukupi: kehadiran ialah per-sesi.
 	//
@@ -474,13 +474,13 @@ type Querier interface {
 	//
 	// coalesce(..., '{}') penting: left join memberi NULL untuk pendaftaran
 	// tanpa kehadiran, dan NULL bersiri sebagai `null` dalam JSON. Klien yang
-	// memanggil .map atasnya terhempas — [] ialah kontrak.
+	// memanggil .map atasnya terhempas - [] ialah kontrak.
 	// Lajur disenaraikan SATU-SATU, bukan `r.*` (L12, ditutup 2026-08-22).
 	// `checkin_token` SENGAJA tiada di sini: ia kelayakan yang membolehkan
 	// sesiapa yang memegangnya ditanda hadir (`method: 'scan'`), dan
 	// kehadiran itulah yang menentukan siapa menerima sijil. Skrin pengurusan
 	// menanda kehadiran melalui `registration_id`, jadi token ahli LAIN tiada
-	// sebab meninggalkan pelayan — pendedahannya bersifat sampingan (log,
+	// sebab meninggalkan pelayan - pendedahannya bersifat sampingan (log,
 	// laporan ranap, cache proksi, tangkapan skrin peranti pengurus).
 	//
 	// `r.*` bermakna setiap lajur BAHARU pada `activity_registrations` turut
@@ -489,11 +489,11 @@ type Querier interface {
 	//
 	// Klien sudah tidak memodelkannya (`marc_flutter`
 	// `manage_providers.dart` menyatakannya secara eksplisit), jadi
-	// membuangnya bukan perubahan yang memecahkan — ia menguatkuasakan di
+	// membuangnya bukan perubahan yang memecahkan - ia menguatkuasakan di
 	// pelayan apa yang sebelum ini sekadar konvensyen klien.
 	ListRegistrationsByActivity(ctx context.Context, activityID uuid.UUID) ([]ListRegistrationsByActivityRow, error)
 	ListRoles(ctx context.Context) ([]Role, error)
-	// Baris 'pending' lebih tua drpd cutoff — internal/registrationsweep.
+	// Baris 'pending' lebih tua drpd cutoff - internal/registrationsweep.
 	// TIADA tapisan gateway_ref: baris tanpa ref (createBill gagal sebelum
 	// ref) turut perlu ditandakan 'failed' supaya gate bypass/admin tak
 	// tersekat. Baris dengan ref disemak gateway DULU dalam Go sebelum
@@ -505,7 +505,7 @@ type Querier interface {
 	// 2026-08-22, L28). Baris yang dipulangkan di sini ialah senarai PADAM:
 	// semuanya akan digilir ke `deleted_uploads` dan objek R2nya dibuang.
 	// Sebelum ni query cuma menapis ikut UMUR dan bergantung SEPENUHNYA pada
-	// baris dikeluarkan semasa post dicipta — sedangkan laluan itu
+	// baris dikeluarkan semasa post dicipta - sedangkan laluan itu
 	// (`posts.go`) mengabaikan ralat `DeletePendingUpload`, jadi satu DELETE
 	// yang gagal bermakna gambar post yang MASIH dipaparkan dipadam 6 jam
 	// kemudian, kekal, tanpa ralat di mana-mana.
@@ -516,25 +516,25 @@ type Querier interface {
 	// mana-mana laluan tulis MASA HADAPAN yang terlupa mengeluarkan barisnya.
 	//
 	// Laluan avatar (`applyAvatar`) sentiasa menyemak ralatnya, jadi klausa
-	// `profiles` lebih kepada simetri drpd pembaikan pepijat — tapi tanpa ia,
+	// `profiles` lebih kepada simetri drpd pembaikan pepijat - tapi tanpa ia,
 	// query ni betul atas sebab yang bergantung pada fail LAIN, dan itulah
 	// tepatnya bentuk kelemahan yang L28 wujud untuk hapuskan.
 	ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]PendingUpload, error)
 	// Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
 	// dibuat di peringkat SQL (bukan dalam Go) supaya baris yang viewer tak
 	// layak tengok tak pernah pun keluar dari DB:
-	//   max_rank             — siling hierarki keterlihatan; lihat
+	//   max_rank             - siling hierarki keterlihatan; lihat
 	//                          `visibleRankCeiling` di handlers/profile.go
-	//   status               — penapis pilihan (cth 'pending' utk barisan
+	//   status               - penapis pilihan (cth 'pending' utk barisan
 	//                          kelulusan management)
-	//   include_all_statuses — management sahaja. Ahli biasa cuma nampak ahli
+	//   include_all_statuses - management sahaja. Ahli biasa cuma nampak ahli
 	//                          berstatus 'approved' (+ baris dia sendiri,
 	//                          apa pun statusnya)
 	ListVisibleProfiles(ctx context.Context, arg ListVisibleProfilesParams) ([]ListVisibleProfilesRow, error)
-	// `for update` atas baris aktiviti — ini yang menyerikan pendaftaran
+	// `for update` atas baris aktiviti - ini yang menyerikan pendaftaran
 	// serentak supaya kiraan kapasiti tak boleh basi antara baca dan tulis.
 	LockActivityForRegistration(ctx context.Context, id uuid.UUID) (Activity, error)
-	// Guard `reminder_sent_at is null` — dua replika yang baca baris SAMA
+	// Guard `reminder_sent_at is null` - dua replika yang baca baris SAMA
 	// dlm ListActivitiesNeedingReminder serentak, cuma SATU yang berjaya
 	// UPDATE (baris kedua affect 0 rows), elak hantar push berganda.
 	MarkActivityReminderSent(ctx context.Context, id uuid.UUID) (int64, error)
@@ -543,7 +543,7 @@ type Querier interface {
 	// ia cuma tiada kerja. Handler membezakan "baharu" daripada "sudah ada"
 	// melalui sama ada baris dipulangkan.
 	MarkAttendance(ctx context.Context, arg MarkAttendanceParams) (ActivityAttendance, error)
-	// Tandakan, jangan padam baris — lihat komen 'deleted_at' dlm migration.
+	// Tandakan, jangan padam baris - lihat komen 'deleted_at' dlm migration.
 	MarkDeletedUploadDone(ctx context.Context, r2Key string) error
 	// Backoff eksponen ringkas, dihadkan pada 1 jam.
 	MarkDeletedUploadFailed(ctx context.Context, arg MarkDeletedUploadFailedParams) error
@@ -551,7 +551,7 @@ type Querier interface {
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error
 	// Dipanggil bila createBill GAGAL selepas baris dicipta. Baris dikekalkan
 	// (bukan dipadam) supaya sejarah "Bayaran Saya" ahli menunjukkan
-	// percubaan itu benar-benar berlaku — dan `ListPendingRegistrationPayments
+	// percubaan itu benar-benar berlaku - dan `ListPendingRegistrationPayments
 	// OlderThan` tak perlu menapis baris yang takkan pernah ada bil.
 	//
 	// Guard `gateway_ref is null` memastikan ni tak boleh menjatuhkan bayaran
@@ -559,16 +559,16 @@ type Querier interface {
 	MarkRegistrationPaymentFailed(ctx context.Context, id uuid.UUID) error
 	NextSequence(ctx context.Context, key string) (int64, error)
 	PostLikedByUser(ctx context.Context, arg PostLikedByUserParams) (bool, error)
-	// Untuk tandakan "liked_by_me" bila list post — pulang subset post_ids
+	// Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
 	// Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
-	// selepas cipta — dipanggil dalam transaksi yang sama dengan setiap
+	// selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 	// perubahan set sesi.
 	RecomputeActivityWindow(ctx context.Context, id uuid.UUID) error
 	// Buang metadata permintaan daripada catatan lama TANPA memusnahkan
 	// catatan itu sendiri. Dibenarkan oleh trigger append-only kerana ia
-	// hanya menetapkan kedua-dua lajur ini kepada NULL — lihat migration
+	// hanya menetapkan kedua-dua lajur ini kepada NULL - lihat migration
 	// 20260809180000.
 	RedactAuditLogPIIBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error)
@@ -591,7 +591,7 @@ type Querier interface {
 	SetRegistrationPaymentGatewayRef(ctx context.Context, arg SetRegistrationPaymentGatewayRefParams) (RegistrationPayment, error)
 	// Simpan bill code ToyyibPay pada pendaftaran sedia ada, dipanggil sebaik
 	// createBill berjaya semasa checkout yuran aktiviti. `fee_cents_paid`
-	// snapshot amaun SEBENAR dihantar ke gateway pada saat checkout ni —
+	// snapshot amaun SEBENAR dihantar ke gateway pada saat checkout ni -
 	// resit (payments.go) baca lajur ni dan bukan `activities.fee_cents`
 	// hidup, supaya yuran yang ditukar SELEPAS bayar tak senyap ubah resit
 	// yang sedia wujud (Opus verify 2026-08-15).
@@ -602,15 +602,15 @@ type Querier interface {
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	// Nyahtetapkan default LAMA sebelum tetapkan default BAHARU, dalam
-	// transaksi yang sama — partial unique index (satu default/ahli) akan
+	// transaksi yang sama - partial unique index (satu default/ahli) akan
 	// tolak dua baris `is_default=true` serentak kalau susunan ni songsang.
 	UnsetDefaultForUser(ctx context.Context, userID uuid.UUID) error
 	UpdateActivity(ctx context.Context, arg UpdateActivityParams) (Activity, error)
-	// `key` sengaja tidak boleh diubah selepas cipta — padanan corak role.key,
+	// `key` sengaja tidak boleh diubah selepas cipta - padanan corak role.key,
 	// ia pengecam stabil (bukan medan paparan macam `name`).
 	UpdateActivityCategory(ctx context.Context, arg UpdateActivityCategoryParams) (ActivityCategory, error)
-	// Partial update — medan tak dihantar (narg NULL) kekal nilai asal,
-	// padanan pola UpdateProfile. `is_default` sengaja TIDAK di sini —
+	// Partial update - medan tak dihantar (narg NULL) kekal nilai asal,
+	// padanan pola UpdateProfile. `is_default` sengaja TIDAK di sini -
 	// ditetapkan berasingan (SetDefault) dalam transaksi yang turut
 	// nyahtetapkan default lama, supaya invariant "paling banyak SATU
 	// default" sentiasa dikekalkan sepanjang transaksi.
@@ -625,12 +625,12 @@ type Querier interface {
 	UpdateDonationStatusByGatewayRef(ctx context.Context, arg UpdateDonationStatusByGatewayRefParams) (Donation, error)
 	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
-	// Status AKTIF/TAK AKTIF keahlian — berasingan drpd `status` (kelulusan).
+	// Status AKTIF/TAK AKTIF keahlian - berasingan drpd `status` (kelulusan).
 	// Management sahaja (dikuatkuasakan handler), padanan pola UpdateProfileRole.
 	UpdateProfileActive(ctx context.Context, arg UpdateProfileActiveParams) (Profile, error)
 	UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvatarParams) (Profile, error)
-	// Bahagian/jawatan ahli — management (manager ke atas) sahaja. Semantik
-	// GANTI PENUH (bukan partial-coalesce macam UpdateProfile) — handler
+	// Bahagian/jawatan ahli - management (manager ke atas) sahaja. Semantik
+	// GANTI PENUH (bukan partial-coalesce macam UpdateProfile) - handler
 	// hantar nilai akhir terus (Valid:false = kosongkan), sebab tindakan ni
 	// satu borang "tetapkan bahagian+jawatan skrg", bukan patch berperingkat.
 	UpdateProfileDepartment(ctx context.Context, arg UpdateProfileDepartmentParams) (Profile, error)
@@ -645,17 +645,17 @@ type Querier interface {
 	// tapi bagi activity_registrations: kunci carian payment_ref (bill code),
 	// bukan (gateway, gateway_ref) berasingan sebab jadual ni tak simpan lajur
 	// gateway berasingan (satu gateway sahaja buat masa ini, ToyyibPay).
-	// Kekang `payment_status <> 'paid'` idempotent — 'paid' ialah keadaan
+	// Kekang `payment_status <> 'paid'` idempotent - 'paid' ialah keadaan
 	// terminal, replay webhook lepas tu ialah no-op.
 	//
 	// SENGAJA TIADA `and status <> 'cancelled'`: kalau baris ni dah dibatal
 	// (CancelStaleUnpaidBills) tapi webhook confirm lambat tiba, UPDATE ni
-	// MASIH akan tanda payment_status='paid' walaupun status='cancelled' —
+	// MASIH akan tanda payment_status='paid' walaupun status='cancelled' -
 	// keadaan cancelled+paid yang ganjil, tapi SENGAJA supaya boleh dikesan
 	// (handler Go log ERROR bila ini berlaku, lihat activity_registration_payment.go)
 	// bukan senyap hilang. Kalau guard `status<>'cancelled'` ditambah di sini,
 	// UPDATE gagal (0 baris), pgx.ErrNoRows dianggap "replay biasa", dan
-	// kesnya jadi kelihatan macam tiada apa berlaku — walhal ahli dah bayar.
+	// kesnya jadi kelihatan macam tiada apa berlaku - walhal ahli dah bayar.
 	UpdateRegistrationPaymentStatusByPaymentRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByPaymentRefParams) (ActivityRegistration, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)

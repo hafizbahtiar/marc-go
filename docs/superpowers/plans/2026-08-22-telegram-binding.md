@@ -10,7 +10,7 @@ akaun MARC melalui deep-link sekali-guna, supaya fasa seterusnya
 (notifikasi, 2FA) ada asas identiti Telegram untuk dibina.
 
 **Architecture:** `marc_go` terima update Telegram via **webhook**
-(bukan long polling — Telegram `409 Conflict` pada >1 replica
+(bukan long polling - Telegram `409 Conflict` pada >1 replica
 `getUpdates` serentak, dan `marc_go` tiada kunci teragih). Endpoint
 auth baharu (`POST /me/telegram-link/token`, `DELETE
 /me/telegram-link`) jana/padam token sementara guna corak SAMA persis
@@ -24,21 +24,21 @@ dependency, `net/http`), Gin, sqlc/pgx, Flutter/Riverpod/`url_launcher`.
 
 ## Global Constraints
 
-- Library Telegram: `github.com/go-telegram/bot` — TIADA library lain
+- Library Telegram: `github.com/go-telegram/bot` - TIADA library lain
 - Cara terima update: **webhook**, bukan long polling
-- Storan binding: lajur pada `profiles` (BUKAN `users` — dibetulkan
+- Storan binding: lajur pada `profiles` (BUKAN `users` - dibetulkan
   drpd draf awal spec, lihat spec bahagian "Pembetulan")
 - Binding 1:1 ketat: `telegram_chat_id unique` di lapisan DB
 - Pertindihan (chat lain dah terikat akaun lain) → TOLAK
 - User sedia ada binding, bind chat baharu → GANTIKAN (chat lama
-  senyap terputus, tiada notifikasi — mekanisme notifikasi belum wujud)
+  senyap terputus, tiada notifikasi - mekanisme notifikasi belum wujud)
 - Token binding: legap 32-bait (`auth.GenerateOpaqueToken`), hash
   SHA-256 (`auth.HashToken`), TTL **10 minit**, tuntutan atomik
   `DELETE...RETURNING` sbg statement PERTAMA
 - Config kosong (`TELEGRAM_BOT_TOKEN`) = ciri MATI (503), bukan
-  degradasi senyap — padanan corak `PASSWORD_RESET_URL`/R2/Stripe
+  degradasi senyap - padanan corak `PASSWORD_RESET_URL`/R2/Stripe
 - Webhook `/webhooks/telegram` MESTI sentiasa pulang 200 selepas
-  pengesahan header rahsia lulus — ralat "kpd pengguna" dihantar sbg
+  pengesahan header rahsia lulus - ralat "kpd pengguna" dihantar sbg
   mesej bot, BUKAN status HTTP
 - Pautan Play Store:
   `https://play.google.com/store/apps/details?id=com.hafizbahtiar.marc`
@@ -53,21 +53,21 @@ dependency, `net/http`), Gin, sqlc/pgx, Flutter/Riverpod/`url_launcher`.
 |---|---|
 | `internal/db/migrations/20260823100000_add_telegram_binding.sql` | Cipta |
 | `queries/telegram_link_tokens.sql` | Cipta |
-| `queries/profiles.sql` | Ubah — tambah 3 query |
-| `internal/config/config.go` | Ubah — 3 field baharu |
-| `.env.example` | Ubah — 3 baris baharu |
-| `go.mod` / `go.sum` | Ubah — tambah `github.com/go-telegram/bot` |
+| `queries/profiles.sql` | Ubah - tambah 3 query |
+| `internal/config/config.go` | Ubah - 3 field baharu |
+| `.env.example` | Ubah - 3 baris baharu |
+| `go.mod` / `go.sum` | Ubah - tambah `github.com/go-telegram/bot` |
 | `internal/http/handlers/telegram.go` | Cipta |
 | `internal/http/handlers/telegram_live_test.go` | Cipta |
-| `internal/http/handlers/profile.go` | Ubah — `profileResponse` + `Me` |
-| `internal/http/router.go` | Ubah — param baharu + 3 route |
+| `internal/http/handlers/profile.go` | Ubah - `profileResponse` + `Me` |
+| `internal/http/router.go` | Ubah - param baharu + 3 route |
 | `internal/http/router_telegram_test.go` | Cipta |
-| `cmd/api/main.go` | Ubah — bina `telegramHandler` + `tgBot` |
+| `cmd/api/main.go` | Ubah - bina `telegramHandler` + `tgBot` |
 | `marc_flutter/lib/features/profile/telegram_link_page.dart` | Cipta |
-| `marc_flutter/lib/features/profile/profile_providers.dart` | Ubah — model `Profile` |
-| `marc_flutter/lib/features/profile/profile_page.dart` | Ubah — 1 `ListTile` |
-| `marc_flutter/lib/features/auth/auth_service.dart` | Ubah — 3 kaedah |
-| `marc_flutter/lib/app/router.dart` | Ubah — 1 route |
+| `marc_flutter/lib/features/profile/profile_providers.dart` | Ubah - model `Profile` |
+| `marc_flutter/lib/features/profile/profile_page.dart` | Ubah - 1 `ListTile` |
+| `marc_flutter/lib/features/auth/auth_service.dart` | Ubah - 3 kaedah |
+| `marc_flutter/lib/app/router.dart` | Ubah - 1 route |
 | `marc_flutter/test/.../telegram_link_page_test.dart` | Cipta |
 
 ---
@@ -94,7 +94,7 @@ dependency, `net/http`), Gin, sqlc/pgx, Flutter/Riverpod/`url_launcher`.
   guna kesemuanya.
 - Produces: `Profile.TelegramChatID pgtype.Int8`,
   `Profile.TelegramUsername pgtype.Text`,
-  `Profile.TelegramLinkedAt pgtype.Timestamptz` — muncul automatik
+  `Profile.TelegramLinkedAt pgtype.Timestamptz` - muncul automatik
   dlm `GetProfileByUserID` (`select p.*`). Task 2 guna dlm respons `/me`.
 - Produces: `config.Config.TelegramBotToken`,
   `.TelegramBotUsername`, `.TelegramWebhookSecret` (semua `string`).
@@ -431,7 +431,7 @@ func TestDeleteTelegramLinkKosongkanLajur(t *testing.T) {
 }
 ```
 
-`decodeJSON`/`contains` — helper kecil, tambah di hujung fail ujian ni
+`decodeJSON`/`contains` - helper kecil, tambah di hujung fail ujian ni
 (bukan dlm fail production):
 
 ```go
@@ -454,7 +454,7 @@ laraskan baris ni supaya padan, JANGAN ubah middleware).
 - [ ] **Step 2: Jalankan ujian, sahkan GAGAL (fungsi belum wujud)**
 
 Run: `HANDLER_TEST_DB=<dsn> go test ./internal/http/handlers/ -run TestRequestTelegramLinkToken -v`
-Expected: FAIL — `undefined: NewTelegramHandler`
+Expected: FAIL - `undefined: NewTelegramHandler`
 
 - [ ] **Step 3: Tulis `internal/http/handlers/telegram.go`**
 
@@ -608,7 +608,7 @@ func TestMeResponseMemaparkanKeadaanTelegram(t *testing.T) {
 }
 ```
 
-(`pgtype` dah diimport sejak Task 2 Step 1 — tiada import tambahan
+(`pgtype` dah diimport sejak Task 2 Step 1 - tiada import tambahan
 diperlukan di sini.)
 
 Run: `HANDLER_TEST_DB=<dsn> go test ./internal/http/handlers/ -run TestMeResponseMemaparkanKeadaanTelegram -v`
@@ -643,17 +643,17 @@ git commit -m "feat(telegram): endpoint token binding + nyahikat + status /me"
   `sqlc.ConsumeTelegramLinkToken`, `sqlc.GetUserIDByTelegramChatID`,
   `sqlc.SetTelegramLink` dari Task 1
 - Produces: `(*TelegramHandler).HandleUpdate(ctx context.Context, b
-  *bot.Bot, update *models.Update)` — tandatangan tepat
+  *bot.Bot, update *models.Update)` - tandatangan tepat
   `bot.HandlerFunc`, dihantar terus ke `bot.WithDefaultHandler()` dlm
   `main.go`
 - Produces: `NewRouter(..., telegramHandler *handlers.TelegramHandler,
-  tgBot *bot.Bot) *gin.Engine` — 2 param baharu di HUJUNG senarai
+  tgBot *bot.Bot) *gin.Engine` - 2 param baharu di HUJUNG senarai
   param sedia ada
 
 **Nota reka bentuk penting:** `telegramHandler` dibina dlm `main.go`
 (BUKAN di dalam `NewRouter` spt `authHandler`/`profileHandler`) sebab
 `bot.New()` perlu `bot.WithDefaultHandler(telegramHandler.HandleUpdate)`
-sbg *option* semasa dibina — kalau `telegramHandler` dibina di dalam
+sbg *option* semasa dibina - kalau `telegramHandler` dibina di dalam
 `NewRouter`, ia belum wujud lagi pada ketika `bot.New()` dipanggil.
 Ini padanan corak `paymentReconciler`: dibina + `.Start(ctx)` dlm
 `main.go`, dihantar SUDAH-DIBINA ke `NewRouter`.
@@ -841,7 +841,7 @@ Tambah import `"sync"`, `"time"` (kalau belum ada), dan
 - [ ] **Step 2: Jalankan ujian, sahkan GAGAL**
 
 Run: `HANDLER_TEST_DB=<dsn> go test ./internal/http/handlers/ -run TestResolveStart -v`
-Expected: FAIL — `undefined: (*TelegramHandler).resolveStart`
+Expected: FAIL - `undefined: (*TelegramHandler).resolveStart`
 
 - [ ] **Step 3: Tulis `resolveStart` + `HandleUpdate` dlm `telegram.go`**
 
@@ -950,7 +950,7 @@ Expected: semua PASS
 Tukar SEMENTARA `ConsumeTelegramLinkToken` (dlm
 `queries/telegram_link_tokens.sql`) drpd `delete ... returning`
 kepada `select ...` biasa, `sqlc generate`, jalankan
-`TestResolveStartSekaliGunaDiBawahPerlumbaan` — SAHKAN ia GAGAL.
+`TestResolveStartSekaliGunaDiBawahPerlumbaan` - SAHKAN ia GAGAL.
 Kemudian PULIHKAN query asal + `sqlc generate` semula.
 
 Run: `git diff queries/telegram_link_tokens.sql` selepas pulih
@@ -960,7 +960,7 @@ Expected: kosong (tiada perubahan kekal)
 
 Dalam `resolveStart`, komen SEMENTARA blok
 `if existingUserID, err := ...; err == nil && existingUserID != rec.UserID { return msgPertindihan }`,
-jalankan `TestResolveStartChatTerikatAkaunLainDitolak` — SAHKAN GAGAL.
+jalankan `TestResolveStartChatTerikatAkaunLainDitolak` - SAHKAN GAGAL.
 PULIHKAN kod.
 
 Run: `git diff internal/http/handlers/telegram.go` selepas pulih
@@ -1038,7 +1038,7 @@ Selepas blok `paymentReconciler.Start(ctx)` (sebelum baris
 ```
 
 Tambah import `"marc/internal/http/handlers"` kalau belum ada
-(semak dulu — kemungkinan besar sudah ada via `httpapi` alias;
+(semak dulu - kemungkinan besar sudah ada via `httpapi` alias;
 kalau `handlers` package belum diimport terus dlm `main.go`,
 tambah `"marc/internal/http/handlers"`).
 
@@ -1065,7 +1065,7 @@ Tambah fail BAHARU `internal/http/router_telegram_test.go`. Kedua-dua
 ujian guna `WithSkipGetMe()` supaya `bot.New()` tak buat panggilan
 rangkaian sebenar ke Telegram semasa ujian, dan token berformat sah
 scr sintaks (`"123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"`, format
-rasmi Telegram) — tak perlu wujud sebenar sebab `WithSkipGetMe()`
+rasmi Telegram) - tak perlu wujud sebenar sebab `WithSkipGetMe()`
 langkau pengesahan rangkaian:
 
 ```go
@@ -1171,7 +1171,7 @@ git commit -m "feat(telegram): webhook /start + wiring bot + route"
 
 ---
 
-## Task 4: Flutter — skrin binding
+## Task 4: Flutter - skrin binding
 
 **Files:**
 - Create: `lib/features/profile/telegram_link_page.dart`
@@ -1238,7 +1238,7 @@ Dalam `lib/features/auth/auth_service.dart`, tambah selepas kaedah
 - [ ] **Step 2: Tambah 2 field Telegram ke model `Profile`**
 
 `myProfileProvider` (`lib/features/profile/profile_providers.dart:86`)
-ialah `FutureProvider<Profile?>` — Profile itu sendiri tak parse
+ialah `FutureProvider<Profile?>` - Profile itu sendiri tak parse
 `telegram_linked`/`telegram_username` lagi (respons `/me` kini bawa
 kedua-duanya, Task 2 marc_go). Tambah ke class `Profile`:
 
@@ -1299,7 +1299,7 @@ Dalam `Profile.fromJson` (baris 66-81), tambah selepas
 
 Run: `flutter analyze`
 Expected: ralat pada mana-mana tempat lain yg bina `Profile(...)` tanpa
-`telegramLinked` (parameter `required` baharu) — kalau ada, itu
+`telegramLinked` (parameter `required` baharu) - kalau ada, itu
 kemungkinan besar fail ujian sedia ada (cth `comment_tile_test.dart`
 guna `Profile(...)` terus utk `_me`). Tambah `telegramLinked: false`
 ke SETIAP tapak pembinaan `Profile(...)` yg gagal compile (guna
@@ -1568,26 +1568,26 @@ git commit -m "feat(telegram): skrin binding akaun Telegram di app"
 **Interfaces:**
 - Consumes: hasil Task 1-4 (fail sebenar yg dicipta/diubah)
 
-- [ ] **Step 1: `ARCHITECTURE.md`** — tambah subseksyen "Binding
+- [ ] **Step 1: `ARCHITECTURE.md`** - tambah subseksyen "Binding
   Telegram" selepas subseksyen "Reset kata laluan" (padanan format:
   keputusan reka bentuk + rujukan fail), dan tambah
   `TELEGRAM_BOT_TOKEN` ke jadual config bahagian "503 yang jelas".
 
-- [ ] **Step 2: `DATABASE.md`** — dokumen 3 lajur baharu `profiles`
+- [ ] **Step 2: `DATABASE.md`** - dokumen 3 lajur baharu `profiles`
   + jadual `telegram_link_tokens` (padanan cara `password_reset_tokens`
   didokumen).
 
-- [ ] **Step 3: `TODO.md`** — tambah entri `L38` (atau nombor
+- [ ] **Step 3: `TODO.md`** - tambah entri `L38` (atau nombor
   seterusnya ikut keadaan semasa) menutup ciri ni, tandakan fasa 2
   (notifikasi) dan fasa 3 (2FA) sbg kerja masa depan berasingan yg
   BERGANTUNG pada L38.
 
-- [ ] **Step 4: `README.md`** + **`docs/README.md`** — tambah baris
+- [ ] **Step 4: `README.md`** + **`docs/README.md`** - tambah baris
   jadual Spec & plan (padanan baris L32 sedia ada), sebut env var
   baharu dlm mana-mana senarai config sedia ada.
 
-- [ ] **Step 5: `marc_flutter/TODO.md`** — tambah entri "Backend
-  L38 (2026-08-22) — binding Telegram" padanan format entri L32/L33
+- [ ] **Step 5: `marc_flutter/TODO.md`** - tambah entri "Backend
+  L38 (2026-08-22) - binding Telegram" padanan format entri L32/L33
   sedia ada, sebut skrin `telegram_link_page.dart` + route
   `/telegram-link`.
 

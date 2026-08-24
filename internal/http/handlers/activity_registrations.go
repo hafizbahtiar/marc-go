@@ -53,7 +53,7 @@ func newCheckinToken() (string, error) {
 // `select ... for update` atas baris aktiviti ialah intinya: tanpa kunci
 // itu, dua permintaan serentak boleh kedua-duanya membaca "9 daripada 10
 // terisi" dan kedua-duanya memasukkan baris. Pada skala ratusan ahli, kunci
-// baris ini percuma — tiada sebab untuk mereka sesuatu yang lebih pintar.
+// baris ini percuma - tiada sebab untuk mereka sesuatu yang lebih pintar.
 func registerTx(ctx context.Context, pool *pgxpool.Pool, activityID, userID uuid.UUID) (sqlc.ActivityRegistration, error) {
 	var zero sqlc.ActivityRegistration
 
@@ -62,7 +62,7 @@ func registerTx(ctx context.Context, pool *pgxpool.Pool, activityID, userID uuid
 		return zero, err
 	}
 	// Setiap `return` di bawah berlaku SEBELUM Commit, jadi rollback ini
-	// yang membatalkan segalanya — tiada laluan yang boleh menyimpan
+	// yang membatalkan segalanya - tiada laluan yang boleh menyimpan
 	// pendaftaran tanpa melepasi semakan kapasiti.
 	defer tx.Rollback(ctx)
 	q := sqlc.New(pool).WithTx(tx)
@@ -109,7 +109,7 @@ func registerTx(ctx context.Context, pool *pgxpool.Pool, activityID, userID uuid
 		return zero, err
 	}
 
-	// payment_status 'pending' untuk aktiviti berbayar (fee_cents > 0) —
+	// payment_status 'pending' untuk aktiviti berbayar (fee_cents > 0) -
 	// ahli tetap dapat slot kapasiti serta-merta (design decision), tapi
 	// kelayakan sijil (activity_certificates.sql) hanya benarkan lepas
 	// payment_status='paid'. Aktiviti percuma kekal 'not_required'.
@@ -140,7 +140,7 @@ func registerTx(ctx context.Context, pool *pgxpool.Pool, activityID, userID uuid
 	return reg, nil
 }
 
-// requireManagement — sama seperti ActivityHandler: semakan dibuat DALAM
+// requireManagement - sama seperti ActivityHandler: semakan dibuat DALAM
 // handler (authz.IsManagement), bukan middleware.
 func (h *RegistrationHandler) requireManagement(c *gin.Context) bool {
 	ok, err := authz.IsManagement(c.Request.Context(), h.queries, middleware.UserID(c))
@@ -155,7 +155,7 @@ func (h *RegistrationHandler) requireManagement(c *gin.Context) bool {
 	return true
 }
 
-// Register — POST /activities/:id/registration.
+// Register - POST /activities/:id/registration.
 //
 // Tiada audit.Record di sini: volum pendaftaran tinggi, dan baris itu
 // sendiri sudah membawa registered_at/cancelled_at. Keputusan sama seperti
@@ -192,10 +192,10 @@ func (h *RegistrationHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"registration": reg})
 }
 
-// Cancel — DELETE /activities/:id/registration. Baris 'cancelled' kekal
+// Cancel - DELETE /activities/:id/registration. Baris 'cancelled' kekal
 // sebagai sejarah; indeks unik separa yang membenarkan daftar semula.
 //
-// Ditolak selepas aktiviti TAMAT (L15, keputusan produk 2026-08-22) —
+// Ditolak selepas aktiviti TAMAT (L15, keputusan produk 2026-08-22) -
 // lihat komen `CancelRegistration` untuk sebab penuh. Ringkasnya:
 // membatalkan selepas hadir memusnahkan kelayakan sijil sendiri secara
 // senyap dan tanpa laluan pulih dalam app.
@@ -207,7 +207,7 @@ func (h *RegistrationHandler) Cancel(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Dibaca DAHULU semata-mata untuk mesej ralat. Guard sebenar ada
-	// dalam query (atomik, tak boleh dipintas laluan lain) — tapi di
+	// dalam query (atomik, tak boleh dipintas laluan lain) - tapi di
 	// sana "tidak berdaftar" dan "aktiviti sudah tamat" kedua-duanya
 	// menghasilkan sifar baris, dan memberitahu ahli yang salah antara
 	// dua itu lebih teruk daripada tidak memberitahu apa-apa.
@@ -235,7 +235,7 @@ func (h *RegistrationHandler) Cancel(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Sampai sini bermakna semakan `ends_at` di atas lulus, jadi
-			// ini benar-benar "tidak berdaftar" — kecuali aktiviti tamat
+			// ini benar-benar "tidak berdaftar" - kecuali aktiviti tamat
 			// dalam tetingkap antara dua bacaan, yang guard SQL tangkap
 			// dengan betul walaupun mesejnya kurang tepat.
 			c.JSON(http.StatusNotFound, gin.H{"error": "anda tidak berdaftar"})
@@ -249,11 +249,11 @@ func (h *RegistrationHandler) Cancel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"registration": reg})
 }
 
-// ListForActivity — GET /activities/:id/registrations. Pengurusan sahaja:
+// ListForActivity - GET /activities/:id/registrations. Pengurusan sahaja:
 // senarai ini membawa nama sebenar dan member_id ahli lain.
 //
 // Setiap baris turut membawa attended_session_ids (uuid[], [] bila kosong)
-// — skrin kehadiran pengurusan menyemai suisnya daripada situ. Tanpa medan
+// - skrin kehadiran pengurusan menyemai suisnya daripada situ. Tanpa medan
 // itu setiap suis bermula OFF dan laluan DELETE .../attendance/:rid tidak
 // pernah boleh dicapai. Agregat itu datang dalam kueri YANG SAMA; jangan
 // gantikannya dengan satu bacaan kehadiran per pendaftaran.
@@ -277,7 +277,7 @@ func (h *RegistrationHandler) ListForActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"registrations": rows})
 }
 
-// ListMine — GET /me/activities. Pendaftaran aktif pemanggil sahaja;
+// ListMine - GET /me/activities. Pendaftaran aktif pemanggil sahaja;
 // yang dibatalkan tidak dipulangkan.
 func (h *RegistrationHandler) ListMine(c *gin.Context) {
 	rows, err := h.queries.ListMyRegistrations(c.Request.Context(), middleware.UserID(c))

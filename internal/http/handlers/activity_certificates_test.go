@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestVerifyResponseHanyaMedanAwam — TRIPWIRE PRIVASI.
+// TestVerifyResponseHanyaMedanAwam - TRIPWIRE PRIVASI.
 //
 // KALAU UJIAN INI GAGAL, ANDA BARU SAHAJA MENAMBAH (ATAU MEMBUANG) SATU
 // MEDAN PADA RESPONS AWAM `GET /verify/certificates/:token`.
@@ -20,11 +20,11 @@ import (
 //
 // Jangan sekadar meluaskan senarai `mahu` di bawah supaya build hijau semula.
 // Tanya dahulu: adakah saya selesa medan ini berada pada halaman web awam?
-// Kalau ya, luaskan senarai DENGAN SENGAJA — itulah gunanya ujian ini.
+// Kalau ya, luaskan senarai DENGAN SENGAJA - itulah gunanya ujian ini.
 //
 // Ia TANPA pangkalan data dengan sengaja. Ujian hujung-ke-hujung yang setara
 // (TestVerifyTidakMendedahkanPII) di-SKIP bila ACTIVITY_TEST_DB tidak
-// ditetapkan, iaitu pada setiap PR dalam CI — jadi ia sahaja bermakna
+// ditetapkan, iaitu pada setiap PR dalam CI - jadi ia sahaja bermakna
 // kebocoran PII boleh dihantar dengan build hijau. Yang diuji di sini ialah
 // sempadan penyirian, bukan query, jadi ia tidak perlukan DB langsung.
 func TestVerifyResponseHanyaMedanAwam(t *testing.T) {

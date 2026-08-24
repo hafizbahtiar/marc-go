@@ -1,12 +1,12 @@
 // Package paymentlog rekod PERISTIWA bayaran merentas semua modul
-// (donation Stripe, yuran pendaftaran, yuran aktiviti — jadual
+// (donation Stripe, yuran pendaftaran, yuran aktiviti - jadual
 // payment_logs, migration 20260815060000). BUKAN internal/audit (delta
-// perubahan MEDAN pada entiti yang boleh disunting) — ni log peristiwa
+// perubahan MEDAN pada entiti yang boleh disunting) - ni log peristiwa
 // append-only untuk diagnosis + asas internal/paymentreconcile.
 //
 // Keputusan produk 2026-08-15, lepas beberapa insiden webhook ToyyibPay
 // (`;` mentah, `%` tak sah, billcode tak dijumpai) yang cuma dapat
-// didiagnosis betul-betul lepas SSH terus ke Railway + query DB manual —
+// didiagnosis betul-betul lepas SSH terus ke Railway + query DB manual -
 // sepatutnya boleh nampak terus dari satu jadual log kalau ni dah wujud
 // dari awal.
 package paymentlog
@@ -21,7 +21,7 @@ import (
 	"marc/internal/db/sqlc"
 )
 
-// Modul — set TETAP kecil (padan CHECK constraint jadual) sebab dipakai
+// Modul - set TETAP kecil (padan CHECK constraint jadual) sebab dipakai
 // untuk retention/filter, beza drpd Event/Status di bawah yang sengaja
 // bebas-bentuk.
 const (
@@ -30,7 +30,7 @@ const (
 	ModuleActivityFee     = "activity_fee"
 )
 
-// Event — BUKAN senarai tertutup (tiada CHECK di DB, lihat migration).
+// Event - BUKAN senarai tertutup (tiada CHECK di DB, lihat migration).
 // Ini nilai yang dipakai konsisten oleh handler sedia ada; caller lain
 // boleh guna nilai baharu tanpa migration kalau bentuk baharu timbul.
 const (
@@ -43,7 +43,7 @@ const (
 	EventReconcileMismatch   = "reconcile_mismatch_fixed"
 )
 
-// Status — bebas-bentuk (lihat Event), tapi handler sedia ada konsisten
+// Status - bebas-bentuk (lihat Event), tapi handler sedia ada konsisten
 // guna nilai ni.
 const (
 	StatusOK        = "ok"
@@ -54,27 +54,27 @@ const (
 	StatusMismatch  = "mismatch"
 )
 
-// Entry — satu peristiwa bayaran untuk direkod.
+// Entry - satu peristiwa bayaran untuk direkod.
 type Entry struct {
 	Module     string
 	Event      string
 	Status     string
 	Gateway    string
-	GatewayRef string // pilihan — kosong kalau belum ada bil (cth checkout gagal sebelum createBill)
+	GatewayRef string // pilihan - kosong kalau belum ada bil (cth checkout gagal sebelum createBill)
 
 	AmountCents *int64
 	UserID      *uuid.UUID
 	RelatedID   *uuid.UUID // id baris donations/registration_payments/activity_registrations
 
 	Message string
-	// RawPayload — badan webhook mentah atau respons poll gateway.
-	// PILIHAN, tapi SANGAT digalakkan pada event webhook_* — inilah
+	// RawPayload - badan webhook mentah atau respons poll gateway.
+	// PILIHAN, tapi SANGAT digalakkan pada event webhook_* - inilah
 	// yang akan elakkan pusingan diagnosis manual macam 2026-08-15.
 	RawPayload []byte
 }
 
 // Record tulis satu peristiwa. BEST-EFFORT SENGAJA (beza drpd
-// internal/audit.Record yang MESTI gagalkan seluruh permintaan) — log
+// internal/audit.Record yang MESTI gagalkan seluruh permintaan) - log
 // ni untuk diagnosis/reconcile, bukan invarian perniagaan yang
 // menggerbang kelulusan/akses. Kegagalan tulis log tak patut gagalkan
 // laluan bayaran sebenar (lebih-lebih lagi webhook, yang MESTI pulang
@@ -103,7 +103,7 @@ func Record(ctx context.Context, q *sqlc.Queries, e Entry) {
 		params.Message = pgtype.Text{String: e.Message, Valid: true}
 	}
 	if len(e.RawPayload) > 0 {
-		// text, BUKAN jsonb (Opus verify 2026-08-15) — callback ToyyibPay
+		// text, BUKAN jsonb (Opus verify 2026-08-15) - callback ToyyibPay
 		// form-urlencoded, bukan JSON; lajur jsonb tolak INSERT senyap
 		// (Record best-effort) untuk DUA modul yang jadi sebab ciri ni
 		// dibina. Simpan sebagai teks mentah, terima apa-apa bentuk.

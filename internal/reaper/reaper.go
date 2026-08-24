@@ -3,7 +3,7 @@
 // Ada DUA punca sampah, dan dua-dua pernah bocor senyap-senyap:
 //
 //  1. Post dipadam. Post guna soft delete (deleted_at) untuk jejak audit,
-//     jadi baris post_images kekal — tapi gambar itu sendiri takkan
+//     jadi baris post_images kekal - tapi gambar itu sendiri takkan
 //     dipaparkan lagi, jadi tiada sebab ia terus makan storan.
 //  2. Karangan post ditinggalkan. Gambar naik ke R2 sebaik dipilih, jadi
 //     sesiapa yang pilih gambar lalu tekan "back" tinggalkan objek yatim
@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// Berapa banyak objek dibersihkan setiap pusingan. Kecil sengaja —
+	// Berapa banyak objek dibersihkan setiap pusingan. Kecil sengaja -
 	// pembersihan tak mendesak, dan ini menghadkan kesan kalau bucket
 	// sedang bermasalah.
 	batchSize = 50
@@ -55,7 +55,7 @@ func New(queries *sqlc.Queries, r2 *storage.R2Client, interval time.Duration) *R
 // akan menambah kerumitan tanpa faedah.
 func (r *Reaper) Start(ctx context.Context) {
 	if !r.r2.Enabled() {
-		log.Printf("reaper: R2 tak dikonfigur — pembersihan storan dilangkau")
+		log.Printf("reaper: R2 tak dikonfigur - pembersihan storan dilangkau")
 		return
 	}
 
@@ -87,7 +87,7 @@ func (r *Reaper) RunOnce(ctx context.Context) {
 
 // enqueueOrphanedPostImages tangkap gambar milik post yang dah dipadam
 // tapi belum pernah digilir. Ini yang membersihkan post yang dipadam
-// SEBELUM gilir ni wujud — tanpanya, sampah sedia ada kekal selamanya
+// SEBELUM gilir ni wujud - tanpanya, sampah sedia ada kekal selamanya
 // sebab tiada apa yang pernah merujuknya semula.
 func (r *Reaper) enqueueOrphanedPostImages(ctx context.Context) {
 	keys, err := r.queries.ListOrphanedPostImageKeys(ctx, batchSize)
@@ -109,7 +109,7 @@ func (r *Reaper) enqueueOrphanedPostImages(ctx context.Context) {
 }
 
 // sweepAbandonedUploads pindahkan pending upload yang dah tua ke dalam
-// gilir padam. Ia tak memadam dari R2 terus — biar drainDeleteQueue jadi
+// gilir padam. Ia tak memadam dari R2 terus - biar drainDeleteQueue jadi
 // satu-satunya tempat yang sentuh R2, supaya retry/backoff ada satu
 // laluan sahaja.
 func (r *Reaper) sweepAbandonedUploads(ctx context.Context) {
@@ -161,7 +161,7 @@ func (r *Reaper) drainDeleteQueue(ctx context.Context) {
 			continue
 		}
 		if err := r.queries.MarkDeletedUploadDone(ctx, item.R2Key); err != nil {
-			// Objek dah tiada dalam R2 tapi batu nisan tak tertulis —
+			// Objek dah tiada dalam R2 tapi batu nisan tak tertulis -
 			// pusingan seterusnya cuma akan padam sekali lagi (idempotent),
 			// jadi ini selamat untuk sekadar dilog.
 			log.Printf("reaper: tanda siap %s gagal: %v", item.R2Key, err)

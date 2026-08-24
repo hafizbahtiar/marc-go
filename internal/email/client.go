@@ -31,7 +31,7 @@ func NewClient(apiKey, from string) *Client {
 	}
 }
 
-// SetBaseURLForTest override endpoint Resend — untuk test tanpa panggil
+// SetBaseURLForTest override endpoint Resend - untuk test tanpa panggil
 // API sebenar.
 func (c *Client) SetBaseURLForTest(url string) {
 	c.baseURL = url
@@ -43,9 +43,9 @@ func (c *Client) Enabled() bool {
 	return c.apiKey != "" && c.from != ""
 }
 
-// Attachment — fail dilampirkan pada emel (cth PDF resit donation).
+// Attachment - fail dilampirkan pada emel (cth PDF resit donation).
 // Resend terima kandungan sebagai base64 dlm body JSON (bukan
-// multipart) — `resendAttachment.Content` bawah handle encoding tu.
+// multipart) - `resendAttachment.Content` bawah handle encoding tu.
 type Attachment struct {
 	Filename string
 	Content  []byte
@@ -69,7 +69,7 @@ func (c *Client) Send(ctx context.Context, to, subject, html string) error {
 	return c.SendWithAttachments(ctx, to, subject, html, nil)
 }
 
-// SendWithAttachments — sama macam Send, tapi boleh lampir fail (cth
+// SendWithAttachments - sama macam Send, tapi boleh lampir fail (cth
 // PDF resit). Attachments kosong/nil = sama perilaku dgn Send biasa.
 func (c *Client) SendWithAttachments(ctx context.Context, to, subject, html string, attachments []Attachment) error {
 	if !c.Enabled() {

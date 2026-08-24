@@ -16,11 +16,11 @@ import (
 	"marc/internal/storage"
 )
 
-// L35 — like pada komen memberitahu penulis komen (keputusan produk
+// L35 - like pada komen memberitahu penulis komen (keputusan produk
 // 2026-08-22), dengan guard dedup yang SAMA seperti L18 tegakkan pada
 // laluan post.
 //
-// Route like TIADA rate limiter — dedup inilah mekanismenya. Jadi guard
+// Route like TIADA rate limiter - dedup inilah mekanismenya. Jadi guard
 // `rows > 0` bukan kemasan: tanpanya, menghantar like berulang menjadi
 // gelung push bersasar.
 
@@ -66,7 +66,7 @@ func likeCommentCall(t *testing.T, pool *pgxpool.Pool, commentID, userID uuid.UU
 
 	// Servis push SEBENAR tapi DIMATIKAN (OneSignal tanpa kredential →
 	// `Enabled()` false → `NotifyUser` no-op tanpa rangkaian). Menghantar
-	// `nil` di sini PANIK dalam `notifyOwner`, yang tak menjaga nil —
+	// `nil` di sini PANIK dalam `notifyOwner`, yang tak menjaga nil -
 	// berbeza daripada `notifyMembers`, yang menjaganya kerana ia
 	// berjalan dalam goroutine latar (panik di sana = proses mati, bukan
 	// satu permintaan gagal). Ini padanan apa yang produksi bina bila
@@ -77,7 +77,7 @@ func likeCommentCall(t *testing.T, pool *pgxpool.Pool, commentID, userID uuid.UU
 	NewCommentHandler(pool, pushSvc, r2).Like(c)
 
 	// Laluan bahagia pulang 204 TANPA badan, dan gin menangguhkan
-	// `WriteHeader` sehingga sesuatu ditulis — jadi `rec.Code` kekal 200
+	// `WriteHeader` sehingga sesuatu ditulis - jadi `rec.Code` kekal 200
 	// (lalai perakam) melainkan ia dipaksa. Handler lain dalam pakej ni
 	// guna `c.JSON`, yang menulis, jadi masalah ni tak muncul di sana.
 	c.Writer.WriteHeaderNow()
@@ -97,7 +97,7 @@ func TestLikeCommentMemberitahuPenulis(t *testing.T) {
 	}
 
 	if got := countCommentLikeNotifications(t, pool, penulis, commentID); got != 1 {
-		t.Errorf("notifikasi = %d, mahu 1 — penulis komen tak diberitahu", got)
+		t.Errorf("notifikasi = %d, mahu 1 - penulis komen tak diberitahu", got)
 	}
 }
 
@@ -118,13 +118,13 @@ func TestLikeCommentBerulangTidakSpamNotifikasi(t *testing.T) {
 	}
 
 	if got := countCommentLikeNotifications(t, pool, penulis, commentID); got != 1 {
-		t.Errorf("notifikasi = %d selepas 5 like, mahu 1 — endpoint ni gelung "+
+		t.Errorf("notifikasi = %d selepas 5 like, mahu 1 - endpoint ni gelung "+
 			"harassment bersasar (tiada rate limiter pada route like; dedup "+
 			"inilah mekanismenya)", got)
 	}
 }
 
-// Like pada komen SENDIRI tak memberitahu sesiapa — padanan notifyOwner
+// Like pada komen SENDIRI tak memberitahu sesiapa - padanan notifyOwner
 // pada laluan post.
 func TestLikeKomenSendiriTidakMemberitahu(t *testing.T) {
 	pool := activityTestPool(t)
@@ -138,7 +138,7 @@ func TestLikeKomenSendiriTidakMemberitahu(t *testing.T) {
 	}
 
 	if got := countCommentLikeNotifications(t, pool, penulis, commentID); got != 0 {
-		t.Errorf("notifikasi = %d — ahli diberitahu tentang likenya sendiri", got)
+		t.Errorf("notifikasi = %d - ahli diberitahu tentang likenya sendiri", got)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestLikeCommentPulangkanBilanganBaris(t *testing.T) {
 		t.Fatalf("LikeComment (kedua): %v", err)
 	}
 	if kedua != 0 {
-		t.Errorf("baris (kedua) = %d, mahu 0 — `on conflict do nothing` tak "+
+		t.Errorf("baris (kedua) = %d, mahu 0 - `on conflict do nothing` tak "+
 			"lagi dilaporkan, guard dedup handler jadi buta", kedua)
 	}
 }

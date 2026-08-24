@@ -8,19 +8,19 @@ insert into payment_logs (
 
 -- name: ListPaymentLogsByGatewayRef :many
 -- Sejarah penuh satu bayaran (semua peristiwa: checkout, webhook,
--- reconcile) — untuk diagnosis satu insiden, bukan tinjauan am.
+-- reconcile) - untuk diagnosis satu insiden, bukan tinjauan am.
 select * from payment_logs
 where gateway = $1 and gateway_ref = $2
 order by created_at asc;
 
 -- name: ListRecentPaymentLogs :many
--- Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
--- `modules` — SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
--- yang KIRA senarai modul dibenarkan (bukan SQL) — donation cuma untuk
+-- Tinjauan am terkini merentas modul - endpoint admin (GET /admin/payments).
+-- `modules` - SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
+-- yang KIRA senarai modul dibenarkan (bukan SQL) - donation cuma untuk
 -- superadmin (keputusan produk 2026-08-15), jadi handler hantar
 -- {registration_fee, activity_fee} untuk management biasa, atau ketiga-
 -- tiga (termasuk donation) untuk superadmin, atau satu modul tunggal
--- kalau caller tapis eksplisit. Query ni buta pada perbezaan tu — ia
+-- kalau caller tapis eksplisit. Query ni buta pada perbezaan tu - ia
 -- cuma tapis `= any(modules)`, kawalan kebenaran 100% di Go.
 -- `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
 -- id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk
@@ -32,6 +32,6 @@ order by id desc
 limit $1;
 
 -- name: DeletePaymentLogsOlderThan :execrows
--- Retention 3 bulan (keputusan produk 2026-08-15) — dipanggil
+-- Retention 3 bulan (keputusan produk 2026-08-15) - dipanggil
 -- internal/retention, padanan pola sapuan audit_logs sedia ada.
 delete from payment_logs where created_at < $1;

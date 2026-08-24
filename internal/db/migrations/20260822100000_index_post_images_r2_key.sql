@@ -1,12 +1,12 @@
 -- +goose Up
 
--- Indeks pada post_images.r2_key — DUA query menapis ikut lajur ni dan
+-- Indeks pada post_images.r2_key - DUA query menapis ikut lajur ni dan
 -- kedua-duanya sebelum ni seq scan seluruh jadual:
 --
---   ListStalePendingUploads      (baharu, lihat TODO.md L28) — semak kunci
+--   ListStalePendingUploads      (baharu, lihat TODO.md L28) - semak kunci
 --                                yang MASIH dilekatkan pada post sebelum
 --                                menggilirkannya untuk dipadam dari R2
---   ListOrphanedPostImageKeys    (sedia ada) — imbas post_images penuh
+--   ListOrphanedPostImageKeys    (sedia ada) - imbas post_images penuh
 --                                setiap pusingan reaper
 --
 -- post_images tumbuh selama-lamanya (baris dikekalkan walaupun post

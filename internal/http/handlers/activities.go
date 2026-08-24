@@ -35,12 +35,12 @@ func NewActivityHandler(pool *pgxpool.Pool, pushSvc *push.Service) *ActivityHand
 	return &ActivityHandler{pool: pool, queries: sqlc.New(pool), push: pushSvc}
 }
 
-// notifyTimeout — had bagi SATU pusingan fan-out notifikasi di latar
+// notifyTimeout - had bagi SATU pusingan fan-out notifikasi di latar
 // belakang. Tanpa had, satu panggilan OneSignal yang tersekat menahan
 // goroutine itu selama-lamanya.
 const notifyTimeout = 2 * time.Minute
 
-// notifyTarget — seorang penerima berserta pautan yang KHUSUS kepadanya.
+// notifyTarget - seorang penerima berserta pautan yang KHUSUS kepadanya.
 //
 // certificate_ready satu-satunya jenis yang pautannya berbeza per penerima:
 // setiap orang ada baris sijilnya sendiri. Untuk jenis lain CertificateID
@@ -50,11 +50,11 @@ type notifyTarget struct {
 	CertificateID pgtype.UUID
 }
 
-// notification — satu peristiwa fan-out.
+// notification - satu peristiwa fan-out.
 //
 // Struct dan bukan senarai parameter: selepas deep-link (activity_id,
 // certificate_id) dan NotifyActor ditambah, versi kedudukan akan jadi lapan
-// argumen dengan dua uuid dan satu bool bersebelahan — tepat bentuk yang
+// argumen dengan dua uuid dan satu bool bersebelahan - tepat bentuk yang
 // senyap salah bila ditukar tempat.
 type notification struct {
 	Targets  []notifyTarget
@@ -63,7 +63,7 @@ type notification struct {
 	Title    string
 	Message  string
 	Activity pgtype.UUID
-	// NotifyActor: hantar juga kepada pelaku sendiri. Lalai false —
+	// NotifyActor: hantar juga kepada pelaku sendiri. Lalai false -
 	// penerbit/pembatal aktiviti tidak perlu diberitahu tentang perbuatannya
 	// sendiri. certificate_ready sebaliknya: ia mengenai artifak penerima,
 	// dan pengurus yang turut menyertai aktiviti berhak menerima sijilnya
@@ -71,7 +71,7 @@ type notification struct {
 	NotifyActor bool
 }
 
-// notifyTargets — bentuk sasaran bagi jenis notifikasi yang pautannya sama
+// notifyTargets - bentuk sasaran bagi jenis notifikasi yang pautannya sama
 // untuk semua penerima (activity_published, activity_cancelled).
 func notifyTargets(recipients []uuid.UUID) []notifyTarget {
 	out := make([]notifyTarget, 0, len(recipients))
@@ -91,12 +91,12 @@ func notifyTargets(recipients []uuid.UUID) []notifyTarget {
 // push yang tiada siapa baca.
 //
 // Bentuk fan-out: SATU goroutine untuk keseluruhan senarai, gelung
-// berjujukan di dalamnya — bukan satu goroutine per penerima. Setiap
+// berjujukan di dalamnya - bukan satu goroutine per penerima. Setiap
 // penerima ialah satu query device_token + satu panggilan HTTP, jadi
 // menjalankannya dalam ctx permintaan akan menambah latensi mengikut saiz
 // keahlian; melancarkan satu goroutine setiap seorang pula ialah fan-out
 // tak berhad ke OneSignal. Satu goroutine per peristiwa (terbit/batal/
-// terbit sijil — semuanya tindakan pengurusan yang jarang) menyelesaikan
+// terbit sijil - semuanya tindakan pengurusan yang jarang) menyelesaikan
 // kedua-duanya.
 //
 // ctx permintaan SENGAJA tidak digunakan: ia dibatalkan sebaik respons
@@ -105,7 +105,7 @@ func notifyMembers(queries *sqlc.Queries, pushSvc *push.Service, n notification)
 	if len(n.Targets) == 0 || pushSvc == nil {
 		// pushSvc nil hanya berlaku kalau handler dibina tanpa servis push.
 		// Diguard di sini kerana kegagalan itu akan jadi panic DALAM
-		// goroutine latar — iaitu proses mati, bukan satu permintaan gagal.
+		// goroutine latar - iaitu proses mati, bukan satu permintaan gagal.
 		return
 	}
 	go func() {
@@ -113,7 +113,7 @@ func notifyMembers(queries *sqlc.Queries, pushSvc *push.Service, n notification)
 		defer cancel()
 
 		for _, target := range n.Targets {
-			// Tiada notifikasi kepada diri sendiri — sama seperti
+			// Tiada notifikasi kepada diri sendiri - sama seperti
 			// notifyOwner pada laluan post. Kecuali NotifyActor.
 			if target.UserID == n.ActorID && !n.NotifyActor {
 				continue
@@ -146,7 +146,7 @@ const (
 	statusCompleted = "completed"
 )
 
-// defaultListStatuses — draf sengaja TIADA di sini: aktiviti yang belum
+// defaultListStatuses - draf sengaja TIADA di sini: aktiviti yang belum
 // diterbitkan bukan untuk mata ahli.
 var defaultListStatuses = []string{statusPublished, statusCancelled, statusCompleted}
 
@@ -175,12 +175,12 @@ type sessionInput struct {
 	EndsAt   time.Time `json:"ends_at" binding:"required"`
 }
 
-// validateSessions — semakan yang tak perlukan DB, dijalankan sebelum
+// validateSessions - semakan yang tak perlukan DB, dijalankan sebelum
 // sebarang transaksi dibuka.
 //
 // Set kosong ditolak DI SINI dan bukan diserahkan kepada
 // RecomputeActivityWindow: query itu ada guard `s.min_start is not null`,
-// jadi set kosong akan meninggalkan starts_at/ends_at lama tanpa ralat —
+// jadi set kosong akan meninggalkan starts_at/ends_at lama tanpa ralat -
 // invarian yang pecah secara senyap.
 func validateSessions(sessions []sessionInput) error {
 	if len(sessions) == 0 {
@@ -221,7 +221,7 @@ func replaceSessionsTx(ctx context.Context, pool *pgxpool.Pool, activityID uuid.
 	return replaceSessionsAudited(ctx, pool, activityID, sessions, nil)
 }
 
-// replaceSessionsAudited — sama, tapi turut menulis catatan audit dalam
+// replaceSessionsAudited - sama, tapi turut menulis catatan audit dalam
 // transaksi yang sama bila `actor` diberi. Laluan HTTP sentiasa memberi
 // actor; ujian memanggil replaceSessionsTx tanpa satu.
 func replaceSessionsAudited(
@@ -246,7 +246,7 @@ func replaceSessionsAudited(
 	// `on delete cascade`, jadi DeleteActivitySessions di bawah MEMUSNAHKAN
 	// kehadiran, bukan gagal kerananya. Tanpa kunci ini, di bawah READ
 	// COMMITTED satu check-in yang commit antara kiraan dan padam akan
-	// terhapus senyap — betul-betul bukti yang komen di bawah kata mesti
+	// terhapus senyap - betul-betul bukti yang komen di bawah kata mesti
 	// dilindungi. Laluan check-in mengambil kunci yang sama.
 	if _, err := q.LockActivityForRegistration(ctx, activityID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -255,7 +255,7 @@ func replaceSessionsAudited(
 		return err
 	}
 
-	// Sesi yang sudah ada kehadiran tak boleh dibuang — kehadiran itu bukti
+	// Sesi yang sudah ada kehadiran tak boleh dibuang - kehadiran itu bukti
 	// yang menyokong sijil.
 	withAttendance, err := q.CountSessionsWithAttendance(ctx, activityID)
 	if err != nil {
@@ -311,7 +311,7 @@ func replaceSessionsAudited(
 	return tx.Commit(ctx)
 }
 
-// requireManagement — semakan management dibuat DALAM handler, ikut corak
+// requireManagement - semakan management dibuat DALAM handler, ikut corak
 // sedia ada (lihat audit.go, profile.go). Tiada middleware RequireManagement
 // dalam repo ini; jangan cipta satu.
 func (h *ActivityHandler) requireManagement(c *gin.Context) bool {
@@ -327,7 +327,7 @@ func (h *ActivityHandler) requireManagement(c *gin.Context) bool {
 	return true
 }
 
-// managerRoleKey — siling "manager ke atas" utk kawalan lebih ketat drpd
+// managerRoleKey - siling "manager ke atas" utk kawalan lebih ketat drpd
 // IsManagement (yang termasuk supervisor). Kategori aktiviti ialah
 // infrastruktur dikongsi semua aktiviti, bukan tindakan pengurusan harian.
 const managerRoleKey = "manager"
@@ -347,9 +347,9 @@ func (h *ActivityHandler) requireManagerOrAbove(c *gin.Context) bool {
 
 // ---- Baca ----
 
-// ListCategories — lalai cuma pulangkan kategori AKTIF (utk borang cipta
+// ListCategories - lalai cuma pulangkan kategori AKTIF (utk borang cipta
 // aktiviti, semua ahli approved). `?all=true` pulangkan semua termasuk
-// tidak aktif, utk skrin pengurusan CRUD — dikawal manager ke atas sahaja,
+// tidak aktif, utk skrin pengurusan CRUD - dikawal manager ke atas sahaja,
 // sama corak dengan status=draft dalam List() di bawah.
 func (h *ActivityHandler) ListCategories(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -377,7 +377,7 @@ func (h *ActivityHandler) ListCategories(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"categories": categories})
 }
 
-// categoryKeyPattern — huruf kecil, nombor, garis bawah sahaja, mesti
+// categoryKeyPattern - huruf kecil, nombor, garis bawah sahaja, mesti
 // bermula huruf. Padanan gaya `key` role/kategori sedia ada (cth
 // 'badminton', 'bola_tampar').
 var categoryKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{1,49}$`)
@@ -562,7 +562,7 @@ func (h *ActivityHandler) List(c *gin.Context) {
 				return
 			}
 			if s == statusDraft {
-				// Draf hanya untuk pengurusan — jangan dedahkan aktiviti
+				// Draf hanya untuk pengurusan - jangan dedahkan aktiviti
 				// yang belum diterbitkan kepada ahli biasa.
 				if !h.requireManagement(c) {
 					return
@@ -607,7 +607,7 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	// Cursor ialah SATU string legap yang membawa (starts_at, id) sekali gus.
 	// Sengaja bukan dua parameter berasingan: predikat perbandingan baris
 	// dalam ListActivities jadi NULL kalau salah satu hilang, dan query
-	// pulangkan sifar baris — jalan mati yang nampak macam "habis senarai".
+	// pulangkan sifar baris - jalan mati yang nampak macam "habis senarai".
 	var cursorStartsAt pgtype.Timestamptz
 	var cursorID pgtype.UUID
 	if v := c.Query("cursor"); v != "" {
@@ -650,7 +650,7 @@ func (h *ActivityHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"activities": rows, "next_cursor": nextCursor})
 }
 
-// activityDetailResponse — baris aktiviti diratakan pada aras atas, plus
+// activityDetailResponse - baris aktiviti diratakan pada aras atas, plus
 // tiga medan yang klien bergantung padanya.
 type activityDetailResponse struct {
 	sqlc.GetActivityByIDRow
@@ -744,7 +744,7 @@ type activityRequest struct {
 	AttendanceThresholdPct int16     `json:"attendance_threshold_pct"`
 }
 
-// validateFeeCents — aktiviti berbayar kini disokong (ToyyibPay wired,
+// validateFeeCents - aktiviti berbayar kini disokong (ToyyibPay wired,
 // lihat ActivityRegistrationPaymentHandler). Cuma nilai negatif yang tak
 // masuk akal ditolak di sini.
 func validateFeeCents(fee int32) error {
@@ -787,7 +787,7 @@ func (r *activityRequest) capacity() pgtype.Int4 {
 //	medan hadir dengan nilai         → Set=true, Val≠nil → tetapkan
 //
 // Tanpa ini, PATCH yang membawa {"title": "..."} sahaja akan memadam
-// description, capacity dan fee_cents — dan jejak audit akan merekodkan
+// description, capacity dan fee_cents - dan jejak audit akan merekodkan
 // pemusnahan itu sebagai perubahan yang disengajakan.
 type optional[T any] struct {
 	Set bool
@@ -879,7 +879,7 @@ func (r *updateActivityRequest) merge(before sqlc.Activity) (sqlc.UpdateActivity
 		out.RegistrationClosesAt = pgTimestamptz(*r.RegistrationClosesAt.Val)
 	}
 
-	// Dua lajur nullable: null eksplisit BERMAKNA sesuatu di sini —
+	// Dua lajur nullable: null eksplisit BERMAKNA sesuatu di sini -
 	// "buang tarikh buka pendaftaran" dan "tiada had kapasiti".
 	if r.RegistrationOpensAt.Set {
 		if r.RegistrationOpensAt.Val == nil {
@@ -897,7 +897,7 @@ func (r *updateActivityRequest) merge(before sqlc.Activity) (sqlc.UpdateActivity
 	}
 
 	// title dan location_name secara konsep WAJIB, tapi kedua-duanya cuma
-	// `text not null` tanpa CHECK panjang — tiada sandaran di DB, tak
+	// `text not null` tanpa CHECK panjang - tiada sandaran di DB, tak
 	// seperti capacity/fee_cents/attendance_threshold_pct. Tag
 	// binding:"required" pada struct tak boleh menggantikannya di sini:
 	// `required` juga menolak medan yang TIADA, sedangkan tiada bermakna
@@ -916,7 +916,7 @@ func (r *updateActivityRequest) merge(before sqlc.Activity) (sqlc.UpdateActivity
 	// Yuran hanya disemak bila ia benar-benar DIHANTAR. Menyemak nilai
 	// hasil gabungan akan mengunci sepenuhnya mana-mana baris yang sudah
 	// membawa yuran bukan sifar (baris warisan/benih): setiap PATCH ke
-	// atasnya — termasuk PATCH yang cuba menetapkannya semula kepada 0 —
+	// atasnya - termasuk PATCH yang cuba menetapkannya semula kepada 0 -
 	// akan ditolak. Menyemak medan yang dihantar sahaja menutup satu-satunya
 	// laluan yang boleh MENCIPTA yuran, sambil membiarkan laluan
 	// pembetulan (`{"fee_cents": 0}`) terbuka.
@@ -999,7 +999,7 @@ func (h *ActivityHandler) Create(c *gin.Context) {
 		LocationName:    req.LocationName,
 		LocationAddress: req.LocationAddress,
 		// Nilai sementara: lajur ini NOT NULL, jadi insert perlu sesuatu.
-		// RecomputeActivityWindow di bawah yang menetapkan nilai sebenar —
+		// RecomputeActivityWindow di bawah yang menetapkan nilai sebenar -
 		// ia kekal SATU-SATUNYA penulis invarian ini.
 		StartsAt:               pgTimestamptz(req.Sessions[0].StartsAt),
 		EndsAt:                 pgTimestamptz(req.Sessions[0].EndsAt),
@@ -1106,11 +1106,11 @@ func (h *ActivityHandler) Update(c *gin.Context) {
 	// UnmarshalJSON, no struct tags for the validator to act on), so the
 	// same length limits enforced on POST (activityRequest) are checked
 	// manually here on the merged output. MESTI kira RUNE (utf8.RuneCount),
-	// bukan bait (len()) — go-playground/validator punya `max` pada POST
+	// bukan bait (len()) - go-playground/validator punya `max` pada POST
 	// kira rune. Title 200 aksara Melayu/emoji/CJK boleh sampai 800 bait;
 	// kalau semakan ni guna len() bait, title yang LULUS di POST akan
 	// GAGAL di sini pada SETIAP PATCH akan datang (termasuk PATCH yang tak
-	// sentuh title — `merge` salin balik nilai lama), kunci baris tu
+	// sentuh title - `merge` salin balik nilai lama), kunci baris tu
 	// kekal tak boleh di-PATCH selama-lamanya.
 	if utf8.RuneCountInString(params.Title) > 200 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tajuk terlalu panjang (maksimum 200 aksara)"})
@@ -1139,7 +1139,7 @@ func (h *ActivityHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// Old/New penuh — audit.Diff yang kira deltanya.
+	// Old/New penuh - audit.Diff yang kira deltanya.
 	if err := audit.Record(ctx, q, audit.Entry{
 		EntityType: audit.EntityActivity,
 		EntityID:   id,
@@ -1311,7 +1311,7 @@ func (h *ActivityHandler) Cancel(c *gin.Context) {
 		return
 	}
 
-	// SELEPAS komit, dan hanya kepada yang BERDAFTAR — pembatalan ialah
+	// SELEPAS komit, dan hanya kepada yang BERDAFTAR - pembatalan ialah
 	// berita untuk orang yang merancang hadir, bukan siaran seluruh kelab.
 	// ListRegistrationsByActivity sudah menapis status 'cancelled'.
 	regs, err := h.queries.ListRegistrationsByActivity(ctx, id)

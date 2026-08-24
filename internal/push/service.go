@@ -2,7 +2,7 @@
 // (internal/onesignal) supaya senang panggil "hantar notification kepada
 // user ni" dari mana-mana bahagian app.
 //
-// Trigger diwire di Stage 10 (Posts) — NotifyUser dipanggil dari
+// Trigger diwire di Stage 10 (Posts) - NotifyUser dipanggil dari
 // notifyOwner (internal/http/handlers/posts_common.go) bila like/comment
 // pada post/comment sendiri.
 package push

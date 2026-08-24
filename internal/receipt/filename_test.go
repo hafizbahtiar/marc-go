@@ -30,7 +30,7 @@ func TestFilename(t *testing.T) {
 			want:  "Resit-Sokongan-MARC-pi_3Qab-cd-EFG-hij.pdf",
 		},
 		{
-			name:       "ref DAN fallback kosong — jangan hasilkan nama fail rosak",
+			name:       "ref DAN fallback kosong - jangan hasilkan nama fail rosak",
 			label:      "Pendaftaran",
 			ref:        "",
 			fallbackID: "",

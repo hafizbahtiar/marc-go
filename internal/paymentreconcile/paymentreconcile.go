@@ -5,14 +5,14 @@
 // tak sepadan status tersimpan.
 //
 // Keputusan produk 2026-08-15, lepas beberapa insiden webhook ToyyibPay
-// yang gagal senyap (`;` mentah, `%` tak sah, billcode tak dijumpai) —
+// yang gagal senyap (`;` mentah, `%` tak sah, billcode tak dijumpai) -
 // DB boleh tersasar drpd kebenaran gateway kalau webhook tak pernah
 // tiba/gagal parse. Gateway ialah SUMBER KEBENARAN (keputusan produk):
 // bila mismatch dijumpai, DB dikemas kini automatik untuk padan gateway,
 // bukan sekadar dilog untuk semakan manual.
 //
 // Struktur ikut internal/activitysweep rapat (New/Start/RunOnce,
-// ticker-based loop) — corak sama yang dah terbukti untuk kerja latar
+// ticker-based loop) - corak sama yang dah terbukti untuk kerja latar
 // berkala + pencetus manual.
 package paymentreconcile
 
@@ -32,17 +32,17 @@ import (
 	"marc/internal/paymentlog"
 )
 
-// minAge — umur minimum baris 'pending' sebelum ia layak disemak semula
+// minAge - umur minimum baris 'pending' sebelum ia layak disemak semula
 // pada gateway. Jauh lebih pendek drpd cutoff internal/activitysweep
 // (45 minit/24 jam) SENGAJA: activitysweep membatalkan (tindakan
 // MUSNAH, kena berhati-hati elak race dengan webhook lewat), reconcile
 // ni pula MEMBETULKAN state ikut jawapan gateway sebenar (tindakan
-// selamat, boleh diulang) — semak terlalu awal cuma bermakna panggilan
+// selamat, boleh diulang) - semak terlalu awal cuma bermakna panggilan
 // API gateway lebih kerap untuk bayaran yang MEMANG masih pending
 // (murah), bukan risiko keputusan salah macam pembatalan pra-matang.
 const minAge = 15 * time.Minute
 
-// maxAge — umur MAKSIMUM baris 'pending' yang masih layak disemak (L30).
+// maxAge - umur MAKSIMUM baris 'pending' yang masih layak disemak (L30).
 //
 // Tanpa had atas, senarai semakan membesar secara monotonik sepanjang
 // hayat sistem: checkout yang ditinggalkan TAK PERNAH keluar daripada
@@ -54,20 +54,20 @@ const minAge = 15 * time.Minute
 //
 // 7 hari dipilih: jauh lebih panjang drpd mana-mana kitaran FPX/kad yang
 // munasabah (cutoff paling panjang di tempat lain dalam sistem ni ialah
-// 24 jam — `activitysweep.unpaidBillAfter`), jadi tiada bayaran yang
+// 24 jam - `activitysweep.unpaidBillAfter`), jadi tiada bayaran yang
 // masih boleh diselesaikan tercicir. Baris yang lebih tua TIDAK hilang:
 // ia kekal dalam DB dan tetap kelihatan melalui /admin/payments, cuma
 // berhenti dipoll.
 const maxAge = 7 * 24 * time.Hour
 
-// batchSize — siling baris setiap modul setiap pusingan, supaya satu
+// batchSize - siling baris setiap modul setiap pusingan, supaya satu
 // pusingan ada kos maksimum yang DIKETAHUI (padanan corak
 // `reaper.batchSize`). Baris yang melebihi siling diambil pusingan
-// berikutnya — `order by created_at` menaik bermakna yang paling lama
+// berikutnya - `order by created_at` menaik bermakna yang paling lama
 // menunggu didahulukan, jadi tiada baris boleh kebuluran.
 const batchSize = 200
 
-// window — sempadan satu pusingan. Struct, bukan dua pgtype.Timestamptz
+// window - sempadan satu pusingan. Struct, bukan dua pgtype.Timestamptz
 // bersebelahan: kedua-duanya jenis SAMA dan tertukar susunan akan
 // menghasilkan julat kosong secara senyap (sifar baris = "tiada kerja"),
 // bukan ralat.
@@ -83,7 +83,7 @@ func newWindow(now time.Time) window {
 	}
 }
 
-// ReconcileSummary — keputusan satu pusingan RunOnce, dipulangkan supaya
+// ReconcileSummary - keputusan satu pusingan RunOnce, dipulangkan supaya
 // pencetus manual (endpoint HTTP) boleh laporkan sesuatu yang berguna
 // kepada caller, bukan sekadar "ok".
 type ReconcileSummary struct {
@@ -129,7 +129,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 // latar, DAN oleh endpoint HTTP pencetus manual
 // (POST /admin/payments/reconcile).
 //
-// Setiap modul dihadkan `batchSize` baris — jadi kos satu pusingan
+// Setiap modul dihadkan `batchSize` baris - jadi kos satu pusingan
 // bersempadan walau berapa banyak checkout terbiar terkumpul.
 func (r *Reconciler) RunOnce(ctx context.Context) ReconcileSummary {
 	summary := ReconcileSummary{}
@@ -142,9 +142,9 @@ func (r *Reconciler) RunOnce(ctx context.Context) ReconcileSummary {
 	return summary
 }
 
-// reconcileRegistrationPayments — yuran pendaftaran ahli sekali bayar
+// reconcileRegistrationPayments - yuran pendaftaran ahli sekali bayar
 // (jadual registration_payments, CHECK status IN ('pending','succeeded',
-// 'failed') — set nilai SAMA dengan Gateway.CheckStatus, jadi jawapan
+// 'failed') - set nilai SAMA dengan Gateway.CheckStatus, jadi jawapan
 // gateway boleh ditulis terus tanpa pemetaan).
 func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, w window, summary *ReconcileSummary) {
 	rows, err := r.queries.ListPendingRegistrationPaymentsOlderThan(ctx, sqlc.ListPendingRegistrationPaymentsOlderThanParams{
@@ -161,7 +161,7 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, w window
 	for _, row := range rows {
 		summary.Checked++
 
-		// `gateway_ref` nullable sejak L29 — query menapis `is not null`,
+		// `gateway_ref` nullable sejak L29 - query menapis `is not null`,
 		// jadi ini sentiasa sah. Diekstrak sekali supaya baki gelung tak
 		// perlu mengulang `.String`.
 		gatewayRef := row.GatewayRef.String
@@ -232,7 +232,7 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, w window
 				summary.Errors++
 			}
 			// pgx.ErrNoRows = proses lain (webhook) dah tolak baris ni ke
-			// keadaan terminal SEBELUM UPDATE ni sempat — bukan "dibetulkan
+			// keadaan terminal SEBELUM UPDATE ni sempat - bukan "dibetulkan
 			// reconcile", ELAK kira dua kali (Opus verify 2026-08-15).
 			continue
 		}
@@ -240,19 +240,19 @@ func (r *Reconciler) reconcileRegistrationPayments(ctx context.Context, w window
 	}
 }
 
-// reconcileActivityRegistrations — yuran aktiviti (jadual
+// reconcileActivityRegistrations - yuran aktiviti (jadual
 // activity_registrations, CHECK payment_status IN ('not_required',
-// 'pending','paid','refunded') — TIADA 'failed', padanan keputusan yang
+// 'pending','paid','refunded') - TIADA 'failed', padanan keputusan yang
 // sama dihormati webhook handler sedia ada
 // (ActivityRegistrationPaymentHandler.Webhook): gateway "failed" TAK
 // ditulis ke DB, baris kekal 'pending' untuk internal/activitysweep
 // bersihkan kelak, tapi tetap dilog sebagai isyarat diagnostik berguna.
 //
 // Jadual ni TIADA lajur `gateway` (beza drpd registration_payments/
-// donations) — satu gateway ToyyibPay sahaja untuk modul ni, tapi
+// donations) - satu gateway ToyyibPay sahaja untuk modul ni, tapi
 // instance kredential yang BETUL untuk dipanggil ialah kunci peta
 // "toyyibpay-activity" (lihat cmd/api/main.go: instance kredential SAMA
-// dengan "toyyibpay" tapi callbackURL/returnURL berbeza — ni PADANAN
+// dengan "toyyibpay" tapi callbackURL/returnURL berbeza - ni PADANAN
 // wiring ActivityRegistrationPaymentHandler, bukan tekaan).
 func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, w window, summary *ReconcileSummary) {
 	rows, err := r.queries.ListPendingActivityRegistrationsOlderThan(ctx, sqlc.ListPendingActivityRegistrationsOlderThanParams{
@@ -300,7 +300,7 @@ func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, w windo
 		}
 
 		// row.PaymentStatus sentiasa "pending" di sini (itu kriteria
-		// query) — bandingkan terus dengan status gateway "pending".
+		// query) - bandingkan terus dengan status gateway "pending".
 		if status == "pending" {
 			paymentlog.Record(ctx, r.queries, paymentlog.Entry{
 				Module:     paymentlog.ModuleActivityFee,
@@ -315,7 +315,7 @@ func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, w windo
 		}
 
 		if status == "failed" {
-			// TIADA 'failed' dalam CHECK constraint payment_status — tiada
+			// TIADA 'failed' dalam CHECK constraint payment_status - tiada
 			// tulisan DB di sini (padanan webhook handler), tapi tetap
 			// dilog sebagai isyarat diagnostik.
 			paymentlog.Record(ctx, r.queries, paymentlog.Entry{
@@ -353,23 +353,23 @@ func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, w windo
 				log.Printf("paymentreconcile: betulkan payment_status yuran aktiviti gagal (ref=%s): %v", paymentRef, err)
 				summary.Errors++
 			}
-			// pgx.ErrNoRows = baris dah 'paid' (proses lain menang) — bukan
+			// pgx.ErrNoRows = baris dah 'paid' (proses lain menang) - bukan
 			// dibetulkan reconcile ni, elak kira dua kali.
 			continue
 		} else if updated.Status == "cancelled" {
 			// Race sweep-vs-reconcile, padanan kes sama dalam webhook
-			// handler (activity_registration_payment.go) — baris ni dah
+			// handler (activity_registration_payment.go) - baris ni dah
 			// dibatal (CancelStaleUnpaidBills) SEBELUM reconcile sempat
 			// membetulkannya. ERROR (bukan sekadar log) supaya nampak
-			// dalam pemantauan produksi — perlukan semakan manual.
-			log.Printf("ERROR paymentreconcile: ahli BAYAR (ref=%s, registration=%s) tapi pendaftaran SUDAH DIBATAL oleh sapuan — perlukan semakan manual (slot mungkin dah diambil orang lain)", paymentRef, updated.ID)
+			// dalam pemantauan produksi - perlukan semakan manual.
+			log.Printf("ERROR paymentreconcile: ahli BAYAR (ref=%s, registration=%s) tapi pendaftaran SUDAH DIBATAL oleh sapuan - perlukan semakan manual (slot mungkin dah diambil orang lain)", paymentRef, updated.ID)
 		}
 		summary.MismatchesFixed++
 	}
 }
 
-// reconcileDonations — donation Stripe (jadual donations, CHECK status
-// IN ('pending','succeeded','failed') — set nilai SAMA dengan
+// reconcileDonations - donation Stripe (jadual donations, CHECK status
+// IN ('pending','succeeded','failed') - set nilai SAMA dengan
 // Gateway.CheckStatus).
 func (r *Reconciler) reconcileDonations(ctx context.Context, w window, summary *ReconcileSummary) {
 	rows, err := r.queries.ListPendingDonationsOlderThan(ctx, sqlc.ListPendingDonationsOlderThanParams{
@@ -456,7 +456,7 @@ func (r *Reconciler) reconcileDonations(ctx context.Context, w window, summary *
 				summary.Errors++
 			}
 			// pgx.ErrNoRows = webhook Stripe dah tolak baris ni ke keadaan
-			// terminal SEBELUM UPDATE ni sempat — bukan dibetulkan reconcile
+			// terminal SEBELUM UPDATE ni sempat - bukan dibetulkan reconcile
 			// ni, elak kira dua kali.
 			continue
 		}

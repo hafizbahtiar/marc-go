@@ -13,7 +13,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Ujian live — di-skip melainkan R2_LIVE_TEST=1, sama corak dengan
+// Ujian live - di-skip melainkan R2_LIVE_TEST=1, sama corak dengan
 // TestR2LivePermissions sedia ada.
 func TestR2PutObjectLive(t *testing.T) {
 	if os.Getenv("R2_LIVE_TEST") != "1" {

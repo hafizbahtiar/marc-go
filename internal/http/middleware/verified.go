@@ -9,10 +9,10 @@ import (
 )
 
 // RequireVerifiedEmail mesti dipasang selepas RequireAuth. Digunakan untuk
-// route Posts (Stage 10) — gate `profiles.email_verified = true`.
+// route Posts (Stage 10) - gate `profiles.email_verified = true`.
 //
 // Extension point: bila payment/membership dues system siap, tambah check
-// kedua ("dah verified DAN dah bayar") terus dalam middleware ni — tak
+// kedua ("dah verified DAN dah bayar") terus dalam middleware ni - tak
 // perlu ubah struktur route/handler yang dah pakai middleware ni.
 func RequireVerifiedEmail(q *sqlc.Queries) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -26,10 +26,10 @@ func RequireVerifiedEmail(q *sqlc.Queries) gin.HandlerFunc {
 }
 
 // RequireApprovedStatus mesti dipasang selepas RequireAuth. Gate akses
-// sehingga profiles.status = 'approved' (Stage 11) — app khusus
+// sehingga profiles.status = 'approved' (Stage 11) - app khusus
 // ahli komuniti, pendaftaran baru kena diluluskan management dulu.
 //
-// GET/PATCH /me SENGAJA tak diletak di bawah middleware ni — user
+// GET/PATCH /me SENGAJA tak diletak di bawah middleware ni - user
 // pending/rejected tetap perlu boleh papar status semasa dia sendiri
 // (padanan design: "boleh login, tapi semua endpoint lain block").
 func RequireApprovedStatus(q *sqlc.Queries) gin.HandlerFunc {

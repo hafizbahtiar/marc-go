@@ -20,7 +20,7 @@ import (
 // dalamnya sebagai calon sapuan.
 //
 // Berbeza daripada ujian live lain dalam pakej ni, ujian di sini perlukan
-// **Postgres SAHAJA** — bukan R2. Yang diuji ialah predikat SQL
+// **Postgres SAHAJA** - bukan R2. Yang diuji ialah predikat SQL
 // (`ListStalePendingUploads`), bukan sama ada bait benar-benar hilang dari
 // bucket, jadi tiada sebab untuk menuntut kredential R2 dan menyempitkan
 // siapa yang boleh menjalankannya:
@@ -53,7 +53,7 @@ func pendingTestPool(t *testing.T) (*pgxpool.Pool, *sqlc.Queries, *storage.R2Cli
 }
 
 // seedAgedPendingUpload cipta baris pending_uploads yang sudah melepasi
-// ambang "ditinggalkan" — mensimulasikan DELETE yang gagal semasa post
+// ambang "ditinggalkan" - mensimulasikan DELETE yang gagal semasa post
 // dicipta (punca L28).
 func seedAgedPendingUpload(t *testing.T, ctx context.Context, pool *pgxpool.Pool, q *sqlc.Queries, key string, userID uuid.UUID) {
 	t.Helper()
@@ -83,7 +83,7 @@ func enqueuedCount(t *testing.T, ctx context.Context, pool *pgxpool.Pool, key st
 // Ini kes L28 tepat-tepat: sebelum pembaikan, `ListStalePendingUploads`
 // menapis ikut umur SAHAJA, jadi satu `DeletePendingUpload` yang gagal
 // semasa post dicipta bermakna gambar post yang MASIH dipaparkan dipadam
-// dari R2 enam jam kemudian — kekal, tanpa ralat di mana-mana.
+// dari R2 enam jam kemudian - kekal, tanpa ralat di mana-mana.
 func TestReaperPendingTidakSapuGambarPostHidup(t *testing.T) {
 	ctx := context.Background()
 	pool, q, r2 := pendingTestPool(t)
@@ -110,7 +110,7 @@ func TestReaperPendingTidakSapuGambarPostHidup(t *testing.T) {
 	New(q, r2, time.Minute).RunOnce(ctx)
 
 	if n := enqueuedCount(t, ctx, pool, key); n != 0 {
-		t.Fatalf("gambar post HIDUP digilir untuk dipadam (%d baris deleted_uploads) — "+
+		t.Fatalf("gambar post HIDUP digilir untuk dipadam (%d baris deleted_uploads) - "+
 			"post yang dipaparkan akan kehilangan gambarnya secara kekal", n)
 	}
 }
@@ -140,7 +140,7 @@ func TestReaperPendingTidakSapuAvatarHidup(t *testing.T) {
 	}
 }
 
-// Sisi yang bertentangan — pembaikan L28 tak boleh mematikan sapuan itu
+// Sisi yang bertentangan - pembaikan L28 tak boleh mematikan sapuan itu
 // sendiri. Kunci yang benar-benar yatim (tiada post, tiada profil) MESTI
 // masih disapu, kalau tidak karangan yang ditinggalkan bocor selamanya
 // dan seluruh tujuan reaper hilang.
@@ -156,7 +156,7 @@ func TestReaperPendingMasihSapuYatimSebenar(t *testing.T) {
 	New(q, r2, time.Minute).RunOnce(ctx)
 
 	if n := enqueuedCount(t, ctx, pool, key); n == 0 {
-		t.Fatal("upload yatim TIDAK disapu — pembaikan L28 terlebih ketat, " +
+		t.Fatal("upload yatim TIDAK disapu - pembaikan L28 terlebih ketat, " +
 			"karangan yang ditinggalkan akan bocor selamanya")
 	}
 
@@ -168,6 +168,6 @@ func TestReaperPendingMasihSapuYatimSebenar(t *testing.T) {
 		t.Fatalf("count pending: %v", err)
 	}
 	if left != 0 {
-		t.Fatal("baris pending_uploads kekal selepas disapu — akan digilir semula setiap pusingan")
+		t.Fatal("baris pending_uploads kekal selepas disapu - akan digilir semula setiap pusingan")
 	}
 }

@@ -1,10 +1,10 @@
-# Reset Kata Laluan — Pelan Pelaksanaan
+# Reset Kata Laluan - Pelan Pelaksanaan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ahli yang lupa kata laluan boleh pulih sendiri melalui pautan emel, tanpa staf mengemas kini DB secara manual.
 
-**Architecture:** Jadual `password_reset_tokens` mencerminkan `email_verification_tokens`. Dua endpoint awam: `request` (sentiasa 204, dipanggil dari app) dan `confirm` (CORS, dipanggil dari halaman Astro). Ahli menaip kata laluan baharu di `marc_astro`, bukan dalam app — tiada app-link https dikonfigur, jadi pautan emel membuka pelayar.
+**Architecture:** Jadual `password_reset_tokens` mencerminkan `email_verification_tokens`. Dua endpoint awam: `request` (sentiasa 204, dipanggil dari app) dan `confirm` (CORS, dipanggil dari halaman Astro). Ahli menaip kata laluan baharu di `marc_astro`, bukan dalam app - tiada app-link https dikonfigur, jadi pautan emel membuka pelayar.
 
 **Tech Stack:** Go 1.26 + Gin + sqlc + goose + pgx/v5 · Astro 7 · Flutter + Riverpod + go_router
 
@@ -12,15 +12,15 @@
 
 ## Global Constraints
 
-- Kata laluan: `binding:"required,min=6,max=72"` — 72 ialah had bcrypt, bukan pilihan sewenang-wenang. Padan `/auth/register`.
+- Kata laluan: `binding:"required,min=6,max=72"` - 72 ialah had bcrypt, bukan pilihan sewenang-wenang. Padan `/auth/register`.
 - TTL token: **1 jam**, sama seperti `emailVerificationTTL`.
 - Token: `auth.GenerateOpaqueToken()` (32 bait) disimpan sebagai `auth.HashToken()` (SHA-256 hex). Token mentah HANYA dalam emel.
-- `request` pulang **204 SENTIASA** — tiada enumerasi akaun.
-- Emel dihantar dalam **goroutine** — mitigasi separa oracle masa.
+- `request` pulang **204 SENTIASA** - tiada enumerasi akaun.
+- Emel dihantar dalam **goroutine** - mitigasi separa oracle masa.
 - Reset MESTI membatalkan **semua** refresh token ahli, dalam transaksi yang sama.
 - Reset TIDAK menanda `email_verified = true`.
 - Berfungsi untuk **sebarang** `profiles.status` (termasuk `pending`/`rejected`).
-- Baldi had kadar bernama **`password-reset`** — jangan kongsi `auth`.
+- Baldi had kadar bernama **`password-reset`** - jangan kongsi `auth`.
 - Semua komen kod, mesej ralat dan teks UI dalam **Bahasa Melayu**, ikut repo.
 - DB ujian: guna DB buangan. `HANDLER_TEST_DB` / `ACTIVITY_TEST_DB`.
 
@@ -44,12 +44,12 @@
 ```sql
 -- +goose Up
 
--- Reset kata laluan (L32). Cerminan `email_verification_tokens` — sama
+-- Reset kata laluan (L32). Cerminan `email_verification_tokens` - sama
 -- bentuk, sama kitaran hayat, sengaja jadual BERASINGAN.
 --
 -- Kenapa bukan guna semula jadual pengesahan emel dgn lajur `purpose`:
 -- ia menggabungkan dua kitaran hayat berbeza dan memerlukan migration
--- atas jadual yang sedang berfungsi — membeli kekemasan skema dengan
+-- atas jadual yang sedang berfungsi - membeli kekemasan skema dengan
 -- risiko pada laluan yang tiada kaitan.
 --
 -- Kenapa bukan token bertandatangan tanpa keadaan (JWT): token reset
@@ -59,7 +59,7 @@ create table password_reset_tokens (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
   -- SHA-256 bagi token legap 32 bait. Token MENTAH hanya wujud dalam
-  -- emel — kalau DB bocor, hash tak boleh mereset apa-apa.
+  -- emel - kalau DB bocor, hash tak boleh mereset apa-apa.
   token_hash text not null unique,
   expires_at timestamptz not null,
   created_at timestamptz not null default now()
@@ -86,8 +86,8 @@ select * from password_reset_tokens where token_hash = $1;
 
 -- name: DeletePasswordResetTokensByUser :exec
 -- Dipanggil DUA tempat, atas sebab berbeza:
---   request — permintaan baharu membunuh pautan lama
---   confirm — sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
+--   request - permintaan baharu membunuh pautan lama
+--   confirm - sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
 delete from password_reset_tokens where user_id = $1;
 ```
 
@@ -155,9 +155,9 @@ func TestPasswordResetTokenPusinganPenuh(t *testing.T) {
 		t.Fatalf("baris tak sepadan: got=%v created=%v", got.ID, created.ID)
 	}
 
-	// Token MENTAH tak boleh mencari apa-apa — hanya hash disimpan.
+	// Token MENTAH tak boleh mencari apa-apa - hanya hash disimpan.
 	if _, err := q.GetPasswordResetTokenByHash(ctx, raw); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatal("token MENTAH memadankan baris — token disimpan tanpa hash")
+		t.Fatal("token MENTAH memadankan baris - token disimpan tanpa hash")
 	}
 
 	if err := q.DeletePasswordResetTokensByUser(ctx, userID); err != nil {
@@ -194,7 +194,7 @@ func TestUpdateUserPasswordMenukarHash(t *testing.T) {
 	}
 }
 
-// `on delete cascade` — memadam user mesti membawa tokennya sekali,
+// `on delete cascade` - memadam user mesti membawa tokennya sekali,
 // kalau tidak baris yatim menghalang pemadaman akaun.
 func TestPasswordResetTokenCascadeBilaUserDipadam(t *testing.T) {
 	pool := activityTestPool(t)
@@ -219,7 +219,7 @@ func TestPasswordResetTokenCascadeBilaUserDipadam(t *testing.T) {
 	}
 
 	if _, err := q.GetPasswordResetTokenByHash(ctx, auth.HashToken(raw)); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatal("token bertahan selepas user dipadam — cascade tak berkuat kuasa")
+		t.Fatal("token bertahan selepas user dipadam - cascade tak berkuat kuasa")
 	}
 }
 ```
@@ -239,7 +239,7 @@ Expected: 3 PASS.
 Dalam jadual "Identiti & akses", selepas baris `email_verification_tokens`:
 
 ```markdown
-| `password_reset_tokens` | hash token reset kata laluan (TTL 1 jam). Jadual BERASINGAN drpd pengesahan emel — dua kitaran hayat berbeza; lihat `docs/superpowers/specs/2026-08-22-reset-kata-laluan-design.md` |
+| `password_reset_tokens` | hash token reset kata laluan (TTL 1 jam). Jadual BERASINGAN drpd pengesahan emel - dua kitaran hayat berbeza; lihat `docs/superpowers/specs/2026-08-22-reset-kata-laluan-design.md` |
 ```
 
 - [ ] **Step 7: Commit**
@@ -290,7 +290,7 @@ import (
 	"marc/internal/email"
 )
 
-// L32 — reset kata laluan.
+// L32 - reset kata laluan.
 //
 // `emailClient` dibina TANPA kredential (`Enabled()` false) jadi
 // penghantaran jadi no-op senyap tanpa rangkaian; token tetap ditulis ke
@@ -350,7 +350,7 @@ func TestRequestResetEmelTakDikenaliPulang204(t *testing.T) {
 	rec := resetRequestCall(t, pool, `{"email":"tiada-`+uuid.NewString()+`@test.local"}`)
 
 	if rec.Code != http.StatusNoContent {
-		t.Fatalf("kod = %d, mahu 204 — respons membocorkan sama ada akaun wujud. Badan: %s",
+		t.Fatalf("kod = %d, mahu 204 - respons membocorkan sama ada akaun wujud. Badan: %s",
 			rec.Code, rec.Body.String())
 	}
 }
@@ -371,7 +371,7 @@ func TestRequestResetMenciptaToken(t *testing.T) {
 	}
 }
 
-// Permintaan kedua mesti membunuh pautan pertama — kalau tidak, setiap
+// Permintaan kedua mesti membunuh pautan pertama - kalau tidak, setiap
 // permintaan menambah satu lagi kelayakan hidup pada akaun yang sama.
 func TestRequestResetKeduaMembatalkanYangPertama(t *testing.T) {
 	pool := activityTestPool(t)
@@ -384,7 +384,7 @@ func TestRequestResetKeduaMembatalkanYangPertama(t *testing.T) {
 	resetRequestCall(t, pool, `{"email":"`+emel+`"}`)
 
 	if got := countResetTokens(t, pool, userID); got != 1 {
-		t.Fatalf("token = %d selepas dua permintaan, mahu 1 — pautan lama "+
+		t.Fatalf("token = %d selepas dua permintaan, mahu 1 - pautan lama "+
 			"kekal hidup, jadi setiap permintaan menambah kelayakan", got)
 	}
 }
@@ -400,7 +400,7 @@ func TestRequestResetEmelDinormalkan(t *testing.T) {
 	resetRequestCall(t, pool, `{"email":"  `+strings.ToUpper(emel)+`  "}`)
 
 	if got := countResetTokens(t, pool, userID); got != 1 {
-		t.Fatalf("token = %d — emel huruf besar/berruang tak dinormalkan", got)
+		t.Fatalf("token = %d - emel huruf besar/berruang tak dinormalkan", got)
 	}
 }
 
@@ -454,14 +454,14 @@ Run:
 ACTIVITY_TEST_DB="postgres://$(whoami)@localhost:5432/marc_l32?sslmode=disable" \
   go test ./internal/http/handlers/ -run TestRequestReset 2>&1 | head -5
 ```
-Expected: `[build failed]` — `NewAuthHandler` belum menerima tujuh argumen, `RequestPasswordReset` belum wujud.
+Expected: `[build failed]` - `NewAuthHandler` belum menerima tujuh argumen, `RequestPasswordReset` belum wujud.
 
 - [ ] **Step 3: Tambah config**
 
 Dalam `internal/config/config.go`, tambah medan selepas `CertificateVerifyURL`:
 
 ```go
-	// PasswordResetURL — URL PENUH halaman Astro tempat ahli menaip kata
+	// PasswordResetURL - URL PENUH halaman Astro tempat ahli menaip kata
 	// laluan baharu (token dilampir sebagai `?token=`). Padanan pola
 	// EmailVerifyURL, TAPI dengan satu perbezaan: kosong bermakna ciri
 	// DIMATIKAN (503), bukan jatuh balik ke halaman Go sendiri. Borang
@@ -479,7 +479,7 @@ Dalam `Load()`, selepas `CertificateVerifyURL`:
 Dalam `.env.example`, selepas blok `CERTIFICATE_VERIFY_URL`:
 
 ```bash
-# Optional — halaman Astro tempat ahli taip kata laluan baharu selepas
+# Optional - halaman Astro tempat ahli taip kata laluan baharu selepas
 # klik pautan reset. Kosong = ciri reset kata laluan DIMATIKAN (endpoint
 # pulang 503), bukan fallback ke halaman Go. Perlukan juga
 # CORS_ALLOWED_ORIGINS diisi dgn origin laman web tu.
@@ -491,7 +491,7 @@ PASSWORD_RESET_URL=
 Dalam `internal/http/handlers/auth.go`, tambah pemalar berhampiran `emailVerificationTTL`:
 
 ```go
-// passwordResetTTL — sama 1 jam dengan pengesahan emel. Token reset
+// passwordResetTTL - sama 1 jam dengan pengesahan emel. Token reset
 // memberi kawalan PENUH akaun, jadi tetingkapnya tak patut lebih longgar
 // daripada token yang cuma mengesahkan alamat.
 const passwordResetTTL = time.Hour
@@ -503,7 +503,7 @@ Tambah medan pada `AuthHandler` selepas `emailVerifyURL`:
 	passwordResetURL string
 ```
 
-Tukar `NewAuthHandler` — tambah parameter ketujuh dan tetapkan medan:
+Tukar `NewAuthHandler` - tambah parameter ketujuh dan tetapkan medan:
 
 ```go
 func NewAuthHandler(
@@ -535,19 +535,19 @@ type passwordResetRequestBody struct {
 	Email string `json:"email" binding:"required,email"`
 }
 
-// RequestPasswordReset — POST /auth/password-reset/request. AWAM.
+// RequestPasswordReset - POST /auth/password-reset/request. AWAM.
 //
 // Pulang 204 SENTIASA, sama ada akaun wujud atau tidak. Kalau ia
 // membezakan, endpoint ni jadi alat menyenaraikan emel mana yang
 // berdaftar. UI mengimbangi dgn mesej "Kalau emel itu berdaftar, kami
-// dah hantar pautan reset" — ahli yang tersilap taip tetap dapat maklum
+// dah hantar pautan reset" - ahli yang tersilap taip tetap dapat maklum
 // balas berguna tanpa server mengesahkan kewujudan akaun.
 //
 // TIADA gate status: ahli `pending`/`rejected` yang paling mungkin
 // terkunci keluar, dan tiada laluan lain untuk mereka pulih. Alasan sama
 // dengan `/me` (lihat ARCHITECTURE.md, Lapisan akses).
 func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
-	// Ciri dimatikan bila halaman belum dikonfigur — disemak SEBELUM
+	// Ciri dimatikan bila halaman belum dikonfigur - disemak SEBELUM
 	// sebarang kerja DB supaya tiada token ditulis untuk pautan yang
 	// takkan pernah boleh dibuka.
 	if h.passwordResetURL == "" {
@@ -566,7 +566,7 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 	ctx := c.Request.Context()
 	user, err := h.queries.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		// Akaun tiada. Pulang 204 yang SAMA — lihat komen fungsi.
+		// Akaun tiada. Pulang 204 yang SAMA - lihat komen fungsi.
 		c.Status(http.StatusNoContent)
 		return
 	}
@@ -608,7 +608,7 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 	// keputusan 204 di atas.
 	//
 	// Mitigasi SEPARA: kerja DB masih berbeza beberapa milisaat antara
-	// dua laluan. Jauh di bawah bunyi rangkaian, jadi diterima — tapi
+	// dua laluan. Jauh di bawah bunyi rangkaian, jadi diterima - tapi
 	// bukan sifar, dan tiada siapa patut membaca ni dan menganggap
 	// masanya seragam.
 	//
@@ -618,7 +618,7 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 		`<p>Kami terima permintaan untuk reset kata laluan akaun MARC anda. `+
 			`Klik pautan di bawah untuk tetapkan kata laluan baharu (luput dalam 1 jam):</p>`+
 			`<p><a href="%s">%s</a></p>`+
-			`<p>Kalau bukan anda yang minta, abaikan emel ni — kata laluan anda tak berubah.</p>`,
+			`<p>Kalau bukan anda yang minta, abaikan emel ni - kata laluan anda tak berubah.</p>`,
 		link, link,
 	)
 	go func(to string) {
@@ -662,7 +662,7 @@ go build ./... && ACTIVITY_TEST_DB="postgres://$(whoami)@localhost:5432/marc_l32
 ```
 Expected: 6 PASS.
 
-- [ ] **Step 7: Ujian mutasi — sahkan guard "batalkan yang lama" nyata**
+- [ ] **Step 7: Ujian mutasi - sahkan guard "batalkan yang lama" nyata**
 
 Run:
 ```bash
@@ -777,7 +777,7 @@ func TestConfirmResetSekaliGuna(t *testing.T) {
 	rec := resetConfirmCall(t, pool, token, "kedua-456")
 
 	if rec.Code == http.StatusNoContent {
-		t.Fatal("pautan yang SAMA mereset dua kali — token bukan sekali-guna")
+		t.Fatal("pautan yang SAMA mereset dua kali - token bukan sekali-guna")
 	}
 	if !passwordSah(t, pool, userID, "pertama-123") {
 		t.Error("guna kedua menukar kata laluan walaupun ditolak")
@@ -808,7 +808,7 @@ func TestConfirmResetTokenTidakSahDitolak(t *testing.T) {
 }
 
 // INTI: reset MESTI membatalkan setiap sesi. Sebab orang reset selalunya
-// kerana syak akaun dikompromi — membiarkan refresh token penyerang hidup
+// kerana syak akaun dikompromi - membiarkan refresh token penyerang hidup
 // mengalahkan tujuannya.
 func TestConfirmResetMembatalkanSemuaRefreshToken(t *testing.T) {
 	pool := activityTestPool(t)
@@ -835,7 +835,7 @@ func TestConfirmResetMembatalkanSemuaRefreshToken(t *testing.T) {
 		t.Fatalf("kira refresh token: %v", err)
 	}
 	if n != 0 {
-		t.Fatalf("refresh token tinggal = %d, mahu 0 — sesi penyerang kekal "+
+		t.Fatalf("refresh token tinggal = %d, mahu 0 - sesi penyerang kekal "+
 			"hidup selepas mangsa reset kata laluan", n)
 	}
 }
@@ -853,7 +853,7 @@ func TestConfirmResetBerfungsiUntukAhliPending(t *testing.T) {
 }
 
 // Reset TIDAK menanda emel disahkan. Mengklik pautan memang membuktikan
-// kawalan emel — tapi menggabungkan keduanya bermakna akaun yang
+// kawalan emel - tapi menggabungkan keduanya bermakna akaun yang
 // dikompromi lalu direset senyap memperoleh status disahkan.
 func TestConfirmResetTidakMenandaEmailVerified(t *testing.T) {
 	pool := activityTestPool(t)
@@ -874,7 +874,7 @@ func TestConfirmResetTidakMenandaEmailVerified(t *testing.T) {
 	}
 }
 
-// Kata laluan pendek ditolak — peraturan sama dengan /auth/register.
+// Kata laluan pendek ditolak - peraturan sama dengan /auth/register.
 func TestConfirmResetTolakKataLaluanPendek(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -886,7 +886,7 @@ func TestConfirmResetTolakKataLaluanPendek(t *testing.T) {
 		t.Fatalf("kod = %d, mahu 400", rec.Code)
 	}
 	if got := countResetTokens(t, pool, userID); got != 1 {
-		t.Errorf("token = %d — permintaan tak sah tak patut membakar token", got)
+		t.Errorf("token = %d - permintaan tak sah tak patut membakar token", got)
 	}
 }
 ```
@@ -898,7 +898,7 @@ Run:
 ACTIVITY_TEST_DB="postgres://$(whoami)@localhost:5432/marc_l32?sslmode=disable" \
   go test ./internal/http/handlers/ -run TestConfirmReset 2>&1 | head -5
 ```
-Expected: `[build failed]` — `ConfirmPasswordReset` belum wujud.
+Expected: `[build failed]` - `ConfirmPasswordReset` belum wujud.
 
 - [ ] **Step 3: Tulis handler**
 
@@ -910,10 +910,10 @@ type passwordResetConfirmBody struct {
 	Password string `json:"password" binding:"required,min=6,max=72"`
 }
 
-// ConfirmPasswordReset — POST /auth/password-reset/confirm. AWAM.
+// ConfirmPasswordReset - POST /auth/password-reset/confirm. AWAM.
 //
 // Dipanggil dari halaman Astro (bukan app), jadi route ni dapat CORS +
-// pengendali OPTIONS — padanan tepat verify-email/confirm.
+// pengendali OPTIONS - padanan tepat verify-email/confirm.
 //
 // Keempat-empat tulisan berlaku dalam SATU transaksi. Kalau mana-mana
 // gagal, tiada satu pun berlaku: kata laluan yang bertukar tanpa
@@ -963,7 +963,7 @@ func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
 		return
 	}
-	// Batalkan SETIAP sesi — lihat komen fungsi.
+	// Batalkan SETIAP sesi - lihat komen fungsi.
 	if err := q.DeleteRefreshTokensByUser(ctx, rec.UserID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
 		return
@@ -986,7 +986,7 @@ Dalam `internal/http/router.go`, selepas route `password-reset/request`:
 ```go
 	// CORS + OPTIONS: laluan ni dipanggil oleh halaman Astro melalui
 	// fetch() silang-origin, sama seperti verify-email/confirm. Instance
-	// BERASINGAN drpd verifyEmailCORS walaupun konfigurasinya sama —
+	// BERASINGAN drpd verifyEmailCORS walaupun konfigurasinya sama -
 	// menamakannya ikut laluan yang ia lindungi menjadikan niat boleh
 	// dibaca, dan kedua-duanya bebas berubah kemudian.
 	passwordResetCORS := middleware.CORS(corsAllowedOrigins, "POST, OPTIONS")
@@ -1003,7 +1003,7 @@ go build ./... && ACTIVITY_TEST_DB="postgres://$(whoami)@localhost:5432/marc_l32
 ```
 Expected: 14 PASS.
 
-- [ ] **Step 6: Ujian mutasi — dua invarian teras**
+- [ ] **Step 6: Ujian mutasi - dua invarian teras**
 
 Run:
 ```bash
@@ -1032,20 +1032,20 @@ Dalam bahagian "Auth: JWT access + opaque refresh (rotated)", tambah di hujung:
 
 Token legap 32 bait, disimpan sebagai hash SHA-256 dalam
 `password_reset_tokens`, TTL 1 jam. Ahli menaip kata laluan baharu pada
-halaman `marc_astro` — tiada app-link https dikonfigur, jadi pautan emel
+halaman `marc_astro` - tiada app-link https dikonfigur, jadi pautan emel
 membuka pelayar, bukan app.
 
 Tiga sifat yang saling bergantung, kesemuanya dalam satu transaksi:
 
-- **Sekali-guna** — token dipadam bersama tukar kata laluan.
-- **Permintaan baharu membunuh yang lama** — kalau tidak setiap
+- **Sekali-guna** - token dipadam bersama tukar kata laluan.
+- **Permintaan baharu membunuh yang lama** - kalau tidak setiap
   permintaan menambah satu lagi kelayakan hidup pada akaun yang sama.
-- **Setiap sesi dibatalkan** — orang reset selalunya kerana syak akaun
+- **Setiap sesi dibatalkan** - orang reset selalunya kerana syak akaun
   dikompromi; membiarkan refresh token penyerang hidup mengalahkan
   tujuannya.
 
 `request` pulang **204 sentiasa** (bukan-enumerasi) dan menghantar emel
-dalam goroutine supaya masa respons tak membocorkan kewujudan akaun —
+dalam goroutine supaya masa respons tak membocorkan kewujudan akaun -
 mitigasi separa; lihat komennya. Ia TIDAK menanda `email_verified`.
 
 `PASSWORD_RESET_URL` kosong = ciri dimatikan (503), bukan fallback HTML Go.
@@ -1084,7 +1084,7 @@ import Footer from "../components/Footer.astro";
 ---
 
 <Layout
-	title="Reset Kata Laluan — MARC"
+	title="Reset Kata Laluan - MARC"
 	description="Tetapkan kata laluan baharu untuk akaun MARC anda."
 >
 	<Header />
@@ -1143,7 +1143,7 @@ import Footer from "../components/Footer.astro";
 	const token = new URLSearchParams(window.location.search).get("token");
 
 	if (!token) {
-		errorMessage.textContent = "Pautan tidak sah — token tiada.";
+		errorMessage.textContent = "Pautan tidak sah - token tiada.";
 		show(error);
 	} else if (!apiBaseUrl) {
 		errorMessage.textContent =
@@ -1156,7 +1156,7 @@ import Footer from "../components/Footer.astro";
 			const password = document.getElementById("password").value;
 			const confirm = document.getElementById("confirm").value;
 
-			// Semakan sisi klien untuk maklum balas serta-merta SAHAJA —
+			// Semakan sisi klien untuk maklum balas serta-merta SAHAJA -
 			// server tetap menguatkuasakan peraturan yang sama.
 			if (password.length < 6) {
 				formError.textContent = "Kata laluan mesti sekurang-kurangnya 6 aksara.";
@@ -1287,7 +1287,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marc/features/auth/forgot_password_page.dart';
 
-/// Mesej selepas hantar MESTI neutral — ia sama sama ada akaun wujud
+/// Mesej selepas hantar MESTI neutral - ia sama sama ada akaun wujud
 /// atau tidak. Kalau ia berbeza, UI membocorkan apa yang backend sengaja
 /// sembunyikan (lihat L32: request pulang 204 sentiasa).
 void main() {
@@ -1317,7 +1317,7 @@ void main() {
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `cd ../marc_flutter && flutter test test/features/auth/forgot_password_test.dart`
-Expected: gagal kompil — `forgot_password_page.dart` belum wujud.
+Expected: gagal kompil - `forgot_password_page.dart` belum wujud.
 
 - [ ] **Step 3: Tambah kaedah servis**
 
@@ -1326,7 +1326,7 @@ Dalam `auth_service.dart`, selepas `signUp`:
 ```dart
   /// Minta pautan reset kata laluan. Backend pulang 204 SENTIASA (tiada
   /// enumerasi akaun), jadi "berjaya" di sini bermakna "permintaan
-  /// diterima" — BUKAN "akaun itu wujud". Mesej UI mesti kekal neutral.
+  /// diterima" - BUKAN "akaun itu wujud". Mesej UI mesti kekal neutral.
   Future<AuthResult> requestPasswordReset(String email) async {
     try {
       await _dio.post(
@@ -1401,7 +1401,7 @@ const forgotPasswordSentMessage =
     'Kalau emel itu berdaftar, kami dah hantar pautan reset. '
     'Semak peti masuk anda.';
 
-/// 429 bermakna terlalu banyak percubaan, bukan permintaan tak sah —
+/// 429 bermakna terlalu banyak percubaan, bukan permintaan tak sah -
 /// pengguna patut cuba lagi sebentar, bukan menganggap ia gagal kekal.
 bool isRetryableResetError(Object error) {
   return error is DioException && error.response?.statusCode == 429;
@@ -1483,7 +1483,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
                         validator: validateEmail,
                       ),
                       const SizedBox(height: 28),
-                      // `ButtonBusy` BUKAN butang — ia penunjuk sibuk
+                      // `ButtonBusy` BUKAN butang - ia penunjuk sibuk
                       // (spinner + label) yang diletak SEBAGAI child
                       // butang. Corak ni disalin daripada
                       // `login_page.dart:82-87`.
@@ -1505,7 +1505,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
 
 Tandatangan yang disahkan sebelum pelan ni ditulis:
 - `AuthField({required controller, required label, icon, obscureText, keyboardType, validator})`
-- `ButtonBusy({required label})` — **hanya** `label`; ia bukan butang.
+- `ButtonBusy({required label})` - **hanya** `label`; ia bukan butang.
 
 - [ ] **Step 6: Wire laluan + pautan**
 
@@ -1557,16 +1557,16 @@ git commit -m "feat(auth): skrin lupa kata laluan (marc_go L32)"
 - Modify: `docs/README.md` (pautkan pelan)
 - Modify: `../marc_flutter/TODO.md`
 
-- [ ] **Step 1: README.md — tambah dua baris ke jadual Auth**
+- [ ] **Step 1: README.md - tambah dua baris ke jadual Auth**
 
 ```markdown
-| POST | `/auth/password-reset/request` | — | sentiasa 204 (tiada enumerasi); 503 kalau `PASSWORD_RESET_URL` kosong |
-| POST | `/auth/password-reset/confirm` | — | dari halaman Astro; tukar kata laluan + batal SEMUA sesi |
+| POST | `/auth/password-reset/request` | - | sentiasa 204 (tiada enumerasi); 503 kalau `PASSWORD_RESET_URL` kosong |
+| POST | `/auth/password-reset/confirm` | - | dari halaman Astro; tukar kata laluan + batal SEMUA sesi |
 ```
 
-- [ ] **Step 2: TODO.md — tutup L32**
+- [ ] **Step 2: TODO.md - tutup L32**
 
-Tukar `- [ ] **L32 — tiada laluan tukar/reset kata laluan langsung (MEDIUM,` kepada `- [x]`, dan tambah di hujung item itu:
+Tukar `- [ ] **L32 - tiada laluan tukar/reset kata laluan langsung (MEDIUM,` kepada `- [x]`, dan tambah di hujung item itu:
 
 ```markdown
       **RESET dibina 2026-08-23** (spec:
@@ -1576,33 +1576,33 @@ Tukar `- [ ] **L32 — tiada laluan tukar/reset kata laluan langsung (MEDIUM,` k
       `marc_astro/src/pages/reset-kata-laluan.astro`, skrin
       `marc_flutter` `forgot_password_page.dart`.
 
-      **TUKAR kata laluan semasa log masuk KEKAL TERBUKA** — ditolak
+      **TUKAR kata laluan semasa log masuk KEKAL TERBUKA** - ditolak
       secara eksplisit semasa brainstorm untuk memendekkan skop. Bukan
       penyekat: ahli yang syak akaun dikompromi ada
       `POST /auth/logout-all`. Buka item baharu kalau ia diperlukan.
 ```
 
-- [ ] **Step 3: docs/README.md — pautkan pelan**
+- [ ] **Step 3: docs/README.md - pautkan pelan**
 
 Tukar baris spec 2026-08-22 kepada:
 
 ```markdown
-| 2026-08-22 | [Reset kata laluan — spec](./superpowers/specs/2026-08-22-reset-kata-laluan-design.md) · [plan](./superpowers/plans/2026-08-22-reset-kata-laluan.md) (L32) |
+| 2026-08-22 | [Reset kata laluan - spec](./superpowers/specs/2026-08-22-reset-kata-laluan-design.md) · [plan](./superpowers/plans/2026-08-22-reset-kata-laluan.md) (L32) |
 ```
 
-- [ ] **Step 4: marc_flutter/TODO.md — rekod perubahan silang-repo**
+- [ ] **Step 4: marc_flutter/TODO.md - rekod perubahan silang-repo**
 
 Tambah bahagian baharu berhampiran bahagian backend lain:
 
 ```markdown
-## Backend L32 (2026-08-23) — reset kata laluan ✅
+## Backend L32 (2026-08-23) - reset kata laluan ✅
 
 Skrin `forgot_password_page.dart` baharu + pautan "Lupa kata laluan?" pada
 `login_page.dart`. Flutter hanya mengumpul EMEL; kata laluan baharu ditaip
 pada halaman `marc_astro` (tiada app-link https dikonfigur, jadi pautan
 emel membuka pelayar).
 
-⚠️ `forgotPasswordSentMessage` MESTI kekal neutral — backend pulang 204
+⚠️ `forgotPasswordSentMessage` MESTI kekal neutral - backend pulang 204
 sama ada akaun wujud atau tidak, dan mesej yang berkata "Pautan dihantar!"
 akan membocorkan apa yang backend sengaja sembunyikan. Dikunci oleh ujian.
 ```

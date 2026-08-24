@@ -54,7 +54,7 @@ func TestSendDisabledNoop(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewClient("", "") // takde credential — patut no-op senyap
+	c := NewClient("", "") // takde credential - patut no-op senyap
 	c.SetBaseURLForTest(server.URL)
 
 	if c.Enabled() {

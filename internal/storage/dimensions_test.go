@@ -18,7 +18,7 @@ func jpegHeader(t *testing.T, w, h int) []byte {
 	if err := jpeg.Encode(&buf, img, nil); err != nil {
 		t.Fatal(err)
 	}
-	// Hantar HEADER sahaja — meniru julat 64KB yang dibaca dari R2, dan
+	// Hantar HEADER sahaja - meniru julat 64KB yang dibaca dari R2, dan
 	// membuktikan semakan tak perlukan fail penuh.
 	b := buf.Bytes()
 	if len(b) > 64*1024 {
@@ -64,7 +64,7 @@ func TestPNGDiukurJuga(t *testing.T) {
 }
 
 // Header tak boleh dibaca (terpotong, atau WEBP yang tiada decoder) tak
-// boleh menolak gambar — magic number dah lulus dan had bait masih
+// boleh menolak gambar - magic number dah lulus dan had bait masih
 // terpakai. Gagal-terbuka di sini sengaja.
 func TestHeaderTakBolehDibacaTidakMenolak(t *testing.T) {
 	if err := verifyDimensions([]byte{0xFF, 0xD8, 0xFF}, MaxImageDimension); err != nil {

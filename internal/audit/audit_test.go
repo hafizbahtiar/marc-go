@@ -16,7 +16,7 @@ func TestDiffHanyaFieldBerubah(t *testing.T) {
 		t.Fatalf("changed = %v, mahu [content]", changed)
 	}
 	if !reflect.DeepEqual(oldDelta, map[string]any{"content": "lama"}) {
-		t.Errorf("oldDelta = %v — 'type' tak berubah, tak patut disimpan", oldDelta)
+		t.Errorf("oldDelta = %v - 'type' tak berubah, tak patut disimpan", oldDelta)
 	}
 	if !reflect.DeepEqual(newDelta, map[string]any{"content": "baru"}) {
 		t.Errorf("newDelta = %v", newDelta)
@@ -34,7 +34,7 @@ func TestDiffTiadaPerubahan(t *testing.T) {
 func TestDiffCreateDanDelete(t *testing.T) {
 	snapshot := map[string]any{"content": "hai", "author_id": "abc"}
 
-	// Create: tiada 'old' untuk dibanding — simpan 'new' penuh.
+	// Create: tiada 'old' untuk dibanding - simpan 'new' penuh.
 	oldDelta, newDelta, changed := Diff(nil, snapshot)
 	if oldDelta != nil {
 		t.Errorf("create patut tiada old_values, dapat %v", oldDelta)
@@ -76,7 +76,7 @@ func TestDiffFieldDitambahDanDibuang(t *testing.T) {
 func TestChangedFieldsSentiasaDiisih(t *testing.T) {
 	old := map[string]any{"zulu": 1, "alpha": 1, "mike": 1}
 	new := map[string]any{"zulu": 2, "alpha": 2, "mike": 2}
-	for range 20 { // lelaran map rawak — ulang untuk pastikan stabil
+	for range 20 { // lelaran map rawak - ulang untuk pastikan stabil
 		_, _, changed := Diff(old, new)
 		if !reflect.DeepEqual(changed, []string{"alpha", "mike", "zulu"}) {
 			t.Fatalf("changed = %v, mahu diisih", changed)

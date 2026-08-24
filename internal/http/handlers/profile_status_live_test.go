@@ -65,7 +65,7 @@ func seedMember(t *testing.T, ctx context.Context, pool *pgxpool.Pool, roleKey, 
 	return userID
 }
 
-// seedSucceededRegistrationPayment — gate `setMemberStatus` (L?, yuran
+// seedSucceededRegistrationPayment - gate `setMemberStatus` (L?, yuran
 // pendaftaran 2026-08-15) sekat pending->approved sehingga
 // HasSucceededRegistrationPayment true. Ujian status/audit ni tak
 // menguji laluan bayaran itu sendiri, jadi seed terus baris 'succeeded'
@@ -161,13 +161,13 @@ func TestApproveMemberDiaudit(t *testing.T) {
 		got["new"].(map[string]any)["status"] != "approved" {
 		t.Errorf("delta salah: old=%v new=%v", got["old"], got["new"])
 	}
-	// Snapshot pelaku mesti ada — tanpa ni jejak tak dapat jawab "siapa".
+	// Snapshot pelaku mesti ada - tanpa ni jejak tak dapat jawab "siapa".
 	if got["actor_role_key"] == nil || *(got["actor_role_key"].(*string)) != "manager" {
 		t.Errorf("actor_role_key = %v, mahu manager", got["actor_role_key"])
 	}
 }
 
-// Approve dua kali tak boleh cipta catatan audit kedua — tiada apa yang
+// Approve dua kali tak boleh cipta catatan audit kedua - tiada apa yang
 // berubah pada kali kedua.
 func TestApproveBerulangTidakCiptaCatatanKedua(t *testing.T) {
 	pool, ctx := statusTestPool(t)
@@ -187,7 +187,7 @@ func TestApproveBerulangTidakCiptaCatatanKedua(t *testing.T) {
 }
 
 // Gate bayaran sedia ada mesti kekal berkuat kuasa bila bypass_payment
-// TIDAK dihantar — ahli belum bayar tak boleh diluluskan.
+// TIDAK dihantar - ahli belum bayar tak boleh diluluskan.
 func TestApproveTanpaBayaranDitolak(t *testing.T) {
 	pool, ctx := statusTestPool(t)
 	manager := seedMember(t, ctx, pool, "manager", "approved")
@@ -203,7 +203,7 @@ func TestApproveTanpaBayaranDitolak(t *testing.T) {
 }
 
 // Supervisor/manager (rank < admin) TAK boleh langkau bayaran walaupun
-// mereka management — bypass mesti terhad kepada admin/superadmin sahaja.
+// mereka management - bypass mesti terhad kepada admin/superadmin sahaja.
 func TestApproveBypassPaymentDitolakUntukManager(t *testing.T) {
 	pool, ctx := statusTestPool(t)
 	manager := seedMember(t, ctx, pool, "manager", "approved")
@@ -227,7 +227,7 @@ func TestApproveBypassPaymentDitolakUntukManager(t *testing.T) {
 	}
 }
 
-// Admin/superadmin cuba bypass tanpa nota mesti ditolak — nota wajib
+// Admin/superadmin cuba bypass tanpa nota mesti ditolak - nota wajib
 // untuk jejak audit ahli lama->digital.
 func TestApproveBypassPaymentPerluNota(t *testing.T) {
 	pool, ctx := statusTestPool(t)
@@ -276,7 +276,7 @@ func TestApproveBypassPaymentBerjayaUntukAdmin(t *testing.T) {
 }
 
 // Ahli yang DAH bayar (baris 'succeeded' wujud) tak patut direkod sebagai
-// "payment_bypassed" walaupun admin hantar bypass_payment=true — bypass
+// "payment_bypassed" walaupun admin hantar bypass_payment=true - bypass
 // tak relevan bila bayaran sebenar dah berjaya (Opus verify LOW#1).
 func TestApproveBypassPaymentDiabaikanBilaSudahBayar(t *testing.T) {
 	pool, ctx := statusTestPool(t)
@@ -301,7 +301,7 @@ func TestApproveBypassPaymentDiabaikanBilaSudahBayar(t *testing.T) {
 }
 
 // Bil ToyyibPay 'pending' dengan gateway_ref (bil hidup, boleh dibayar
-// bila-bila masa) mesti sekat bypass — kalau tidak ahli boleh bayar bil
+// bila-bila masa) mesti sekat bypass - kalau tidak ahli boleh bayar bil
 // tu lepas diluluskan dan terima 2 pengesahan bayaran (Opus verify
 // MEDIUM).
 func TestApproveBypassPaymentDitolakBilaAdaBilPending(t *testing.T) {
@@ -327,9 +327,9 @@ func TestApproveBypassPaymentDitolakBilaAdaBilPending(t *testing.T) {
 }
 
 // Baris 'pending' TANPA gateway_ref (createBill berjaya cipta bil di
-// ToyyibPay tapi SetRegistrationPaymentGatewayRef gagal selepas itu —
+// ToyyibPay tapi SetRegistrationPaymentGatewayRef gagal selepas itu -
 // "TETINGKAP BAKI" dlm registration_payment.go Checkout) MESTI turut
-// sekat bypass — bil sebenar tetap wujud di ToyyibPay walaupun ref tak
+// sekat bypass - bil sebenar tetap wujud di ToyyibPay walaupun ref tak
 // sempat disimpan, jadi tapisan `gateway_ref is not null` TAK boleh
 // dipakai di sini (beza drpd ListPendingRegistrationPaymentsOlderThan,
 // Opus verify susulan).
@@ -355,12 +355,12 @@ func TestApproveBypassPaymentDitolakBilaAdaBarisPendingTanpaRef(t *testing.T) {
 // Body cacat (bypass_payment jenis string bukan bool) mesti pulang 400
 // jelas, bukan senyap jadi false lalu terus approve (Opus verify LOW#2).
 //
-// Target SENGAJA ahli yang DAH bayar (bukan pending belum bayar) — kalau
+// Target SENGAJA ahli yang DAH bayar (bukan pending belum bayar) - kalau
 // ujian ni guna target belum bayar, 400 boleh berlaku sebab GATE BAYARAN
 // biasa (kod lama `_ = c.ShouldBindJSON` pun akan pulang 400 yang sama,
-// atas sebab berbeza — ujian jadi tak bererti/trivially-pass, Opus
+// atas sebab berbeza - ujian jadi tak bererti/trivially-pass, Opus
 // verify tangkap isu ni pada pusingan ke-2). Dengan target dah bayar,
-// laluan biasa tanpa body cacat akan approve BERJAYA (200) — jadi 400 di
+// laluan biasa tanpa body cacat akan approve BERJAYA (200) - jadi 400 di
 // sini HANYA boleh datang daripada bind gagal, bukan gate bayaran.
 func TestApproveBodyBypassPaymentJenisSalahDitolak(t *testing.T) {
 	pool, ctx := statusTestPool(t)
@@ -379,7 +379,7 @@ func TestApproveBodyBypassPaymentJenisSalahDitolak(t *testing.T) {
 }
 
 // Superadmin (rank tertinggi) mesti lulus semakan IsAtLeastRole("admin")
-// yang sama macam admin — bukan cuma tier admin literal.
+// yang sama macam admin - bukan cuma tier admin literal.
 func TestApproveBypassPaymentBerjayaUntukSuperadmin(t *testing.T) {
 	pool, ctx := statusTestPool(t)
 	superadmin := seedMember(t, ctx, pool, "superadmin", "approved")
@@ -477,19 +477,19 @@ func callMembers(t *testing.T, pool *pgxpool.Pool, callerID uuid.UUID) []map[str
 //
 // Dua ujian di bawah menegaskan atas KESELURUHAN senarai ahli ("ahli lain
 // tak nampak emel"), jadi ia mesti bermula daripada DB yang diketahui
-// kosong — tak seperti setiap ujian lain dalam pakej ni, yang menyemai
+// kosong - tak seperti setiap ujian lain dalam pakej ni, yang menyemai
 // baris berid rawak dan menegaskan hanya atas baris itu.
 //
 // ⚠️ Turutan padam mengikut kekangan kunci asing, bukan citarasa.
 // DUA jadual merujuk `users(id)` TANPA klausa `on delete` (jadi RESTRICT
 // secara lalai) dan MESTI dikosongkan dahulu:
 //
-//	profiles.approved_by  — sudah dilindungi oleh `delete from profiles`
-//	donations.user_id     — TERLEPAS sehingga 2026-08-22 (L33)
+//	profiles.approved_by  - sudah dilindungi oleh `delete from profiles`
+//	donations.user_id     - TERLEPAS sehingga 2026-08-22 (L33)
 //
 // Selebihnya `on delete cascade`/`set null`, jadi ia hilang sendiri.
 // Kalau jadual BAHARU merujuk `users(id)` tanpa klausa `on delete`,
-// tambah di sini — kalau tidak dua ujian di bawah gagal dengan
+// tambah di sini - kalau tidak dua ujian di bawah gagal dengan
 // pelanggaran FK yang tiada kaitan dgn apa yang ia uji.
 func wipeMembers(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
@@ -568,7 +568,7 @@ func callUpdateMe(t *testing.T, pool *pgxpool.Pool, r2 *storage.R2Client, userID
 // mereka sendiri.
 func TestAvatarTolakKunciBukanMilikCaller(t *testing.T) {
 	pool, ctx := statusTestPool(t)
-	r2 := storage.NewR2Client("", "", "", "", "") // tak dikonfigur — tak dicapai
+	r2 := storage.NewR2Client("", "", "", "", "") // tak dikonfigur - tak dicapai
 	victim := seedMember(t, ctx, pool, "ahli", "approved")
 	attacker := seedMember(t, ctx, pool, "ahli", "approved")
 
@@ -607,7 +607,7 @@ func TestAvatarLamaDigilirkanUntukDipadam(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Buang avatar (kunci kosong) — tak sentuh R2, jadi tak perlu kredential.
+	// Buang avatar (kunci kosong) - tak sentuh R2, jadi tak perlu kredential.
 	rec := callUpdateMe(t, pool, storage.NewR2Client("", "", "", "", ""), user, `{"avatar_r2_key":""}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
@@ -620,7 +620,7 @@ func TestAvatarLamaDigilirkanUntukDipadam(t *testing.T) {
 		t.Fatal(err)
 	}
 	if queued != 1 {
-		t.Fatalf("avatar lama tak digilirkan (%d baris) — ia akan bocor dalam R2", queued)
+		t.Fatalf("avatar lama tak digilirkan (%d baris) - ia akan bocor dalam R2", queued)
 	}
 
 	var avatar *string
@@ -640,7 +640,7 @@ func TestAvatarLamaDigilirkanUntukDipadam(t *testing.T) {
 }
 
 // Ujian sedia ada cuma lindungi BUANG avatar (kunci kosong). Laluan yang
-// paling kerap berlaku ialah GANTI — avatar lama ditukar dengan yang
+// paling kerap berlaku ialah GANTI - avatar lama ditukar dengan yang
 // baharu. Kalau laluan tu tak menggilirkan yang lama, setiap pertukaran
 // bocorkan satu objek.
 func TestAvatarGantiGilirkanYangLama(t *testing.T) {
@@ -665,7 +665,7 @@ func TestAvatarGantiGilirkanYangLama(t *testing.T) {
 	// sentuh R2: tetapkan kunci baharu terus melalui query, kemudian
 	// panggil handler dgn kunci KETIGA supaya logik gilir diuji.
 	// Lebih mudah: sahkan cabang gilir dgn membuang (kunci kosong) selepas
-	// menetapkan kunci baharu — kedua-duanya melalui `before != key`.
+	// menetapkan kunci baharu - kedua-duanya melalui `before != key`.
 	rec := callUpdateMe(t, pool, storage.NewR2Client("", "", "", "", ""), user,
 		`{"avatar_r2_key":""}`)
 	if rec.Code != http.StatusOK {
@@ -679,11 +679,11 @@ func TestAvatarGantiGilirkanYangLama(t *testing.T) {
 		t.Fatal(err)
 	}
 	if queued != 1 {
-		t.Fatalf("avatar lama tak digilirkan (%d) — bocor setiap kali tukar", queued)
+		t.Fatalf("avatar lama tak digilirkan (%d) - bocor setiap kali tukar", queued)
 	}
 }
 
-// Menetapkan kunci yang SAMA semula tak patut menggilirkan apa-apa —
+// Menetapkan kunci yang SAMA semula tak patut menggilirkan apa-apa -
 // kalau tidak kita padam avatar yang masih digunakan.
 func TestAvatarSamaTidakDigilirkan(t *testing.T) {
 	pool, ctx := statusTestPool(t)

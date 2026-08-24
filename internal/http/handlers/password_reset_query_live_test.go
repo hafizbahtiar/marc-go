@@ -45,9 +45,9 @@ func TestPasswordResetTokenPusinganPenuh(t *testing.T) {
 		t.Fatalf("baris tak sepadan: got=%v created=%v", got.ID, created.ID)
 	}
 
-	// Token MENTAH tak boleh mencari apa-apa — hanya hash disimpan.
+	// Token MENTAH tak boleh mencari apa-apa - hanya hash disimpan.
 	if _, err := q.GetPasswordResetTokenByHash(ctx, raw); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatal("token MENTAH memadankan baris — token disimpan tanpa hash")
+		t.Fatal("token MENTAH memadankan baris - token disimpan tanpa hash")
 	}
 
 	if err := q.DeletePasswordResetTokensByUser(ctx, userID); err != nil {
@@ -84,7 +84,7 @@ func TestUpdateUserPasswordMenukarHash(t *testing.T) {
 	}
 }
 
-// `on delete cascade` — memadam user mesti membawa tokennya sekali,
+// `on delete cascade` - memadam user mesti membawa tokennya sekali,
 // kalau tidak baris yatim menghalang pemadaman akaun.
 func TestPasswordResetTokenCascadeBilaUserDipadam(t *testing.T) {
 	pool := activityTestPool(t)
@@ -109,6 +109,6 @@ func TestPasswordResetTokenCascadeBilaUserDipadam(t *testing.T) {
 	}
 
 	if _, err := q.GetPasswordResetTokenByHash(ctx, auth.HashToken(raw)); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatal("token bertahan selepas user dipadam — cascade tak berkuat kuasa")
+		t.Fatal("token bertahan selepas user dipadam - cascade tak berkuat kuasa")
 	}
 }

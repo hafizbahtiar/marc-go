@@ -19,7 +19,7 @@ import (
 
 // Pakej ni menulis ganti status bayaran SECARA AUTOMATIK berdasarkan
 // jawapan gateway, tanpa manusia dalam gelung. `RunOnce` sengaja
-// diekspos "supaya boleh dipanggil terus dalam ujian" — dan ujian itu
+// diekspos "supaya boleh dipanggil terus dalam ujian" - dan ujian itu
 // tak pernah ditulis (TODO.md L36). Ini menutupnya.
 //
 // Gateway ialah ANTARA MUKA (`payment.Gateway`), jadi ia dipalsukan di
@@ -34,10 +34,10 @@ import (
 // NOTA keadaan dikongsi: setiap ujian menyemai barisnya sendiri dengan
 // rujukan RAWAK, tapi kesemuanya berkongsi satu DB dan `RunOnce`
 // memproses SETIAP baris yang layak. Jadi penegasan mesti dibuat pada
-// baris/rujukan yang ujian itu sendiri cipta — BUKAN pada medan agregat
+// baris/rujukan yang ujian itu sendiri cipta - BUKAN pada medan agregat
 // `ReconcileSummary`, yang membawa kerja daripada ujian lain.
 
-// fakeGateway — jawapan CheckStatus ditetapkan per-rujukan.
+// fakeGateway - jawapan CheckStatus ditetapkan per-rujukan.
 type fakeGateway struct {
 	name string
 
@@ -116,7 +116,7 @@ func setup(t *testing.T) (*pgxpool.Pool, *sqlc.Queries, *fakeGateway, *Reconcile
 	t.Cleanup(pool.Close)
 
 	q := sqlc.New(pool)
-	// Satu instance dikongsi tiga kunci — padan wiring cmd/api/main.go,
+	// Satu instance dikongsi tiga kunci - padan wiring cmd/api/main.go,
 	// di mana "toyyibpay" dan "toyyibpay-activity" ialah dua instance
 	// dengan kredential SAMA.
 	gw := newFakeGateway("toyyibpay")
@@ -192,7 +192,7 @@ func TestReconcileBetulkanYuranPendaftaran(t *testing.T) {
 	summary := r.RunOnce(ctx)
 
 	if got := regPaymentStatus(t, ctx, pool, idBerjaya); got != "succeeded" {
-		t.Errorf("gateway kata succeeded tapi DB = %q — ahli yang DAH bayar "+
+		t.Errorf("gateway kata succeeded tapi DB = %q - ahli yang DAH bayar "+
 			"kekal tak diluluskan", got)
 	}
 	if got := regPaymentStatus(t, ctx, pool, idGagal); got != "failed" {
@@ -209,7 +209,7 @@ func TestReconcileBetulkanYuranPendaftaran(t *testing.T) {
 	}
 }
 
-// Baris yang BELUM cukup umur (< minAge) tak boleh disentuh — pembayar
+// Baris yang BELUM cukup umur (< minAge) tak boleh disentuh - pembayar
 // mungkin masih di halaman bank.
 func TestReconcileLangkauBarisTerlaluBaharu(t *testing.T) {
 	pool, _, gw, r, ctx := setup(t)
@@ -228,11 +228,11 @@ func TestReconcileLangkauBarisTerlaluBaharu(t *testing.T) {
 	}
 }
 
-// umurPurba — umur MUTLAK, sengaja BUKAN diterbitkan daripada `maxAge`.
+// umurPurba - umur MUTLAK, sengaja BUKAN diterbitkan daripada `maxAge`.
 //
 // Versi pertama ujian ni menyemai pada `maxAge + 24h` dan gagal
 // menangkap apa-apa: menaikkan `maxAge` turut menaikkan umur benih, jadi
-// baris itu kekal di luar tingkap tak kira apa nilai pemalarnya —
+// baris itu kekal di luar tingkap tak kira apa nilai pemalarnya -
 // penegasan yang tak boleh gagal. Disahkan melalui ujian mutasi
 // 2026-08-22.
 //
@@ -240,14 +240,14 @@ func TestReconcileLangkauBarisTerlaluBaharu(t *testing.T) {
 // menjadikan ujian ni gagal, yang memang niatnya.
 const umurPurba = 30 * 24 * time.Hour
 
-// L30 — tingkap ATAS. Baris yang lebih tua drpd maxAge mesti berhenti
+// L30 - tingkap ATAS. Baris yang lebih tua drpd maxAge mesti berhenti
 // dipoll SEPENUHNYA, kalau tidak bebanan reconcile membesar secara
 // monotonik sepanjang hayat sistem.
 func TestReconcileBerhentiPollBarisLebihTuaDaripadaMaxAge(t *testing.T) {
 	pool, _, gw, r, ctx := setup(t)
 
 	if maxAge >= umurPurba {
-		t.Fatalf("maxAge (%v) dah mencapai umur benih ujian (%v) — ujian ni "+
+		t.Fatalf("maxAge (%v) dah mencapai umur benih ujian (%v) - ujian ni "+
 			"tak lagi membuktikan apa-apa; naikkan umurPurba secara sedar "+
 			"kalau tingkap memang sepatutnya seluas itu", maxAge, umurPurba)
 	}
@@ -259,17 +259,17 @@ func TestReconcileBerhentiPollBarisLebihTuaDaripadaMaxAge(t *testing.T) {
 	r.RunOnce(ctx)
 
 	if n := gw.callCount(ref); n != 0 {
-		t.Errorf("gateway dipanggil %d kali untuk baris berumur %v (maxAge = %v) — "+
+		t.Errorf("gateway dipanggil %d kali untuk baris berumur %v (maxAge = %v) - "+
 			"setiap checkout terbiar sejak hari pertama akan dipoll "+
 			"selama-lamanya", n, umurPurba, maxAge)
 	}
-	// Baris itu TIDAK hilang — ia cuma berhenti dipoll.
+	// Baris itu TIDAK hilang - ia cuma berhenti dipoll.
 	if got := regPaymentStatus(t, ctx, pool, id); got != "pending" {
-		t.Errorf("baris purba diubah jadi %q — ia sepatutnya dibiar utuh", got)
+		t.Errorf("baris purba diubah jadi %q - ia sepatutnya dibiar utuh", got)
 	}
 }
 
-// L29 — baris tanpa `gateway_ref` bermakna createBill tak pernah
+// L29 - baris tanpa `gateway_ref` bermakna createBill tak pernah
 // berjaya, jadi TIADA bil untuk ditanya pada gateway. Ia mesti dilangkau
 // sepenuhnya: memanggil CheckStatus dengan ref kosong akan mengembalikan
 // jawapan yang tak bermakna, dan lebih teruk lagi ia membakar kuota API
@@ -293,10 +293,10 @@ func TestReconcileLangkauBarisTanpaGatewayRef(t *testing.T) {
 	// Penegasan dibuat pada REF, bukan pada `summary.Checked`: ringkasan
 	// mengira merentas ketiga-tiga modul dan ujian dalam pakej ni
 	// berkongsi satu DB, jadi ia membawa baris daripada ujian lain.
-	// `callCount("")` khusus kepada baris ni — CheckStatus hanya boleh
+	// `callCount("")` khusus kepada baris ni - CheckStatus hanya boleh
 	// dipanggil dengan ref kosong kalau baris tanpa bil terlepas tapisan.
 	if n := gw.callCount(""); n != 0 {
-		t.Errorf("gateway dipanggil %d kali dengan ref KOSONG — baris yang "+
+		t.Errorf("gateway dipanggil %d kali dengan ref KOSONG - baris yang "+
 			"createBill-nya tak pernah berjaya sedang dipoll; ia takkan "+
 			"pernah diselesaikan dan cuma membakar kuota API", n)
 	}
@@ -305,7 +305,7 @@ func TestReconcileLangkauBarisTanpaGatewayRef(t *testing.T) {
 	}
 }
 
-// Ralat gateway dikira dalam ringkasan dan TIDAK mengubah DB — jawapan
+// Ralat gateway dikira dalam ringkasan dan TIDAK mengubah DB - jawapan
 // yang tak diketahui bukan alasan menulis apa-apa.
 func TestReconcileRalatGatewayTidakUbahDB(t *testing.T) {
 	pool, _, gw, r, ctx := setup(t)
@@ -320,7 +320,7 @@ func TestReconcileRalatGatewayTidakUbahDB(t *testing.T) {
 		t.Errorf("status ditulis (%q) walaupun CheckStatus gagal", got)
 	}
 	if summary.Errors == 0 {
-		t.Error("Errors = 0 walaupun CheckStatus gagal — kegagalan gateway " +
+		t.Error("Errors = 0 walaupun CheckStatus gagal - kegagalan gateway " +
 			"jadi tak kelihatan dalam ringkasan pencetus manual")
 	}
 	if summary.MismatchesFixed != 0 {
@@ -380,13 +380,13 @@ func TestReconcileTandaYuranAktivitiSebagaiPaid(t *testing.T) {
 	r.RunOnce(ctx)
 
 	if got := activityPaymentStatus(t, ctx, pool, regID); got != "paid" {
-		t.Errorf("payment_status = %q, mahu \"paid\" — ahli yang dah bayar "+
+		t.Errorf("payment_status = %q, mahu \"paid\" - ahli yang dah bayar "+
 			"takkan layak dapat sijil", got)
 	}
 }
 
 // `activity_registrations.payment_status` CHECK tiada 'failed'. Menulis
-// "failed" ke sana akan melanggar kekangan — jadi gateway yang kata gagal
+// "failed" ke sana akan melanggar kekangan - jadi gateway yang kata gagal
 // mesti meninggalkan baris pada 'pending' (untuk activitysweep bersihkan)
 // dan bukan cuba menulis.
 func TestReconcileTidakTulisFailedKeYuranAktiviti(t *testing.T) {
@@ -399,16 +399,16 @@ func TestReconcileTidakTulisFailedKeYuranAktiviti(t *testing.T) {
 	summary := r.RunOnce(ctx)
 
 	if got := activityPaymentStatus(t, ctx, pool, regID); got != "pending" {
-		t.Errorf("payment_status = %q — 'failed' bukan nilai sah bagi lajur ni, "+
+		t.Errorf("payment_status = %q - 'failed' bukan nilai sah bagi lajur ni, "+
 			"CHECK constraint akan ditolak", got)
 	}
 	if summary.Errors != 0 {
-		t.Errorf("Errors = %d — gateway 'failed' ialah keputusan yang DIJANGKA "+
+		t.Errorf("Errors = %d - gateway 'failed' ialah keputusan yang DIJANGKA "+
 			"di sini, bukan kegagalan", summary.Errors)
 	}
 }
 
-// L30 — pendaftaran yang SUDAH dibatalkan sapuan mengekalkan
+// L30 - pendaftaran yang SUDAH dibatalkan sapuan mengekalkan
 // `payment_status='pending'` dengan sengaja, jadi tanpa guard
 // `status <> 'cancelled'` ia dipoll selama-lamanya walaupun sudah mati.
 func TestReconcileLangkauPendaftaranYangSudahDibatalkan(t *testing.T) {
@@ -421,7 +421,7 @@ func TestReconcileLangkauPendaftaranYangSudahDibatalkan(t *testing.T) {
 	r.RunOnce(ctx)
 
 	if n := gw.callCount(ref); n != 0 {
-		t.Errorf("gateway dipanggil %d kali untuk pendaftaran DIBATALKAN — "+
+		t.Errorf("gateway dipanggil %d kali untuk pendaftaran DIBATALKAN - "+
 			"baris mati kekal dipoll selamanya", n)
 	}
 }
@@ -457,7 +457,7 @@ func TestReconcileBetulkanDerma(t *testing.T) {
 
 // ---- Sifat merentas modul ----
 
-// Reconcile mesti selamat dijalankan berulang — pencetus manual
+// Reconcile mesti selamat dijalankan berulang - pencetus manual
 // (POST /admin/payments/reconcile) berkongsi laluan yang SAMA dengan
 // sapuan berjadual, jadi pengurus yang menekan butang dua kali tak boleh
 // menghasilkan keputusan berbeza.
@@ -480,7 +480,7 @@ func TestRunOnceIdempoten(t *testing.T) {
 	// Pusingan kedua tak patut mengira apa-apa: baris dah 'succeeded',
 	// jadi ia tak lagi padan `status = 'pending'`.
 	if kedua.MismatchesFixed != 0 {
-		t.Errorf("pusingan kedua MismatchesFixed = %d, mahu 0 — pembetulan "+
+		t.Errorf("pusingan kedua MismatchesFixed = %d, mahu 0 - pembetulan "+
 			"dikira dua kali", kedua.MismatchesFixed)
 	}
 }
@@ -494,13 +494,13 @@ func TestReconcileGatewayTidakBerdaftarDilangkauDenganSelamat(t *testing.T) {
 	ref := "BILL-nogw-" + uuid.NewString()[:8]
 	seedRegistrationPayment(t, ctx, pool, ref, minAge+time.Hour)
 
-	// Registry KOSONG — "toyyibpay" tiada.
+	// Registry KOSONG - "toyyibpay" tiada.
 	kosong := New(q, map[string]payment.Gateway{}, time.Hour)
 
 	summary := kosong.RunOnce(ctx)
 
 	if summary.Errors == 0 {
-		t.Error("Errors = 0 walaupun gateway tak berdaftar — salah konfigurasi " +
+		t.Error("Errors = 0 walaupun gateway tak berdaftar - salah konfigurasi " +
 			"jadi tak kelihatan")
 	}
 	if summary.MismatchesFixed != 0 {

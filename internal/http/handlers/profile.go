@@ -27,12 +27,12 @@ import (
 )
 
 type ProfileHandler struct {
-	pool           *pgxpool.Pool
-	queries        *sqlc.Queries
-	emailClient    *email.Client
-	r2             *storage.R2Client
-	feeCents       int64
-	regPaymentGW   payment.Gateway
+	pool         *pgxpool.Pool
+	queries      *sqlc.Queries
+	emailClient  *email.Client
+	r2           *storage.R2Client
+	feeCents     int64
+	regPaymentGW payment.Gateway
 }
 
 func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client, registrationFeeCents int, regPaymentGW payment.Gateway) *ProfileHandler {
@@ -58,32 +58,32 @@ type profileResponse struct {
 	Category      string  `json:"category"`
 	RoleRank      int32   `json:"role_rank"`
 	AvatarURL     *string `json:"avatar_url"`
-	// RegistrationPaymentStatus — "pending"/"succeeded"/"failed", atau
+	// RegistrationPaymentStatus - "pending"/"succeeded"/"failed", atau
 	// null kalau ahli tak pernah cuba bayar langsung. Ditambah 2026-08-15:
 	// webhook ToyyibPay dah rekod bayaran gagal/berjaya BETUL dalam DB
-	// sejak awal, tapi client tak pernah baca — ahli nampak "tiada apa
+	// sejak awal, tapi client tak pernah baca - ahli nampak "tiada apa
 	// berlaku" walau hasil sebenar sentiasa betul di sisi pelayan. Cuma
 	// diisi untuk ahli `pending` (approved tak perlu, dah lepas gate).
 	RegistrationPaymentStatus *string `json:"registration_payment_status"`
-	// RegistrationFeeCents — jumlah (sen) yuran pendaftaran SEMASA
+	// RegistrationFeeCents - jumlah (sen) yuran pendaftaran SEMASA
 	// (`REGISTRATION_FEE_CENTS`), supaya client boleh papar jumlah SEBELUM
-	// ahli tekan bayar (checkout ToyyibPay tak dedah jumlah dalam app —
+	// ahli tekan bayar (checkout ToyyibPay tak dedah jumlah dalam app -
 	// cuma redirect ke halaman ToyyibPay). Cuma diisi untuk ahli belum
-	// `approved`, padan skop `RegistrationPaymentStatus` di atas — ahli
+	// `approved`, padan skop `RegistrationPaymentStatus` di atas - ahli
 	// approved dah lepas gate, tak perlu tahu angka ni lagi.
 	RegistrationFeeCents *int64  `json:"registration_fee_cents"`
 	TelegramLinked       bool    `json:"telegram_linked"`
 	TelegramUsername     *string `json:"telegram_username"`
 
-	// EmergencyContactName/Phone/HealthNotes — self-service (PATCH /me).
+	// EmergencyContactName/Phone/HealthNotes - self-service (PATCH /me).
 	EmergencyContactName  *string `json:"emergency_contact_name"`
 	EmergencyContactPhone *string `json:"emergency_contact_phone"`
 	HealthNotes           *string `json:"health_notes"`
-	// IsActive — flag keahlian (BUKAN status kelulusan). Baca sahaja di
-	// sini — cuma management boleh tukar, via PATCH /members/:id/active.
+	// IsActive - flag keahlian (BUKAN status kelulusan). Baca sahaja di
+	// sini - cuma management boleh tukar, via PATCH /members/:id/active.
 	IsActive bool `json:"is_active"`
 
-	// DepartmentCode/DepartmentName/Position — baca sahaja di sini, cuma
+	// DepartmentCode/DepartmentName/Position - baca sahaja di sini, cuma
 	// manager ke atas boleh tukar (via PATCH /members/:id/department),
 	// BUKAN self-service (beza drpd EmergencyContact*/HealthNotes).
 	DepartmentCode *string `json:"department_code"`
@@ -91,7 +91,7 @@ type profileResponse struct {
 	Position       *string `json:"position"`
 }
 
-// Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
+// Me setara `myProfileProvider` di Flutter - profil user semasa. Sengaja
 // TIDAK di bawah RequireApprovedStatus (Stage 11): user pending/rejected
 // kena boleh baca status dia sendiri supaya app boleh papar skrin yang
 // betul.
@@ -143,29 +143,29 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 
 type updateMeRequest struct {
 	// DisplayName/Phone ialah *string (bukan string) supaya "tak dihantar"
-	// dapat dibezakan daripada "buang nilai" — validator gin/go-playground
+	// dapat dibezakan daripada "buang nilai" - validator gin/go-playground
 	// TIDAK menguatkuasakan `max` pada medan pointer (ia senyap dilangkau
 	// untuk Kind() Ptr), jadi had panjang disemak secara manual dalam
 	// UpdateMe selepas bindJSON, bukan melalui tag `binding`.
 	DisplayName *string `json:"display_name"`
 	Phone       *string `json:"phone"`
 
-	// AvatarR2Key — kunci daripada /uploads/presign. Pointer supaya tiga
+	// AvatarR2Key - kunci daripada /uploads/presign. Pointer supaya tiga
 	// keadaan boleh dibezakan: tak dihantar (biar), string kosong (buang
 	// avatar), atau kunci baharu (ganti).
 	AvatarR2Key *string `json:"avatar_r2_key"`
 
-	// EmergencyContactName/Phone/HealthNotes — sama pola DisplayName/Phone:
+	// EmergencyContactName/Phone/HealthNotes - sama pola DisplayName/Phone:
 	// nil = tak dihantar (biar), string kosong dibenarkan (buang nilai).
 	EmergencyContactName  *string `json:"emergency_contact_name"`
 	EmergencyContactPhone *string `json:"emergency_contact_phone"`
 	HealthNotes           *string `json:"health_notes"`
 }
 
-// UpdateMe setara `ProfileRepository.update` di Flutter — field yang
+// UpdateMe setara `ProfileRepository.update` di Flutter - field yang
 // tak dihantar (nil) DIBIARKAN tak berubah; field yang dihantar
 // (termasuk string kosong) ditetapkan terus kepada nilai tu. Sengaja
-// TIDAK di bawah RequireApprovedStatus — sama sebab macam Me.
+// TIDAK di bawah RequireApprovedStatus - sama sebab macam Me.
 func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 	var req updateMeRequest
 	if !bindJSON(c, &req) {
@@ -193,11 +193,11 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 	}
 	// Sahkan format Malaysia sama macam /auth/register (Opus verify
 	// 2026-08-15 jumpa: laluan ni terima SEBARANG string sebelum ni,
-	// membuka semula bug asal yang perubahan register cuba tutup — ahli
+	// membuka semula bug asal yang perubahan register cuba tutup - ahli
 	// approved boleh PATCH phone jadi "abc", ToyyibPay createBill akan
 	// tolak semula bila ahli tu cuba bayar). String KOSONG tetap
 	// dibenarkan (buang nombor, padanan pola medan opsyenal lain di
-	// handler ni) — cuma nilai BUKAN kosong perlu format sah.
+	// handler ni) - cuma nilai BUKAN kosong perlu format sah.
 	var normalizedPhone string
 	if req.Phone != nil {
 		trimmed := strings.TrimSpace(*req.Phone)
@@ -210,7 +210,7 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 			normalizedPhone = normalized
 		}
 	}
-	// Sama pola `Phone` — waris pun nombor Malaysia, sahkan format sama
+	// Sama pola `Phone` - waris pun nombor Malaysia, sahkan format sama
 	// (string kosong tetap dibenarkan, buang nombor).
 	var normalizedEmergencyPhone string
 	if req.EmergencyContactPhone != nil {
@@ -270,7 +270,7 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 //
 // Semua dalam SATU transaksi: tetapkan kunci baharu, gilirkan yang lama
 // untuk dipadam, dan tulis catatan audit. Kalau mana-mana gagal, tiada
-// satu pun berlaku — kalau tidak avatar lama bocor dalam bucket atau
+// satu pun berlaku - kalau tidak avatar lama bocor dalam bucket atau
 // perubahan berlaku tanpa jejak.
 //
 // `key` kosong = buang avatar.
@@ -284,7 +284,7 @@ func (h *ProfileHandler) applyAvatar(c *gin.Context, userID uuid.UUID, key strin
 	}
 
 	if key != "" {
-		// Kunci datang dari client, jadi ia MESTI disahkan milik caller —
+		// Kunci datang dari client, jadi ia MESTI disahkan milik caller -
 		// tanpa ni sesiapa boleh menetapkan kunci orang lain (atau kunci
 		// yang diteka) sebagai avatar mereka. Laluan sama macam gambar post.
 		owned, err := h.queries.IsPendingUploadOwnedByUser(ctx, sqlc.IsPendingUploadOwnedByUserParams{
@@ -340,7 +340,7 @@ func (h *ProfileHandler) applyAvatar(c *gin.Context, userID uuid.UUID, key strin
 	}
 
 	if key != "" {
-		// Kunci dah jadi milik profil sekarang — buang daripada pending
+		// Kunci dah jadi milik profil sekarang - buang daripada pending
 		// supaya penyapu "karangan ditinggalkan" tak memadamnya kemudian.
 		if err := q.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
@@ -399,7 +399,7 @@ type memberResponse struct {
 	// Nullable: emel ahli LAIN cuma didedahkan kepada management. Sejak
 	// keterlihatan ahli diluaskan (ahli kini nampak ahli + supervisor),
 	// menghantarnya kepada semua orang bermakna setiap ahli boleh menyalin
-	// direktori emel penuh — pendedahan yang jauh lebih luas daripada niat
+	// direktori emel penuh - pendedahan yang jauh lebih luas daripada niat
 	// asal medan ni, semasa senarai ahli management-sahaja.
 	//
 	// `null` = disembunyikan (bukan "tiada emel"), jadi client boleh
@@ -415,22 +415,22 @@ type memberResponse struct {
 	// balik kepada huruf pertama nama.
 	AvatarURL *string `json:"avatar_url"`
 
-	// RegistrationPaymentStatus — "pending"/"succeeded"/"failed", atau
+	// RegistrationPaymentStatus - "pending"/"succeeded"/"failed", atau
 	// null. Ditambah 2026-08-15 supaya management nampak siapa dah bayar
 	// SEBELUM tekan Luluskan (gate `ApproveMember` sedia ada sejak awal,
 	// cuma tak kelihatan di senarai sebelum ni). Sama pola privasi
-	// dengan Email — cuma management yang dapat nilai sebenar, ahli
+	// dengan Email - cuma management yang dapat nilai sebenar, ahli
 	// biasa dapat null (bukan medan yang perlu didedahkan untuk lihat
 	// ahli lain).
 	RegistrationPaymentStatus *string `json:"registration_payment_status"`
 
-	// IsActive — flag keahlian (bukan status kelulusan). Dedah kepada
+	// IsActive - flag keahlian (bukan status kelulusan). Dedah kepada
 	// semua viewer (bukan cuma management, padanan `Status`) supaya
 	// senarai ahli papar status aktif konsisten dgn cara `Status` sedia
 	// ada dipapar.
 	IsActive bool `json:"is_active"`
 
-	// DepartmentCode/DepartmentName/Position — dedah kepada semua viewer
+	// DepartmentCode/DepartmentName/Position - dedah kepada semua viewer
 	// (padanan IsActive) - info organisasi, bukan data sensitif macam
 	// Email/RegistrationPaymentStatus.
 	DepartmentCode *string `json:"department_code"`
@@ -438,16 +438,16 @@ type memberResponse struct {
 	Position       *string `json:"position"`
 }
 
-// Members setara `membersProvider` di Flutter — gantian RLS
+// Members setara `membersProvider` di Flutter - gantian RLS
 // `select_all_profiles_management`. Keterlihatan ikut hierarki
 // `roles.rank` (lihat visibleRankCeiling), BUKAN lagi "ahli nampak diri
 // sendiri sahaja". Dua kawalan tambahan:
 //
 //   - Ahli biasa cuma nampak ahli berstatus 'approved' (+ baris dia
-//     sendiri) — direktori ahli, bukan barisan kelulusan.
+//     sendiri) - direktori ahli, bukan barisan kelulusan.
 //   - `?status=pending` (barisan kelulusan Stage 11) management sahaja.
 //
-// Semua tapisan dikuatkuasakan dalam SQL — lihat ListVisibleProfiles.
+// Semua tapisan dikuatkuasakan dalam SQL - lihat ListVisibleProfiles.
 func (h *ProfileHandler) Members(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
@@ -490,7 +490,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		if !isManagement && row.UserID != userID {
 			email = ""
 		}
-		// Padanan pola Email — status bayaran cuma berguna untuk
+		// Padanan pola Email - status bayaran cuma berguna untuk
 		// management, ahli biasa dapat null (lihat komen memberResponse).
 		paymentStatus := row.RegistrationPaymentStatus
 		if !isManagement {
@@ -508,7 +508,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 	c.JSON(http.StatusOK, members)
 }
 
-// visibleRankCeiling — rank TERTINGGI yang seorang viewer boleh nampak
+// visibleRankCeiling - rank TERTINGGI yang seorang viewer boleh nampak
 // dalam senarai ahli. Peraturan: nampak semua orang sehingga SATU
 // tingkat di atas rank sendiri, kecuali rank tertinggi (superadmin) yang
 // tak pernah didedahkan kepada sesiapa selain superadmin sendiri.
@@ -535,7 +535,7 @@ func visibleRankCeiling(roles []sqlc.Role, viewerRank int32) int32 {
 
 	ceiling := viewerRank
 	for _, r := range roles {
-		// Rank tertinggi (topRank) sengaja dilangkau — itulah superadmin.
+		// Rank tertinggi (topRank) sengaja dilangkau - itulah superadmin.
 		if r.Rank > viewerRank && r.Rank < topRank && (ceiling == viewerRank || r.Rank < ceiling) {
 			ceiling = r.Rank
 		}
@@ -543,8 +543,8 @@ func visibleRankCeiling(roles []sqlc.Role, viewerRank int32) int32 {
 	return ceiling
 }
 
-// toMemberResponse — `email` kosong bermakna sembunyikan medan itu.
-// memberRow — input untuk toMemberResponse. Struct, bukan senarai
+// toMemberResponse - `email` kosong bermakna sembunyikan medan itu.
+// memberRow - input untuk toMemberResponse. Struct, bukan senarai
 // parameter: versi lama ada sembilan argumen positional bertype string
 // yang sama, jadi tertukar susunan (cth roleKey lawan roleName) akan
 // compile dengan senyap.
@@ -594,9 +594,9 @@ func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memb
 	}
 }
 
-// ListRoles (Stage 12) — management sahaja. Senarai role untuk UI edit
+// ListRoles (Stage 12) - management sahaja. Senarai role untuk UI edit
 // role (bottom sheet). Ditapis kepada role yang caller memang BOLEH
-// assign (rank lebih rendah drpd rank dia — syarat sama yang
+// assign (rank lebih rendah drpd rank dia - syarat sama yang
 // dikuatkuasakan UpdateMemberRole), jadi 'superadmin' tak pernah muncul
 // kecuali kepada superadmin. Dulu senarai penuh dihantar dan client yang
 // kena tapis.
@@ -637,7 +637,7 @@ type updateMemberRoleRequest struct {
 	RoleKey string `json:"role_key" binding:"required"`
 }
 
-// UpdateMemberRole (Stage 12) — management sahaja, dikawal hierarki
+// UpdateMemberRole (Stage 12) - management sahaja, dikawal hierarki
 // `roles.rank`: editor cuma boleh edit target dengan rank LEBIH RENDAH
 // drpd dia, dan cuma boleh assign role dengan rank LEBIH RENDAH drpd
 // rank dia sendiri (elak self-service naik setaraf/lebih tinggi drpd
@@ -710,7 +710,7 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
-	// Perubahan keistimewaan — catatan audit paling bernilai dalam sistem
+	// Perubahan keistimewaan - catatan audit paling bernilai dalam sistem
 	// ni. Rank direkod sekali, bukan cuma kunci role, supaya "siapa naikkan
 	// siapa" boleh dibaca tanpa merujuk jadual roles versi masa itu.
 	if err := audit.Record(ctx, q, audit.Entry{
@@ -748,8 +748,8 @@ type memberActiveResponse struct {
 	IsActive bool   `json:"is_active"`
 }
 
-// UpdateMemberActive — PATCH /members/:id/active. Tukar flag KEAHLIAN
-// (`is_active`), BERASINGAN drpd `status` (kelulusan) — ahli `approved`
+// UpdateMemberActive - PATCH /members/:id/active. Tukar flag KEAHLIAN
+// (`is_active`), BERASINGAN drpd `status` (kelulusan) - ahli `approved`
 // boleh jadi tak aktif kemudian (cth berhenti) tanpa perlu tolak
 // pendaftaran asal. Gate sama hierarki rank macam UpdateMemberRole.
 func (h *ProfileHandler) UpdateMemberActive(c *gin.Context) {
@@ -834,7 +834,7 @@ func (h *ProfileHandler) UpdateMemberActive(c *gin.Context) {
 }
 
 type updateMemberDepartmentRequest struct {
-	// DepartmentCode/Position — GANTI PENUH (bukan partial macam UpdateMe):
+	// DepartmentCode/Position - GANTI PENUH (bukan partial macam UpdateMe):
 	// nil ATAU string kosong = kosongkan, kod bukan-kosong = tetapkan.
 	// Borang "tetapkan bahagian+jawatan skrg" satu tindakan, bukan patch
 	// berperingkat.
@@ -849,13 +849,13 @@ type memberDepartmentResponse struct {
 	Position       *string `json:"position"`
 }
 
-// UpdateMemberDepartment — PATCH /members/:id/department. Manager KE ATAS
-// sahaja (superadmin/admin/manager — bukan supervisor, keputusan produk
+// UpdateMemberDepartment - PATCH /members/:id/department. Manager KE ATAS
+// sahaja (superadmin/admin/manager - bukan supervisor, keputusan produk
 // 2026-08-25), gate rank "SETARAF DAN KE BAWAH sahaja"
-// (caller.RoleRank >= target.RoleRank) — BEZA drpd UpdateMemberRole/
+// (caller.RoleRank >= target.RoleRank) - BEZA drpd UpdateMemberRole/
 // UpdateMemberActive yang caller.RoleRank kena STRICTLY lebih tinggi
 // (>). Bahagian/jawatan bukan keistimewaan sistem (role/status aktif),
-// jadi manager boleh tetapkan utk manager lain yang setaraf — termasuk
+// jadi manager boleh tetapkan utk manager lain yang setaraf - termasuk
 // diri sendiri (tiada sekatan targetID == callerID).
 func (h *ProfileHandler) UpdateMemberDepartment(c *gin.Context) {
 	targetID, err := uuid.Parse(c.Param("id"))
@@ -942,7 +942,7 @@ func (h *ProfileHandler) UpdateMemberDepartment(c *gin.Context) {
 		return
 	}
 
-	// Baca semula MELALUI tx (bukan h.queries) — perlukan department_name
+	// Baca semula MELALUI tx (bukan h.queries) - perlukan department_name
 	// terjoin, dan mesti nampak baris yang baru dikemas kini dalam
 	// transaksi yang sama (isolation default belum commit lagi).
 	updated, err := q.GetProfileByUserID(ctx, targetID)
@@ -991,25 +991,25 @@ type memberActionResponse struct {
 }
 
 type approveMemberRequest struct {
-	// BypassPayment — admin/superadmin sahaja (rank >= "admin"). Langkau
+	// BypassPayment - admin/superadmin sahaja (rank >= "admin"). Langkau
 	// gate `HasSucceededRegistrationPayment` untuk ahli lama yang dah
 	// bayar secara manual sebelum sistem digital wujud. Nota WAJIB bila
-	// ni true — jejak audit kelab lama->digital kena jelas siapa langkau
+	// ni true - jejak audit kelab lama->digital kena jelas siapa langkau
 	// bayaran, untuk siapa, dan kenapa.
 	BypassPayment bool   `json:"bypass_payment"`
 	BypassReason  string `json:"bypass_reason" binding:"max=500"`
 }
 
-// ApproveMember (Stage 11) — management sahaja. Set status='approved',
+// ApproveMember (Stage 11) - management sahaja. Set status='approved',
 // hantar email + in-app notification kepada ahli berkenaan.
 func (h *ProfileHandler) ApproveMember(c *gin.Context) {
 	// Body ini pilihan sepenuhnya (ahli biasa diluluskan tanpa body
-	// langsung sebelum ni) — kosong terus laluan sedia ada (gate bayaran
+	// langsung sebelum ni) - kosong terus laluan sedia ada (gate bayaran
 	// biasa) tidak berubah. Semak `err` terus terhadap io.EOF (bukan
 	// `ContentLength > 0`, Opus verify: ContentLength == -1 untuk
 	// Transfer-Encoding: chunked/unknown, jadi guard ContentLength tu
 	// terlepas body cacat yang dihantar TANPA Content-Length eksplisit)
-	// — body cacat (cth `bypass_payment` jenis string bukan bool) pulang
+	// - body cacat (cth `bypass_payment` jenis string bukan bool) pulang
 	// 400 jelas, bukan senyap gagal-jadi-false lalu mengelirukan admin
 	// dengan mesej "ahli belum bayar" walhal dia memang cuba bypass.
 	var req approveMemberRequest
@@ -1020,8 +1020,8 @@ func (h *ProfileHandler) ApproveMember(c *gin.Context) {
 	h.setMemberStatus(c, "approved", req)
 }
 
-// RejectMember (Stage 11) — management sahaja. Set status='rejected'
-// (row KEKAL, bukan padam — audit trail + boleh undo via ApproveMember
+// RejectMember (Stage 11) - management sahaja. Set status='rejected'
+// (row KEKAL, bukan padam - audit trail + boleh undo via ApproveMember
 // lain kali). Hantar email + in-app notification kepada ahli berkenaan.
 func (h *ProfileHandler) RejectMember(c *gin.Context) {
 	h.setMemberStatus(c, "rejected", approveMemberRequest{})
@@ -1063,14 +1063,14 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 	}
 
 	// Elak reject sesama management (fat-finger atau serangan lateral
-	// boleh reject SEMUA management, termasuk yang terakhir — sistem
+	// boleh reject SEMUA management, termasuk yang terakhir - sistem
 	// approval jadi buntu tanpa cara in-app untuk pulih).
 	if status == "rejected" && target.RoleCategory == authz.CategoryManagement {
 		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh tolak ahli pengurusan"})
 		return
 	}
 
-	// Status dah sama — no-op idempotent. Pulang keadaan semasa TANPA
+	// Status dah sama - no-op idempotent. Pulang keadaan semasa TANPA
 	// menulis catatan audit atau menghantar semula emel/notifikasi:
 	// tiada apa yang berubah, jadi tiada apa untuk direkodkan.
 	if target.Status == status {
@@ -1084,16 +1084,16 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 	}
 
 	// Gate: pending -> approved MESTI ada bayaran yuran pendaftaran
-	// 'succeeded' (Stage 12, ToyyibPay — lihat TODO.md bahagian Payment).
+	// 'succeeded' (Stage 12, ToyyibPay - lihat TODO.md bahagian Payment).
 	// Ahli sedia ada yang dah approved sebelum ciri ni wujud tak pernah
 	// sampai sini (no-op di atas dah return awal), jadi grandfathered
-	// SECARA AUTOMATIK tanpa perlu semakan "bila akaun dicipta" — hanya
+	// SECARA AUTOMATIK tanpa perlu semakan "bila akaun dicipta" - hanya
 	// peralihan SEBENAR pending->approved kena gate. RejectMember tak
-	// disentuh — penolakan mesti berfungsi tanpa kira status bayaran.
+	// disentuh - penolakan mesti berfungsi tanpa kira status bayaran.
 	// Diletak SEBELUM tx.Begin sengaja: kalau tak lulus, tiada transaksi
 	// untuk dibuka langsung.
 	if status == "approved" {
-		// Semak bayaran SEBENAR dulu, tak kira flag bypass — kalau ahli
+		// Semak bayaran SEBENAR dulu, tak kira flag bypass - kalau ahli
 		// dah bayar (online, atau padanan lain), langkau tak relevan
 		// langsung. Ni sengaja ditulis SEBELUM cawangan bypass (Opus
 		// verify: admin yang tersilap hantar bypass_payment=true untuk
@@ -1107,7 +1107,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 		if paid {
 			req.BypassPayment = false
 		} else if req.BypassPayment {
-			// Langkau bayaran — hanya admin/superadmin (rank >= "admin"),
+			// Langkau bayaran - hanya admin/superadmin (rank >= "admin"),
 			// BUKAN supervisor/manager. IsAtLeastRole (bukan IsManagement)
 			// sengaja dipakai di sini supaya tier di bawah admin tak boleh
 			// langkau gate kewangan ni.
@@ -1126,8 +1126,8 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 			}
 
 			// Baris pembayaran 'pending' yang masih boleh diselesaikan
-			// bila-bila masa (Opus verify: MEDIUM, dan verify susulan —
-			// TANPA tapisan gateway_ref, lihat komen query) — kalau baris
+			// bila-bila masa (Opus verify: MEDIUM, dan verify susulan -
+			// TANPA tapisan gateway_ref, lihat komen query) - kalau baris
 			// begini wujud, ahli boleh bayar lepas diluluskan dan webhook
 			// tandakan 'succeeded', jadi terima 2 pengesahan bayaran
 			// (tunai + bil online lama) tanpa refund path. Blok sehingga
@@ -1140,7 +1140,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 			}
 			if hasPendingBill {
 				c.JSON(http.StatusConflict, gin.H{
-					"error": "ahli ada bil pendaftaran online yang belum selesai — selesaikan/tamatkan bil tu dulu sebelum langkau bayaran, kalau tidak ahli boleh bayar dua kali",
+					"error": "ahli ada bil pendaftaran online yang belum selesai - selesaikan/tamatkan bil tu dulu sebelum langkau bayaran, kalau tidak ahli boleh bayar dua kali",
 				})
 				return
 			}
@@ -1168,7 +1168,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Guard replay dalam query — dua permintaan serentak, yang kalah
+			// Guard replay dalam query - dua permintaan serentak, yang kalah
 			// sampai sini. Layan sama macam no-op di atas.
 			c.JSON(http.StatusOK, memberActionResponse{
 				UserID:     target.UserID.String(),
@@ -1182,7 +1182,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 		return
 	}
 
-	// Kelulusan keahlian ialah keputusan pentadbiran — siapa yang benarkan
+	// Kelulusan keahlian ialah keputusan pentadbiran - siapa yang benarkan
 	// (atau halang) seseorang masuk mesti dapat dijawab kemudian.
 	actor := auditActor(c, q)
 	newAuditFields := mergeAuditFields(
@@ -1191,7 +1191,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 	)
 	if status == "approved" && req.BypassPayment {
 		// Ahli ni approved TANPA baris 'succeeded' dalam
-		// registration_payments — nota+aktor di sini ialah SATU-SATUNYA
+		// registration_payments - nota+aktor di sini ialah SATU-SATUNYA
 		// tempat sebab tu direkod, jadi wajib ada nilai (bukan best-effort).
 		newAuditFields["payment_bypassed"] = true
 		newAuditFields["bypass_reason"] = req.BypassReason
@@ -1220,7 +1220,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 		// Dipindahkan ke DALAM transaksi: sesi yang masih hidup untuk ahli
 		// yang baru ditolak ialah jurang keselamatan, jadi penolakan dan
 		// pembatalan token mesti jadi atau gagal BERSAMA. Sebelum ni ia
-		// best-effort di luar — kegagalan cuma dilog, dan ahli yang ditolak
+		// best-effort di luar - kegagalan cuma dilog, dan ahli yang ditolak
 		// kekal membawa refresh token yang sah.
 		if err := q.DeleteRefreshTokensByUser(ctx, targetID); err != nil {
 			log.Printf("gagal revoke refresh token ahli ditolak: %v", err)
@@ -1234,7 +1234,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 		return
 	}
 
-	// Selepas commit — best effort. Emel/notifikasi yang gagal tak patut
+	// Selepas commit - best effort. Emel/notifikasi yang gagal tak patut
 	// membatalkan keputusan kelulusan yang dah dibuat.
 	if err := h.emailClient.Send(ctx, target.Email, subject, html); err != nil {
 		log.Printf("gagal hantar email status ahli: %v", err)
@@ -1258,10 +1258,10 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 	})
 }
 
-// CancelMemberRegistrationPayment — POST /members/:id/cancel-registration-payment.
+// CancelMemberRegistrationPayment - POST /members/:id/cancel-registration-payment.
 // Admin/superadmin batalkan bil yuran pendaftaran 'pending' ahli supaya
 // laluan langkau bayaran boleh digunakan (ahli lama migrasi manual).
-// Semak gateway DULU — kalau dah bayar, tolak; kalau masih pending,
+// Semak gateway DULU - kalau dah bayar, tolak; kalau masih pending,
 // tandakan 'failed' + audit.
 func (h *ProfileHandler) CancelMemberRegistrationPayment(c *gin.Context) {
 	targetID, err := uuid.Parse(c.Param("id"))
@@ -1317,7 +1317,7 @@ func (h *ProfileHandler) CancelMemberRegistrationPayment(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
 				return
 			}
-			c.JSON(http.StatusConflict, gin.H{"error": "ahli sudah bayar yuran pendaftaran — luluskan tanpa langkau bayaran"})
+			c.JSON(http.StatusConflict, gin.H{"error": "ahli sudah bayar yuran pendaftaran - luluskan tanpa langkau bayaran"})
 			return
 		case "failed":
 			if _, uerr := h.queries.UpdateRegistrationPaymentStatusByGatewayRef(ctx, sqlc.UpdateRegistrationPaymentStatusByGatewayRefParams{
@@ -1376,7 +1376,7 @@ func (h *ProfileHandler) CancelMemberRegistrationPayment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "failed", "payment_id": expired.ID.String()})
 }
 
-// recordCancelRegistrationPaymentAudit — jejak siapa batalkan bil pending
+// recordCancelRegistrationPaymentAudit - jejak siapa batalkan bil pending
 // ahli mana (entity_id = user ahli; actor = admin/superadmin snapshot).
 func (h *ProfileHandler) recordCancelRegistrationPaymentAudit(c *gin.Context, targetID uuid.UUID, pending sqlc.RegistrationPayment) error {
 	old := map[string]any{"registration_payment_status": "pending"}
@@ -1392,8 +1392,8 @@ func (h *ProfileHandler) recordCancelRegistrationPaymentAudit(c *gin.Context, ta
 		Old:        old,
 		New: mergeAuditFields(map[string]any{
 			"registration_payment_status": "failed",
-			"cancelled_by_admin":            true,
-			"payment_id":                    pending.ID.String(),
+			"cancelled_by_admin":          true,
+			"payment_id":                  pending.ID.String(),
 		}, actorAuditFields(actor)),
 	})
 }
@@ -1403,18 +1403,18 @@ type accountDeletionRequestResponse struct {
 	RequestedAt string `json:"requested_at"`
 }
 
-// RequestAccountDeletion — POST /me/deletion-request. Keperluan Google
+// RequestAccountDeletion - POST /me/deletion-request. Keperluan Google
 // Play Console: app yang sokong penciptaan akaun MESTI sediakan cara ahli
-// MEMINTA pemadaman akaun + data. v1 sengaja REQUEST-sahaja — rekod
+// MEMINTA pemadaman akaun + data. v1 sengaja REQUEST-sahaja - rekod
 // permintaan + jejak audit, staff tindak secara MANUAL (akses DB terus)
-// buat masa ni. TIADA auto-purge post/bayaran/pendaftaran aktiviti dsb —
+// buat masa ni. TIADA auto-purge post/bayaran/pendaftaran aktiviti dsb -
 // lihat TODO.md untuk gap ni sebagai fast-follow.
 //
-// Sengaja TIDAK di bawah RequireApprovedStatus — ahli pending/rejected pun
+// Sengaja TIDAK di bawah RequireApprovedStatus - ahli pending/rejected pun
 // berhak minta akaun dia dipadam.
 //
 // Idempoten: panggilan berulang oleh ahli sama pulangkan 200 dengan data
-// permintaan yang SEDIA ADA (bukan ralat) — padanan pola
+// permintaan yang SEDIA ADA (bukan ralat) - padanan pola
 // AddBlockedEmailDomain/ApproveProfile.
 func (h *ProfileHandler) RequestAccountDeletion(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -1434,9 +1434,9 @@ func (h *ProfileHandler) RequestAccountDeletion(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal rekod permintaan pemadaman akaun"})
 			return
 		}
-		// `on conflict do nothing` — dah ada permintaan sedia ada. Ambil
+		// `on conflict do nothing` - dah ada permintaan sedia ada. Ambil
 		// baris tu supaya response pulangkan data ASAL (bukan cuba
-		// dicipta semula), dan JANGAN tulis catatan audit baharu — tiada
+		// dicipta semula), dan JANGAN tulis catatan audit baharu - tiada
 		// apa yang berubah.
 		existing, getErr := h.queries.GetAccountDeletionRequestByUserID(ctx, userID)
 		if getErr != nil {
@@ -1480,7 +1480,7 @@ func textToPtr(t pgtype.Text) *string {
 	return &t.String
 }
 
-// textOrEmpty — padanan textToPtr, tapi pulangkan "" (bukan nil) bila
+// textOrEmpty - padanan textToPtr, tapi pulangkan "" (bukan nil) bila
 // tak sah. Utk tapak panggilan yang perlukan string terus (cth
 // receipt.Donation/FeePayment, yang dah ada fallback() sendiri utk rentetan
 // kosong).

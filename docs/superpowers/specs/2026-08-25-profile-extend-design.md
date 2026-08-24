@@ -1,20 +1,20 @@
 # Perluasan profil ahli: alamat, waris, kesihatan, status aktif (2026-08-25)
 
-Menyentuh dua repo: `marc_go` (schema + API), `marc_flutter` (UI). Time-boxed —
+Menyentuh dua repo: `marc_go` (schema + API), `marc_flutter` (UI). Time-boxed -
 spec ringkas + terus laksana guna subagent, bukan proses SDD penuh.
 
 ## Skop
 
-1. **Alamat** — ahli boleh simpan sehingga **3** alamat, **1** wajib default.
+1. **Alamat** - ahli boleh simpan sehingga **3** alamat, **1** wajib default.
    Medan: jenis (landed/highrise), no. unit/rumah, tingkat, blok, jalan,
    township, bandar, poskod, negeri.
-2. **Waris** — nama + no. telefon kecemasan (single, bukan senarai — profil
+2. **Waris** - nama + no. telefon kecemasan (single, bukan senarai - profil
    ada SATU waris utama, bukan berbilang. Kalau perlu >1 di masa depan,
    boleh diperluas jadi table macam alamat).
-3. **Tahap kesihatan** — nota bebas teks (bukan enum — keadaan kesihatan
+3. **Tahap kesihatan** - nota bebas teks (bukan enum - keadaan kesihatan
    terlalu pelbagai utk disenaraikan tertutup; freeform lebih fleksibel,
    padanan corak `bypass_reason`).
-4. **Status aktif/tak aktif** — flag keahlian, BUKAN status kelulusan
+4. **Status aktif/tak aktif** - flag keahlian, BUKAN status kelulusan
    (`status` sedia ada pending/approved/rejected kekal tak berubah). Ahli
    `approved` boleh jadi tak aktif kemudian (cth berhenti, tak lagi terlibat)
    tanpa perlu tolak pendaftaran asal.
@@ -23,18 +23,18 @@ spec ringkas + terus laksana guna subagent, bukan proses SDD penuh.
 
 | Soalan | Keputusan | Sebab |
 |---|---|---|
-| Alamat: table baru atau lajur JSON pada `profiles`? | **Table baru** `member_addresses` | Berbilang (sehingga 3) + query per-alamat (default, edit, padam) — JSON blob buat semua operasi ni janggal |
-| "Alamat penuh" sbg satu lajur teks berasingan? | **Tidak disimpan** — dikira dari medan berstruktur bila perlu papar | Elak dua sumber kebenaran (teks bebas vs medan berstruktur boleh songsang) |
+| Alamat: table baru atau lajur JSON pada `profiles`? | **Table baru** `member_addresses` | Berbilang (sehingga 3) + query per-alamat (default, edit, padam) - JSON blob buat semua operasi ni janggal |
+| "Alamat penuh" sbg satu lajur teks berasingan? | **Tidak disimpan** - dikira dari medan berstruktur bila perlu papar | Elak dua sumber kebenaran (teks bebas vs medan berstruktur boleh songsang) |
 | Had 3 alamat + wajib 1 default | Had 3 = semak app-layer (COUNT dlm tx sebelum INSERT). Wajib 1 default = **partial unique index** (`where is_default`) + app-layer auto-promote bila default dipadam | DB constraint utk invariant "paling banyak SATU default", app logic utk had kiraan (sama pola sequences/counter sedia ada) |
-| Waris: table atau lajur pada `profiles`? | **Lajur pada `profiles`** (`emergency_contact_name`, `emergency_contact_phone`) | Keadaan tunggal kekal, sama pola `telegram_chat_id` — bukan senarai bersejarah |
-| Kesihatan: lajur pada `profiles`? | **Ya**, `health_notes text` | Sama pola — atribut profil tunggal |
+| Waris: table atau lajur pada `profiles`? | **Lajur pada `profiles`** (`emergency_contact_name`, `emergency_contact_phone`) | Keadaan tunggal kekal, sama pola `telegram_chat_id` - bukan senarai bersejarah |
+| Kesihatan: lajur pada `profiles`? | **Ya**, `health_notes text` | Sama pola - atribut profil tunggal |
 | Siapa boleh edit alamat/waris/kesihatan? | **Ahli sendiri** (self-service, macam `display_name`/`phone`) | Data peribadi ahli isi sendiri, bukan admin |
-| Siapa boleh tukar status aktif? | **Management sahaja**, hierarki rank sama macam `UpdateMemberRole` (caller.RoleRank > target.RoleRank, tak boleh ubah diri sendiri) | Status keahlian ialah keputusan organisasi, bukan self-service — padanan corak kelulusan/role sedia ada |
-| RLS/Supabase policies? | **Tiada** — akses DB terus via `pgxpool` dari `marc_go`, authz dikuatkuasakan di handler (padanan seluruh backend sedia ada) | Projek ni bukan guna PostgREST/RLS langsung; itu reka bentuk awal (sebelum backend Go wujud) — schema semasa semua guna app-layer authz |
+| Siapa boleh tukar status aktif? | **Management sahaja**, hierarki rank sama macam `UpdateMemberRole` (caller.RoleRank > target.RoleRank, tak boleh ubah diri sendiri) | Status keahlian ialah keputusan organisasi, bukan self-service - padanan corak kelulusan/role sedia ada |
+| RLS/Supabase policies? | **Tiada** - akses DB terus via `pgxpool` dari `marc_go`, authz dikuatkuasakan di handler (padanan seluruh backend sedia ada) | Projek ni bukan guna PostgREST/RLS langsung; itu reka bentuk awal (sebelum backend Go wujud) - schema semasa semua guna app-layer authz |
 
 ## Schema (`marc_go`)
 
-### Migration 1 — `member_addresses` (table baru)
+### Migration 1 - `member_addresses` (table baru)
 
 ```sql
 create table member_addresses (
@@ -44,8 +44,8 @@ create table member_addresses (
   is_default boolean not null default false,
   address_type text not null check (address_type in ('landed','highrise')),
   unit_number text,                    -- no. rumah (landed) / no. unit (highrise)
-  floor text,                          -- tingkat — highrise
-  block text,                          -- blok — highrise
+  floor text,                          -- tingkat - highrise
+  block text,                          -- blok - highrise
   street text,                         -- nama jalan
   township text,                          -- nama township/perumahan
   city text not null,                  -- bandar
@@ -56,16 +56,16 @@ create table member_addresses (
 );
 
 create index member_addresses_user_id_idx on member_addresses(user_id);
--- Paling banyak SATU default setiap ahli — dikuatkuasakan DB, bukan cuma app.
+-- Paling banyak SATU default setiap ahli - dikuatkuasakan DB, bukan cuma app.
 create unique index member_addresses_one_default_per_user
   on member_addresses(user_id) where is_default;
 ```
 
 Had 3 alamat/ahli: semak `count(*)` dalam transaksi yang sama sebelum INSERT
-(handler), padanan cara `sequences`/nombor ahli dikira — bukan constraint DB
+(handler), padanan cara `sequences`/nombor ahli dikira - bukan constraint DB
 sebab "3" ialah peraturan produk yang boleh berubah, bukan invariant struktur.
 
-### Migration 2 — lajur baru pada `profiles`
+### Migration 2 - lajur baru pada `profiles`
 
 ```sql
 alter table profiles
@@ -75,14 +75,14 @@ alter table profiles
   add column is_active boolean not null default true;
 ```
 
-`is_active` default `true` — ahli sedia ada semua kekal aktif lepas migrate,
+`is_active` default `true` - ahli sedia ada semua kekal aktif lepas migrate,
 tiada kesan retroaktif.
 
 ## API (`marc_go`)
 
 ### Self-service (mana-mana ahli log masuk, profil sendiri)
 
-**`GET /me`** — tambah pada `profileResponse`:
+**`GET /me`** - tambah pada `profileResponse`:
 ```json
 {
   "emergency_contact_name": "string | null",
@@ -92,14 +92,14 @@ tiada kesan retroaktif.
 }
 ```
 
-**`PATCH /me`** — tambah medan pilihan (pointer, `nil` = tak ubah, padanan
+**`PATCH /me`** - tambah medan pilihan (pointer, `nil` = tak ubah, padanan
 `display_name`/`phone` sedia ada):
 - `emergency_contact_name` *string (max 100)
 - `emergency_contact_phone` *string (max 30, disahkan `phone.NormalizeMY`
-  sama macam `phone` — string kosong dibenarkan utk buang nombor)
+  sama macam `phone` - string kosong dibenarkan utk buang nombor)
 - `health_notes` *string (max 500)
 
-(`is_active` **bukan** boleh-tulis via `/me` — management sahaja, endpoint
+(`is_active` **bukan** boleh-tulis via `/me` - management sahaja, endpoint
 berasingan di bawah.)
 
 **`GET /me/addresses`** → `200 []addressResponse`
@@ -123,7 +123,7 @@ berasingan di bawah.)
 → `201 addressResponse`. Tolak `400` kalau dah ada 3. Alamat PERTAMA ahli
 paksa `is_default=true` tanpa kira body (elak keadaan "0 default").
 
-**`PATCH /me/addresses/:id`** — semua medan di atas jadi pilihan (partial
+**`PATCH /me/addresses/:id`** - semua medan di atas jadi pilihan (partial
 update, padanan `PATCH /me`). `is_default=true` nyahtetapkan default lama
 dalam transaksi yang sama. `404` kalau `:id` bukan milik caller.
 
@@ -164,7 +164,7 @@ Gate (padanan `UpdateMemberRole`):
 Tulis `audit.Record` (`EntityProfile`, `ActionUpdate`, old/new `is_active`),
 sama pola `UpdateMemberRole`.
 
-**`GET /members`** (`memberResponse`) — tambah `is_active: bool` supaya
+**`GET /members`** (`memberResponse`) - tambah `is_active: bool` supaya
 senarai management papar status.
 
 ## Flutter (`marc_flutter`)
@@ -174,12 +174,12 @@ senarai management papar status.
 - `MemberRow`: tambah `isActive`.
 - `AddressRow` model baru + `AddressRepository` (dio `GET/POST/PATCH/DELETE
   /me/addresses...`) + `addressesProvider` (`FutureProvider<List<AddressRow>>`).
-- `EditProfilePage`: tambah field waris (nama + telefon) + nota kesihatan —
+- `EditProfilePage`: tambah field waris (nama + telefon) + nota kesihatan -
   reuse `AuthField`, ikut corak sedia ada tepat (Form + validator ringkas).
-- Skrin baru `manage_addresses_page.dart` — senarai alamat (ListTile ringkas,
-  padanan `members_page.dart`, BUKAN gaya kad — ikut arahan terkini "simple,
+- Skrin baru `manage_addresses_page.dart` - senarai alamat (ListTile ringkas,
+  padanan `members_page.dart`, BUKAN gaya kad - ikut arahan terkini "simple,
   good UI/UX, jangan lari dari modul lain"). Tambah/edit via skrin/borang
-  berasingan (`address_form_page.dart`) — dropdown negeri (16 negeri/wilayah
+  berasingan (`address_form_page.dart`) - dropdown negeri (16 negeri/wilayah
   Malaysia), radio landed/highrise (tunjuk/sembunyi tingkat+blok ikut jenis),
   suis "jadikan default", padam dgn confirm dialog (`confirm_dialog.dart`
   sedia ada).
@@ -187,7 +187,7 @@ senarai management papar status.
 - `members_page.dart`: management nampak status aktif (chip kedua, warna
   beza drpd role chip) + tindakan tukar (confirm dialog), gate `canEdit`
   sedia ada (rank hierarchy) dipakai semula.
-- UI bahasa Melayu, ikut tema `AppTheme` sedia ada — TIADA warna/komponen
+- UI bahasa Melayu, ikut tema `AppTheme` sedia ada - TIADA warna/komponen
   baru di luar `ColorScheme`/`AppSemanticColors`.
 
 ## Pelan pelaksanaan (ringkas)
@@ -200,6 +200,6 @@ senarai management papar status.
    medan, skrin alamat baharu (list + form), `members_page.dart` tambah
    status aktif, `flutter analyze` bersih.
 
-Dua kerja di atas laksana **selari** (subagent berasingan) — kontrak API di
+Dua kerja di atas laksana **selari** (subagent berasingan) - kontrak API di
 atas tetap (fixed), jadi frontend boleh bina terus terhadap kontrak tanpa
 tunggu backend siap dulu.

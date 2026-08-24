@@ -1,14 +1,14 @@
 // Package registrationsweep menandakan yuran pendaftaran ahli 'pending'
-// yang lapuk sebagai 'failed' — padanan internal/activitysweep untuk
+// yang lapuk sebagai 'failed' - padanan internal/activitysweep untuk
 // modul yuran pendaftaran (registration_payments).
 //
 // Bila ahli mula checkout ToyyibPay tapi tak selesaikan bayaran, baris
 // kekal 'pending' selama-lama (CheckStatus pulang "pending" selama-lamanya
 // untuk bil unpaid). Gate bypass admin (`HasPendingRegistrationPayment`)
 // tersekat sehingga baris ni diselesaikan. Dua lapisan:
-//   - billExpiryDate (30 min default) pada createBill — bil inactive di
+//   - billExpiryDate (30 min default) pada createBill - bil inactive di
 //     ToyyibPay
-//   - sapuan DB ini — tandakan 'failed' selepas cutoff + semak gateway
+//   - sapuan DB ini - tandakan 'failed' selepas cutoff + semak gateway
 //     supaya webhook lewat/bayaran lewat tak hilang senyap
 package registrationsweep
 
@@ -29,9 +29,9 @@ import (
 const batchSize = 100
 
 type Sweeper struct {
-	queries   *sqlc.Queries
-	gateways  map[string]payment.Gateway
-	interval  time.Duration
+	queries    *sqlc.Queries
+	gateways   map[string]payment.Gateway
+	interval   time.Duration
 	staleAfter time.Duration
 }
 
@@ -130,10 +130,10 @@ func (s *Sweeper) expireRow(ctx context.Context, row sqlc.RegistrationPayment) b
 			}
 			return false
 		}
-		// Masih "pending" di gateway — tandakan failed dalam DB (bil
+		// Masih "pending" di gateway - tandakan failed dalam DB (bil
 		// patut dah tamat tempoh melalui billExpiryDate).
 	} else {
-		// Tiada ref — tiada bil sebenar; selamat tandakan failed terus.
+		// Tiada ref - tiada bil sebenar; selamat tandakan failed terus.
 		if err := s.queries.MarkRegistrationPaymentFailed(ctx, row.ID); err != nil {
 			log.Printf("registrationsweep: MarkRegistrationPaymentFailed gagal (id=%s): %v", row.ID, err)
 			return false

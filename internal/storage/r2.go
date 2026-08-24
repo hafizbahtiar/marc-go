@@ -1,5 +1,5 @@
 // Package storage bina presigned URL untuk upload terus ke Cloudflare R2
-// (S3-compatible) — client upload gambar terus ke R2, Go backend tak
+// (S3-compatible) - client upload gambar terus ke R2, Go backend tak
 // pernah sentuh bytes gambar tu langsung (elak jadi bottleneck bandwidth).
 package storage
 
@@ -24,14 +24,14 @@ import (
 const (
 	presignExpiry = 5 * time.Minute
 
-	// signedGetExpiry — tempoh sah URL GET yang ditandatangani.
+	// signedGetExpiry - tempoh sah URL GET yang ditandatangani.
 	//
 	// Perlu cukup panjang supaya feed yang dicache pada peranti tak
 	// menunjuk kepada URL mati, tapi cukup pendek supaya URL yang bocor
 	// tak kekal berguna selamanya. Dua jam ialah kompromi.
 	signedGetExpiry = 2 * time.Hour
 
-	// signedGetCacheTTL — berapa lama URL yang sama diguna semula.
+	// signedGetCacheTTL - berapa lama URL yang sama diguna semula.
 	//
 	// SEPARUH daripada tempoh sah, sengaja: klien yang menerima URL pada
 	// saat terakhir tetingkap cache masih dapat sekurang-kurangnya satu
@@ -39,24 +39,24 @@ const (
 	// yang luput sekelip mata kemudian.
 	signedGetCacheTTL = 1 * time.Hour
 
-	// MaxImageSizeBytes — had saiz setiap gambar post (5 MB, padanan had
-	// klasik Twitter — munasabah untuk upload mobile).
+	// MaxImageSizeBytes - had saiz setiap gambar post (5 MB, padanan had
+	// klasik Twitter - munasabah untuk upload mobile).
 	//
 	// Nota: R2 TAK support presigned POST (`content-length-range` policy
-	// condition macam S3 sebenar) — verified terus: "Presigned post
+	// condition macam S3 sebenar) - verified terus: "Presigned post
 	// requests are not yet implemented" (501) bila cuba. Jadi had ni
 	// dikuatkuasakan LEPAS upload via HeadObject (VerifyImageSize), bukan
 	// dihalang di peringkat presign macam yang dirancang asalnya.
 	MaxImageSizeBytes = 5 * 1024 * 1024
 
-	// MaxImageDimension — had piksel sisi panjang untuk gambar yang
+	// MaxImageDimension - had piksel sisi panjang untuk gambar yang
 	// diterima masuk post.
 	//
 	// Client mengecilkan kepada 2048 sebelum naik, tapi had ni BUKAN
 	// pendua semakan tu: presigned URL membenarkan client menaikkan
 	// APA-APA sahaja terus ke R2 tanpa melalui server ni. Tanpa semakan
 	// sisi-server, sesiapa yang ada satu URL presign boleh menyimpan
-	// "bom nyahmampat" 20000x20000 — bait kecil, tapi berpuluh gigabait
+	// "bom nyahmampat" 20000x20000 - bait kecil, tapi berpuluh gigabait
 	// bila dinyahkod, dan setiap peranti ahli yang menatal feed akan cuba
 	// menyahkodnya.
 	//
@@ -65,7 +65,7 @@ const (
 	// atau client lama. Apa-apa di atas tu bukan lagi kecuaian.
 	MaxImageDimension = 4096
 
-	// MaxAvatarDimension — had khusus gambar profil.
+	// MaxAvatarDimension - had khusus gambar profil.
 	//
 	// Jauh lebih ketat drpd gambar post sebab avatar dipapar dalam bulatan
 	// 28–80dp. Menyimpan 2048px untuk itu membazir storan dan memaksa
@@ -74,7 +74,7 @@ const (
 	// (2x) macam pasangan 2048/4096 untuk gambar post.
 	MaxAvatarDimension = 1024
 
-	// MaxImagesPerPost — had bilangan gambar setiap post.
+	// MaxImagesPerPost - had bilangan gambar setiap post.
 	MaxImagesPerPost = 4
 )
 
@@ -113,7 +113,7 @@ func NewR2Client(accountID, accessKeyID, secretAccessKey, bucket, publicURL stri
 		BaseEndpoint: aws.String(endpoint),
 		Credentials:  credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
 		// aws-sdk-go-v2 default (WhenSupported) auto-tambah checksum
-		// CRC32 pada setiap request S3, termasuk presigned URL — R2
+		// CRC32 pada setiap request S3, termasuk presigned URL - R2
 		// tak fully compatible dgn ni, signature jadi tak sah, PUT
 		// client dapat 403 AccessDenied walaupun presign sendiri
 		// (langkah GENERATE URL) nampak berjaya. Verified: tanpa
@@ -159,7 +159,7 @@ func (r *R2Client) PresignUpload(ctx context.Context, contentType string) (uploa
 // PutObject muat naik bait terus dari server ke R2.
 //
 // Berbeza daripada PresignUpload (klien memuat naik sendiri), ini untuk
-// kandungan yang DIJANA server dan tidak pernah menyentuh peranti — PDF
+// kandungan yang DIJANA server dan tidak pernah menyentuh peranti - PDF
 // sijil. Tiada semakan dimensi imej di sini; pemanggil yang tahu apa yang
 // dihantarnya.
 func (r *R2Client) PutObject(ctx context.Context, key, contentType string, body []byte) error {
@@ -180,7 +180,7 @@ func (r *R2Client) PutObject(ctx context.Context, key, contentType string, body 
 
 // VerifyImageSize semak saiz objek yang DAH diupload (HeadObject) tak
 // melebihi MaxImageSizeBytes. Dipanggil dari CreatePost sebelum r2_key
-// diterima masuk post — R2 tak support content-length-range di presign
+// diterima masuk post - R2 tak support content-length-range di presign
 // PUT, jadi ni satu-satunya titik enforcement sebenar (client-side check
 // pun ada, tapi cuma UX, bukan security boundary).
 func (r *R2Client) VerifyImageSize(ctx context.Context, key string) error {
@@ -204,7 +204,7 @@ func (r *R2Client) VerifyImageSize(ctx context.Context, key string) error {
 }
 
 // VerifyImageFormat semak byte pertama objek (magic number) padan
-// dengan salah satu format imej dibenarkan (JPEG/PNG/WEBP) — Content-
+// dengan salah satu format imej dibenarkan (JPEG/PNG/WEBP) - Content-
 // Type di header PUT boleh dipalsukan client, byte sebenar tak boleh.
 // Dipanggil sekali gus dengan VerifyImageSize sebelum r2_key diterima
 // masuk post.
@@ -234,25 +234,25 @@ func (r *R2Client) verifyImage(ctx context.Context, key string, maxDim int) erro
 	defer out.Body.Close()
 
 	// Julat = MaxImageSizeBytes (5MB), BUKAN 64KB tetap. 64KB cukup untuk
-	// PNG (IHDR sentiasa di bait 8-33) tapi TIDAK untuk JPEG — penanda
+	// PNG (IHDR sentiasa di bait 8-33) tapi TIDAK untuk JPEG - penanda
 	// SOF0/SOF2 yang bawa lebar/tinggi boleh ditolak lepas berbilang
 	// segmen APPn (EXIF/ICC/XMP, sehingga 64KB setiap satu, berbilang
 	// dibenarkan) yang sengaja dipadatkan penyerang untuk tolak SOF0
-	// keluar dari julat baca — verifyDimensions gagal-terbuka (return nil)
+	// keluar dari julat baca - verifyDimensions gagal-terbuka (return nil)
 	// bila DecodeConfig tak jumpa SOF0, jadi julat kecil = had dimensi
 	// terus tak terpakai untuk JPEG yang dibina khas. 5MB bukan had
 	// sewenang-wenangnya: ia MaxImageSizeBytes yang dah dikuatkuasakan di
-	// tempat lain (VerifyImageSize) — julat ni tak dedahkan apa-apa
+	// tempat lain (VerifyImageSize) - julat ni tak dedahkan apa-apa
 	// permukaan serangan baharu, cuma pastikan SOF0 sentiasa dalam julat
 	// yang dibaca untuk MANA-MANA fail yang lulus had saiz sedia ada.
 	// `io.ReadAll` di sini BACA SEHINGGA had (bukan berhenti awal bila
-	// SOF0 dijumpai) — jadi ini memang naikkan bacaan R2 drpd 64KB tetap
+	// SOF0 dijumpai) - jadi ini memang naikkan bacaan R2 drpd 64KB tetap
 	// kepada saiz fail sebenar (max 5MB). Kos diterima: R2→compute egress
 	// percuma (Cloudflare), ini jalan SEKALI semasa verify muat naik
 	// (bukan setiap kali feed ditatal), dan gambar client selalunya jauh
 	// lebih kecil drpd 5MB (client dah kecilkan ke 2048px sebelum naik).
 	// Fail yang benar-benar 5MB capai kos terburuk, tapi itu tepat had
-	// yang dia dah dibenarkan lulus — bukan kos tambahan yang tak wajar.
+	// yang dia dah dibenarkan lulus - bukan kos tambahan yang tak wajar.
 	buf, err := io.ReadAll(io.LimitReader(out.Body, MaxImageSizeBytes))
 	if err != nil {
 		return fmt.Errorf("baca header: %w", err)
@@ -270,7 +270,7 @@ func (r *R2Client) verifyImage(ctx context.Context, key string, maxDim int) erro
 }
 
 // verifyDimensions baca SAHAJA header gambar (image.DecodeConfig) untuk
-// dapatkan lebar/tinggi tanpa menyahkod piksel — itu yang menjadikannya
+// dapatkan lebar/tinggi tanpa menyahkod piksel - itu yang menjadikannya
 // murah dan selamat terhadap bom nyahmampat.
 //
 // WEBP sengaja dilepaskan: decoder webp bukan sebahagian pustaka standard,
@@ -280,7 +280,7 @@ func verifyDimensions(header []byte, maxDim int) error {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(header))
 	if err != nil {
 		// Header terpotong atau format tanpa decoder berdaftar (WEBP).
-		// Jangan tolak gambar semata-mata sebab tak dapat diukur — magic
+		// Jangan tolak gambar semata-mata sebab tak dapat diukur - magic
 		// number dah lulus, dan had bait masih menjaga kes paling teruk.
 		return nil
 	}
@@ -290,7 +290,7 @@ func verifyDimensions(header []byte, maxDim int) error {
 	return nil
 }
 
-// DeleteImage buang objek dari R2 — dipanggil bila gambar ditolak
+// DeleteImage buang objek dari R2 - dipanggil bila gambar ditolak
 // (terlalu besar) supaya tak tinggal orphan dalam bucket.
 func (r *R2Client) DeleteImage(ctx context.Context, key string) error {
 	if !r.configured {
@@ -303,7 +303,7 @@ func (r *R2Client) DeleteImage(ctx context.Context, key string) error {
 	return err
 }
 
-// HasPublicURL — sama ada domain awam bucket dah dikonfigur.
+// HasPublicURL - sama ada domain awam bucket dah dikonfigur.
 //
 // Tak lagi diperlukan untuk memapar gambar: SignedURL guna endpoint S3
 // dan berfungsi pada bucket PERSENDIRIAN. Dikekalkan cuma untuk
@@ -316,11 +316,11 @@ func (r *R2Client) HasPublicURL() bool {
 // objek.
 //
 // Gantian `PublicURL`. Dengan URL awam r2.dev, SESIAPA yang ada pautan
-// boleh mengambil objek selama-lamanya, tanpa auth — dan sejak avatar
+// boleh mengambil objek selama-lamanya, tanpa auth - dan sejak avatar
 // wujud, itu bermakna muka ahli. URL yang ditandatangani luput, jadi
 // pautan yang bocor berhenti berfungsi.
 //
-// Pulang "" (dan log) bila R2 tak dikonfigur atau penandatanganan gagal —
+// Pulang "" (dan log) bila R2 tak dikonfigur atau penandatanganan gagal -
 // pemanggil dah pun melangkau rentetan kosong.
 func (r *R2Client) SignedURL(ctx context.Context, key string) string {
 	if !r.configured || key == "" {
@@ -345,11 +345,11 @@ func (r *R2Client) SignedURL(ctx context.Context, key string) string {
 }
 
 // PublicURL bina URL awam untuk baca semula gambar yang dah diupload
-// (r2_key disimpan dalam DB, URL dibina runtime — elak simpan URL penuh
+// (r2_key disimpan dalam DB, URL dibina runtime - elak simpan URL penuh
 // yang boleh berubah kalau domain public R2 ditukar).
 //
 // Pulang "" kalau R2_PUBLIC_URL tak diset. Caller MESTI langkau nilai
-// kosong dan bukan hantar ia kepada client — lihat buildPostResponses.
+// kosong dan bukan hantar ia kepada client - lihat buildPostResponses.
 func (r *R2Client) PublicURL(key string) string {
 	if r.publicURL == "" {
 		return ""

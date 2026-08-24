@@ -24,7 +24,7 @@ type Config struct {
 	RegistrationPaymentReturnURL string
 	ActivityPaymentReturnURL     string
 	CertificateVerifyURL         string
-	// PasswordResetURL — URL PENUH halaman Astro tempat ahli menaip kata
+	// PasswordResetURL - URL PENUH halaman Astro tempat ahli menaip kata
 	// laluan baharu (token dilampir sebagai `?token=`). Padanan pola
 	// EmailVerifyURL, TAPI dengan satu perbezaan: kosong bermakna ciri
 	// DIMATIKAN (503), bukan jatuh balik ke halaman Go sendiri. Borang
@@ -47,54 +47,54 @@ type Config struct {
 	StripePublishableKey  string
 	StripeWebhookSecret   string
 
-	// ToyyibPay — yuran ahli (Stage 12, belum wired ke handler; lihat
+	// ToyyibPay - yuran ahli (Stage 12, belum wired ke handler; lihat
 	// TODO.md bahagian Payment untuk keputusan produk yang belum dibuat).
 	// Akaun BERASINGAN drpd Stripe.
 	ToyyibPayBaseURL      string
 	ToyyibPaySecretKey    string
 	ToyyibPayCategoryCode string
 
-	// RegistrationFeeCents — yuran pendaftaran ahli SEKALI BAYAR (bukan
+	// RegistrationFeeCents - yuran pendaftaran ahli SEKALI BAYAR (bukan
 	// berulang), dikenakan via ToyyibPay semasa ahli baharu daftar (lihat
-	// TODO.md bahagian Payment). Default RM10 (1000 sen) — PLACEHOLDER,
+	// TODO.md bahagian Payment). Default RM10 (1000 sen) - PLACEHOLDER,
 	// nilai sebenar belum diputuskan management, tukar via env sebelum
 	// production.
 	RegistrationFeeCents int
 
-	// RegistrationBillExpiryMinutes — bil ToyyibPay yuran pendaftaran
-	// tamat tempoh selepas N minit (billExpiryDate). Default 30 — cukup
+	// RegistrationBillExpiryMinutes - bil ToyyibPay yuran pendaftaran
+	// tamat tempoh selepas N minit (billExpiryDate). Default 30 - cukup
 	// untuk FPX biasa, elak bil hidup selama-lamanya blok bypass admin.
 	// Padanan umur lapuk internal/registrationsweep.
 	RegistrationBillExpiryMinutes int
 
-	// GatewayChargeCents — anggaran fi transaksi gateway pembayaran
+	// GatewayChargeCents - anggaran fi transaksi gateway pembayaran
 	// (ToyyibPay FPX B2C ~RM1.00/transaksi, lihat
-	// marc_flutter/PAYMENT-TOYYIB.md) — GENERIK untuk SEMUA checkout
+	// marc_flutter/PAYMENT-TOYYIB.md) - GENERIK untuk SEMUA checkout
 	// (yuran pendaftaran, yuran aktiviti, modul depan), bukan spesifik
 	// satu modul. Dedah via `GET /payment-config` untuk client papar
 	// breakdown invoice ("Yuran" + "Caj Pemprosesan" = "Jumlah"). TAK
-	// menyentuh jumlah SEBENAR yang dihantar ke gateway — paparan
+	// menyentuh jumlah SEBENAR yang dihantar ke gateway - paparan
 	// sahaja. Default 100 sen (RM1).
 	GatewayChargeCents int
 
-	// Optional — kosong = ciri yang bergantung padanya jatuh balik kepada
+	// Optional - kosong = ciri yang bergantung padanya jatuh balik kepada
 	// tingkah laku setempat (per-instance), bukan gagal.
 	RedisURL string
 
-	// CORSAllowedOrigins — senarai origin web dibenarkan buat fetch()
+	// CORSAllowedOrigins - senarai origin web dibenarkan buat fetch()
 	// cross-origin (comma-separated, cth "https://marc.hafizbahtiar.com").
 	// Kosong = CORS middleware tak tambah header apa-apa (laluan yang
 	// pakainya jadi same-origin-only secara efektif). Lihat
-	// internal/http/middleware/cors.go — dipasang per-route, bukan global.
+	// internal/http/middleware/cors.go - dipasang per-route, bukan global.
 	CORSAllowedOrigins []string
 
 	// Polisi simpanan. Boleh ubah tanpa deploy semula (env var), sebab ni
-	// keputusan POLISI dan bukan keputusan teknikal — lihat
+	// keputusan POLISI dan bukan keputusan teknikal - lihat
 	// internal/retention.
 	AuditPIIRetention        time.Duration
 	AuditRecordRetention     time.Duration
 	UploadTombstoneRetention time.Duration
-	// PaymentLogRetention — 3 bulan default (keputusan produk 2026-08-15,
+	// PaymentLogRetention - 3 bulan default (keputusan produk 2026-08-15,
 	// lihat internal/paymentlog). Boleh raw_payload bawa PII pembayar
 	// (billTo/billEmail/billPhone ToyyibPay), sama justifikasi env-configurable
 	// macam polisi lain di atas.
@@ -108,62 +108,62 @@ func Load() (Config, error) {
 		JWTSecret:       os.Getenv("JWT_SECRET"),
 		AccessTokenTTL:  15 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour,
-		// Optional — kalau kosong, push notification jadi no-op senyap
+		// Optional - kalau kosong, push notification jadi no-op senyap
 		// (padanan dengan initOneSignal() di Flutter).
 		OneSignalAppID:  os.Getenv("ONESIGNAL_APP_ID"),
 		OneSignalAPIKey: os.Getenv("ONESIGNAL_API_KEY"),
-		// Optional — kalau kosong, email verification jadi no-op
+		// Optional - kalau kosong, email verification jadi no-op
 		// senyap (token tetap dijana + disimpan, cuma tak dihantar;
 		// lihat log server).
 		ResendAPIKey:  os.Getenv("RESEND_API_KEY"),
 		EmailFrom:     os.Getenv("EMAIL_FROM"),
 		PublicBaseURL: getEnv("PUBLIC_BASE_URL", "http://localhost:"+getEnv("PORT", "8080")),
-		// Optional — page landing untuk link email verification (Stage 8,
+		// Optional - page landing untuk link email verification (Stage 8,
 		// portfolio-astro). Kalau kosong, fallback ke Go punya HTML page
 		// sendiri (PublicBaseURL + /auth/verify-email/confirm).
 		EmailVerifyURL: os.Getenv("EMAIL_VERIFY_URL"),
-		// Optional — padanan pola EmailVerifyURL di atas, untuk halaman
+		// Optional - padanan pola EmailVerifyURL di atas, untuk halaman
 		// landing selepas bayar ToyyibPay (Stage 8 lanjutan, portfolio-
 		// astro). Kalau kosong, fallback ke HTML statik Go sendiri
 		// (RegistrationPaymentHandler/ActivityRegistrationPaymentHandler.
-		// ReturnPage) — tiada perubahan tingkah laku sedia ada.
+		// ReturnPage) - tiada perubahan tingkah laku sedia ada.
 		RegistrationPaymentReturnURL: os.Getenv("REGISTRATION_PAYMENT_RETURN_URL"),
 		ActivityPaymentReturnURL:     os.Getenv("ACTIVITY_PAYMENT_RETURN_URL"),
-		// Optional — padanan pola EmailVerifyURL di atas: URL PENUH halaman
+		// Optional - padanan pola EmailVerifyURL di atas: URL PENUH halaman
 		// Astro (bukan pangkalan + laluan tetap), token dilampir sebagai
 		// `?token=` (lihat fillPendingCertificateFiles, activity_certificates.go).
 		// Kalau kosong, fallback ke laluan JSON awam Go sendiri (PublicBaseURL
-		// + /verify/certificates/:token — tingkah laku sedia ada). HANYA
-		// jejas sijil yang dijana SELEPAS nilai ditukar — sijil dicetak
+		// + /verify/certificates/:token - tingkah laku sedia ada). HANYA
+		// jejas sijil yang dijana SELEPAS nilai ditukar - sijil dicetak
 		// sedia ada tak boleh dibetulkan (lihat komen VerifyCertificateRoute).
 		CertificateVerifyURL:  os.Getenv("CERTIFICATE_VERIFY_URL"),
 		PasswordResetURL:      os.Getenv("PASSWORD_RESET_URL"),
 		TelegramBotToken:      os.Getenv("TELEGRAM_BOT_TOKEN"),
 		TelegramBotUsername:   os.Getenv("TELEGRAM_BOT_USERNAME"),
 		TelegramWebhookSecret: os.Getenv("TELEGRAM_WEBHOOK_SECRET"),
-		// Optional — kalau kosong, upload post image (R2) jadi disabled
+		// Optional - kalau kosong, upload post image (R2) jadi disabled
 		// (endpoint pulang error jelas, bukan crash).
 		R2AccountID:   os.Getenv("R2_ACCOUNT_ID"),
 		R2AccessKeyID: os.Getenv("R2_ACCESS_KEY_ID"),
 		R2SecretKey:   os.Getenv("R2_SECRET_ACCESS_KEY"),
 		R2Bucket:      os.Getenv("R2_BUCKET_NAME"),
 		R2PublicURL:   os.Getenv("R2_PUBLIC_URL"),
-		// Optional — kalau kosong, donation checkout (Stage 12) jadi
-		// disabled (503 graceful, bukan crash) — sama pattern R2 di atas.
+		// Optional - kalau kosong, donation checkout (Stage 12) jadi
+		// disabled (503 graceful, bukan crash) - sama pattern R2 di atas.
 		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
 		StripePublishableKey: os.Getenv("STRIPE_PUBLISHABLE_KEY"),
 		StripeWebhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
 
-		// Optional — kalau kosong, ToyyibPayGateway.Enabled() pulang
+		// Optional - kalau kosong, ToyyibPayGateway.Enabled() pulang
 		// false (sama pattern Stripe/R2 di atas). BaseURL kosong jatuh
 		// balik ke produksi (https://toyyibpay.com) di dalam
-		// NewToyyibPayGateway — set ke https://dev.toyyibpay.com untuk
+		// NewToyyibPayGateway - set ke https://dev.toyyibpay.com untuk
 		// sandbox.
 		ToyyibPayBaseURL:      os.Getenv("TOYYIBPAY_BASE_URL"),
 		ToyyibPaySecretKey:    os.Getenv("TOYYIBPAY_SECRET_KEY"),
 		ToyyibPayCategoryCode: os.Getenv("TOYYIBPAY_CATEGORY_CODE"),
 
-		// Default RM10 (1000 sen) — placeholder, lihat komen field.
+		// Default RM10 (1000 sen) - placeholder, lihat komen field.
 		RegistrationFeeCents:          getEnvInt("REGISTRATION_FEE_CENTS", 1000),
 		RegistrationBillExpiryMinutes: getEnvInt("REGISTRATION_BILL_EXPIRY_MINUTES", 30),
 		GatewayChargeCents:            getEnvInt("GATEWAY_CHARGE_CENTS", 100),
@@ -172,7 +172,7 @@ func Load() (Config, error) {
 
 		CORSAllowedOrigins: getEnvList("CORS_ALLOWED_ORIGINS"),
 
-		// Default: metadata permintaan (IP/user-agent) hidup 90 hari —
+		// Default: metadata permintaan (IP/user-agent) hidup 90 hari -
 		// cukup untuk menyiasat penyalahgunaan, tak lebih. Catatan audit
 		// itu sendiri hidup 12 bulan. Set kepada 0 untuk matikan sapuan.
 		AuditPIIRetention:        getEnvDays("AUDIT_PII_RETENTION_DAYS", 90),
@@ -193,7 +193,7 @@ func Load() (Config, error) {
 }
 
 // getEnvDays baca tempoh dalam HARI. Nilai tak sah dilog dan default
-// digunakan — polisi simpanan yang salah taip tak patut menghalang app
+// digunakan - polisi simpanan yang salah taip tak patut menghalang app
 // daripada boot, tapi ia juga tak patut senyap.
 func getEnvDays(key string, fallbackDays int) time.Duration {
 	raw := os.Getenv(key)
@@ -208,7 +208,7 @@ func getEnvDays(key string, fallbackDays int) time.Duration {
 	return time.Duration(days) * 24 * time.Hour
 }
 
-// getEnvInt padanan pola getEnvDays — nilai tak sah dilog dan default
+// getEnvInt padanan pola getEnvDays - nilai tak sah dilog dan default
 // digunakan, bukan gagalkan boot.
 func getEnvInt(key string, fallback int) int {
 	raw := os.Getenv(key)

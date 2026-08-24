@@ -60,7 +60,7 @@ const deletePendingUploadByKey = `-- name: DeletePendingUploadByKey :exec
 delete from pending_uploads where r2_key = $1
 `
 
-// Tanpa skop user — untuk penyapu latar, bukan permintaan pengguna.
+// Tanpa skop user - untuk penyapu latar, bukan permintaan pengguna.
 func (q *Queries) DeletePendingUploadByKey(ctx context.Context, r2Key string) error {
 	_, err := q.db.Exec(ctx, deletePendingUploadByKey, r2Key)
 	return err
@@ -159,7 +159,7 @@ type ListStalePendingUploadsParams struct {
 // 2026-08-22, L28). Baris yang dipulangkan di sini ialah senarai PADAM:
 // semuanya akan digilir ke `deleted_uploads` dan objek R2nya dibuang.
 // Sebelum ni query cuma menapis ikut UMUR dan bergantung SEPENUHNYA pada
-// baris dikeluarkan semasa post dicipta — sedangkan laluan itu
+// baris dikeluarkan semasa post dicipta - sedangkan laluan itu
 // (`posts.go`) mengabaikan ralat `DeletePendingUpload`, jadi satu DELETE
 // yang gagal bermakna gambar post yang MASIH dipaparkan dipadam 6 jam
 // kemudian, kekal, tanpa ralat di mana-mana.
@@ -170,7 +170,7 @@ type ListStalePendingUploadsParams struct {
 // mana-mana laluan tulis MASA HADAPAN yang terlupa mengeluarkan barisnya.
 //
 // Laluan avatar (`applyAvatar`) sentiasa menyemak ralatnya, jadi klausa
-// `profiles` lebih kepada simetri drpd pembaikan pepijat — tapi tanpa ia,
+// `profiles` lebih kepada simetri drpd pembaikan pepijat - tapi tanpa ia,
 // query ni betul atas sebab yang bergantung pada fail LAIN, dan itulah
 // tepatnya bentuk kelemahan yang L28 wujud untuk hapuskan.
 func (q *Queries) ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]PendingUpload, error) {
@@ -197,7 +197,7 @@ const markDeletedUploadDone = `-- name: MarkDeletedUploadDone :exec
 update deleted_uploads set deleted_at = now() where r2_key = $1
 `
 
-// Tandakan, jangan padam baris — lihat komen 'deleted_at' dlm migration.
+// Tandakan, jangan padam baris - lihat komen 'deleted_at' dlm migration.
 func (q *Queries) MarkDeletedUploadDone(ctx context.Context, r2Key string) error {
 	_, err := q.db.Exec(ctx, markDeletedUploadDone, r2Key)
 	return err

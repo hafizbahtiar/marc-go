@@ -39,8 +39,8 @@ func UserID(c *gin.Context) uuid.UUID {
 }
 
 // OptionalAuth cuba parse Bearer token kalau ada, tapi TAK abort request
-// kalau tiada/tak sah — untuk route awam yang nak "tahu siapa kalau log
-// masuk" tanpa wajibkan auth (cth: donation checkout, Stage 12 — ahli
+// kalau tiada/tak sah - untuk route awam yang nak "tahu siapa kalau log
+// masuk" tanpa wajibkan auth (cth: donation checkout, Stage 12 - ahli
 // MARC yang log masuk dikaitkan user_id, orang luar tetap boleh donate).
 func OptionalAuth(j *auth.JWT) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -57,7 +57,7 @@ func OptionalAuth(j *auth.JWT) gin.HandlerFunc {
 
 // UserIDOptional pulangkan user id + true kalau OptionalAuth (atau
 // RequireAuth) berjaya set context; false kalau request tak
-// authenticated (bukan ralat — route awam yang benarkan anonymous).
+// authenticated (bukan ralat - route awam yang benarkan anonymous).
 func UserIDOptional(c *gin.Context) (uuid.UUID, bool) {
 	v, ok := c.Get(userIDKey)
 	if !ok {

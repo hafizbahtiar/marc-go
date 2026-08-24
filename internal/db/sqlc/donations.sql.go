@@ -90,8 +90,8 @@ type GetMyDonationByIDParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-// Resit — hanya donation SENDIRI (ahli log masuk, user_id = caller).
-// Donation anonymous (user_id null) TIADA laluan muat turun resit sini —
+// Resit - hanya donation SENDIRI (ahli log masuk, user_id = caller).
+// Donation anonymous (user_id null) TIADA laluan muat turun resit sini -
 // emel resit yang dihantar semasa webhook satu-satunya jejak mereka ada,
 // tiada akaun untuk log masuk dan tuntut baris ni.
 func (q *Queries) GetMyDonationByID(ctx context.Context, arg GetMyDonationByIDParams) (Donation, error) {
@@ -126,7 +126,7 @@ order by created_at desc
 // awal; yang hilang cuma cara menemuinya.
 //
 // Diskop `user_id`, jadi derma TANPA NAMA (user_id null) tak pernah
-// muncul — betul: penderma itu tiada akaun untuk menuntut baris ni, dan
+// muncul - betul: penderma itu tiada akaun untuk menuntut baris ni, dan
 // emel resit yang dihantar semasa webhook ialah satu-satunya jejak mereka
 // ada, mengikut reka bentuk (lihat komen `GetMyDonationByID`).
 //
@@ -181,11 +181,11 @@ type ListPendingDonationsOlderThanParams struct {
 }
 
 // Baris 'pending' yang dah cukup umur untuk layak disemak semula terus
-// pada gateway (internal/paymentreconcile) — padanan alasan
+// pada gateway (internal/paymentreconcile) - padanan alasan
 // ListPendingRegistrationPaymentsOlderThan (registration_payments.sql):
 // cuma 'pending', bukan 'failed' (terminal, tak perlu disemak semula).
 //
-// Tingkap atas + limit — lihat komen penuh pada
+// Tingkap atas + limit - lihat komen penuh pada
 // `ListPendingRegistrationPaymentsOlderThan` (L30). Sebab sama terpakai:
 // PaymentIntent Stripe yang ditinggalkan kekal `requires_payment_method`,
 // yang `CheckStatus` petakan kepada "pending" selama-lamanya.

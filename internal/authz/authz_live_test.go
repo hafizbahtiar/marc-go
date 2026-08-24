@@ -12,15 +12,15 @@ import (
 	"marc/internal/db/sqlc"
 )
 
-// `authz` ialah KESELURUHAN lapisan kebenaran app ni — gantian app-level
+// `authz` ialah KESELURUHAN lapisan kebenaran app ni - gantian app-level
 // bagi Postgres RLS yang belum wujud (Stage 9). Sebelum ni ia `no test
 // files` (TODO.md L36), dan ujian live yang MEMANG menegaskan
-// 403-untuk-bukan-management semuanya SKIP dalam CI (L14) — jadi tiada
+// 403-untuk-bukan-management semuanya SKIP dalam CI (L14) - jadi tiada
 // apa-apa dalam saluran automatik yang membuktikan kebenaran masih
 // berkuat kuasa.
 //
 // Perlukan Postgres kerana hierarki rank dibaca daripada jadual `roles`
-// yang di-seed oleh migration — memalsukannya bermakna menguji seed
+// yang di-seed oleh migration - memalsukannya bermakna menguji seed
 // palsu, bukan yang sebenarnya akan dijalankan produksi:
 //
 //	AUTHZ_TEST_DB="postgres://localhost:5432/marc_authz_check?sslmode=disable" \
@@ -99,7 +99,7 @@ func TestIsManagementIkutKategoriRole(t *testing.T) {
 
 // User tanpa profil (mustahil melalui laluan daftar biasa, tapi mungkin
 // melalui data separa/pemadaman manual) mesti pulang RALAT, bukan
-// `false` senyap — pemanggil melayan ralat sebagai 500 dan bukan sebagai
+// `false` senyap - pemanggil melayan ralat sebagai 500 dan bukan sebagai
 // "tolak", jadi perbezaannya penting.
 func TestIsManagementRalatBilaProfilTiada(t *testing.T) {
 	pool, q, ctx := setup(t)
@@ -112,7 +112,7 @@ func TestIsManagementRalatBilaProfilTiada(t *testing.T) {
 	}
 
 	if _, err := IsManagement(ctx, q, userID); err == nil {
-		t.Fatal("IsManagement pulang nil error untuk user tanpa profil — " +
+		t.Fatal("IsManagement pulang nil error untuk user tanpa profil - " +
 			"pemanggil tak dapat bezakan 'bukan management' drpd 'tak dapat semak'")
 	}
 }
@@ -120,11 +120,11 @@ func TestIsManagementRalatBilaProfilTiada(t *testing.T) {
 // IsAtLeastRole ialah gate yang LEBIH ketat drpd IsManagement, dipakai
 // di tiga tempat dengan dua siling berbeza:
 //
-//	"manager"    — kategori aktiviti (infrastruktur dikongsi)
-//	"superadmin" — domain emel disekat, data derma /admin/payments
+//	"manager"    - kategori aktiviti (infrastruktur dikongsi)
+//	"superadmin" - domain emel disekat, data derma /admin/payments
 //
 // Sempadan yang paling mudah pecah ialah `admin`(80): ia management, dan
-// ia LEBIH TINGGI drpd manager — tapi ia MESTI gagal semakan superadmin.
+// ia LEBIH TINGGI drpd manager - tapi ia MESTI gagal semakan superadmin.
 // Komen migration seed menyatakan ini secara eksplisit; ujian ni yang
 // menguatkuasakannya.
 func TestIsAtLeastRoleSempadanHierarki(t *testing.T) {
@@ -163,7 +163,7 @@ func TestIsAtLeastRoleSempadanHierarki(t *testing.T) {
 	}
 }
 
-// Kunci role yang tak wujud mesti pulang RALAT, bukan `false` — dan
+// Kunci role yang tak wujud mesti pulang RALAT, bukan `false` - dan
 // khususnya bukan `true`. Kunci yang tersalah eja pada tapak panggilan
 // (cth `"super_admin"`) patut gagal dengan kuat, bukan senyap menolak
 // semua orang atau senyap membenarkan semua orang.
@@ -173,7 +173,7 @@ func TestIsAtLeastRoleRalatBilaRoleTakWujud(t *testing.T) {
 
 	got, err := IsAtLeastRole(ctx, q, userID, "role_yang_tak_pernah_wujud")
 	if err == nil {
-		t.Fatalf("IsAtLeastRole dengan kunci role tak sah pulang (%v, nil) — "+
+		t.Fatalf("IsAtLeastRole dengan kunci role tak sah pulang (%v, nil) - "+
 			"kunci tersalah eja akan gagal SENYAP", got)
 	}
 	if got {
@@ -193,7 +193,7 @@ func TestCategoryManagementPadanSeedDB(t *testing.T) {
 		t.Fatalf("query: %v", err)
 	}
 	if n == 0 {
-		t.Fatalf("tiada baris roles berkategori %q — pemalar Go dan seed DB "+
+		t.Fatalf("tiada baris roles berkategori %q - pemalar Go dan seed DB "+
 			"dah terpesong, setiap gate management akan menolak semua orang",
 			CategoryManagement)
 	}

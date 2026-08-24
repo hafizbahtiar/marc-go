@@ -11,7 +11,7 @@ import (
 	"marc/internal/paymentreconcile"
 )
 
-// PaymentReconcileHandler — pencetus manual internal/paymentreconcile,
+// PaymentReconcileHandler - pencetus manual internal/paymentreconcile,
 // padanan pola AuditHandler (route hanya perlu `approved`, handler
 // SENDIRI gate management melalui authz.IsManagement).
 type PaymentReconcileHandler struct {
@@ -23,7 +23,7 @@ func NewPaymentReconcileHandler(reconciler *paymentreconcile.Reconciler, queries
 	return &PaymentReconcileHandler{reconciler: reconciler, queries: queries}
 }
 
-// Run — POST /admin/payments/reconcile. Management sahaja. Jalankan
+// Run - POST /admin/payments/reconcile. Management sahaja. Jalankan
 // SATU pusingan internal/paymentreconcile serta-merta (sama logik dengan
 // sapuan latar berkala) dan pulangkan ringkasan (checked/mismatches
 // fixed/errors) supaya caller (dashboard management) nampak sesuatu yang

@@ -28,13 +28,13 @@ import (
 
 const emailVerificationTTL = time.Hour
 
-// passwordResetTTL — sama 1 jam dengan pengesahan emel. Token reset
+// passwordResetTTL - sama 1 jam dengan pengesahan emel. Token reset
 // memberi kawalan PENUH akaun, jadi tetingkapnya tak patut lebih longgar
 // daripada token yang cuma mengesahkan alamat.
 const passwordResetTTL = time.Hour
 
 // Had hantar emel pengesahan per akaun (bukan per IP). IP limiter
-// berasingan masih ada di router — ni lapisan kedua: jeda pendek elak
+// berasingan masih ada di router - ni lapisan kedua: jeda pendek elak
 // double-tap, siling 24 jam elak spam Resend dari akaun yang sama.
 const (
 	emailVerifySendCooldown = 60 * time.Second
@@ -65,17 +65,17 @@ func checkEmailVerifySendLimit(lastSend *time.Time, sendsLastWindow int, now tim
 	return nil
 }
 
-// dummyPasswordHash — bcrypt hash tetap (bukan password sebenar
+// dummyPasswordHash - bcrypt hash tetap (bukan password sebenar
 // sesiapa) dipakai untuk "bakar" masa bcrypt yang sama pada path
 // email-tak-wujud di Login, elak timing oracle yang boleh bezakan
 // "email wujud, password salah" (compare betul-betul jalan) dengan
-// "email tak wujud" (return awal tanpa compare) — dua-dua patut ambil
+// "email tak wujud" (return awal tanpa compare) - dua-dua patut ambil
 // masa yang sama dari luar.
 const dummyPasswordHash = "$2a$10$/8Dd.SDyfy2jxDvvxwPheeHLucYAitJ42OSSoz8wtyR1UTR8A3JfW"
 
-// refreshReuseGraceWindow — replay token yang dah consumed DALAM tempoh
+// refreshReuseGraceWindow - replay token yang dah consumed DALAM tempoh
 // ni dianggap race/retry biasa (concurrent request, network retry),
-// BUKAN reuse attack — elak false-positive family revocation yang
+// BUKAN reuse attack - elak false-positive family revocation yang
 // paksa re-login tanpa sebab. Attacker sebenar yang curi token dan guna
 // lambat (lebih dari tempoh ni) tetap dikesan macam biasa.
 const refreshReuseGraceWindow = 5 * time.Second
@@ -152,7 +152,7 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (t
 type registerRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6,max=72"`
-	// Phone WAJIB sejak 2026-08-15 — ToyyibPay (yuran pendaftaran)
+	// Phone WAJIB sejak 2026-08-15 - ToyyibPay (yuran pendaftaran)
 	// perlukan billPhone bukan-kosong pada createBill (disahkan LIVE di
 	// staging), dan mengumpulnya lambat (PATCH /me selepas daftar) buat
 	// ahli sedia ada yang belum isi sekat proses bayar mereka. Kutip
@@ -169,7 +169,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Tolak domain emel pelupusan (disposable/temporary) SEBELUM apa-apa
-	// kerja DB — senarai statik terbenam ialah pertahanan utama, jadual
+	// kerja DB - senarai statik terbenam ialah pertahanan utama, jadual
 	// `blocked_email_domains` pelengkap utk tambahan management (lihat
 	// internal/disposableemail). Keputusan produk 2026-08-15.
 	if disposableemail.IsDisposable(req.Email) {
@@ -177,7 +177,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 	// `IsAllowed` diperiksa SEMULA di sini (bukan cuma dalam IsDisposable
-	// di atas) — laluan jadual DB ni TIDAK tahu pasal allowlist tester
+	// di atas) - laluan jadual DB ni TIDAK tahu pasal allowlist tester
 	// langsung, jadi tanpa semakan ni, management tambah "yopmail.com"
 	// ke blocked_email_domains akan senyap kunci keluar dua akaun tester
 	// walau allowedEmails kata sepatutnya dibenarkan (Opus verify
@@ -194,11 +194,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		}
 	}
 
-	// Malaysia sahaja buat masa ini (keputusan produk 2026-08-15) —
+	// Malaysia sahaja buat masa ini (keputusan produk 2026-08-15) -
 	// `phone.NormalizeMY` pulang bentuk tempatan ternormal (`0XXXXXXXXX`)
 	// supaya nombor yang disimpan konsisten tak kira `+60`/`60`/`0`/
 	// dash/space yang pengguna taip. SIMPAN nilai ternormal, bukan input
-	// mentah — `req.Phone` ditulis ganti di sini.
+	// mentah - `req.Phone` ditulis ganti di sini.
 	normalizedPhone, ok := phone.NormalizeMY(req.Phone)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "format nombor telefon tidak sah"})
@@ -270,7 +270,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 // notifyManagementOfPendingMember fan-out notification "ahli baru
-// menunggu kelulusan" kepada semua management (Stage 11). Best-effort —
+// menunggu kelulusan" kepada semua management (Stage 11). Best-effort -
 // kegagalan notification tak patut gagalkan pendaftaran yang dah
 // berjaya (padanan pattern notifyOwner, Stage 10).
 func notifyManagementOfPendingMember(ctx context.Context, q *sqlc.Queries, newUserID uuid.UUID) {
@@ -360,14 +360,14 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	// Atomic single-use: UPDATE...RETURNING guard "consumed_at is null"
 	// dalam SATU statement, sama race-safety macam DELETE...RETURNING
-	// asal — kalau dua request serentak hantar hash yang sama, cuma
+	// asal - kalau dua request serentak hantar hash yang sama, cuma
 	// satu dapat row balik (menang); yang satu lagi dapat 0 rows.
 	consumed, err := h.queries.ConsumeRefreshToken(ctx, hash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Sama ada token ni tak pernah wujud, ATAU dah consumed
 			// sebelum ni. Kalau row wujud dan consumed_at dah set,
-			// ini REUSE — tanda token dicuri (attacker consume dulu,
+			// ini REUSE - tanda token dicuri (attacker consume dulu,
 			// user asli cuba guna token yang sama lepas tu). Revoke
 			// SEMUA token dalam family ni supaya chain attacker (dan
 			// session user asli yang sama) sama-sama terputus, paksa
@@ -406,13 +406,13 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	// Idempotent — hapus je kalau wujud, tak kisah dah luput/tak wujud.
+	// Idempotent - hapus je kalau wujud, tak kisah dah luput/tak wujud.
 	_ = h.queries.DeleteRefreshTokenByHash(c.Request.Context(), auth.HashToken(req.RefreshToken))
 	c.Status(http.StatusNoContent)
 }
 
 // LogoutAll padam SEMUA refresh token milik user semasa (semua device/
-// session sekali gus) — "log keluar semua tempat". Berguna kalau akaun
+// session sekali gus) - "log keluar semua tempat". Berguna kalau akaun
 // disyaki dikompromis atau device hilang, tanpa perlu tunggu setiap
 // token luput sendiri.
 func (h *AuthHandler) LogoutAll(c *gin.Context) {
@@ -425,7 +425,7 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 
 // RequestEmailVerification jana token pengesahan dan hantar link
 // pengesahan melalui email (Resend). Kalau `RESEND_API_KEY`/`EMAIL_FROM`
-// belum diisi, `emailClient.Send` no-op senyap — token tetap dijana +
+// belum diisi, `emailClient.Send` no-op senyap - token tetap dijana +
 // disimpan, cuma di-log ke server supaya dev boleh test tanpa provider.
 func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 	userID := middleware.UserID(c)
@@ -473,13 +473,13 @@ func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 	}
 	if err := h.queries.InsertEmailVerificationSend(ctx, userID); err != nil {
 		// Token dah wujud; jejak had gagal ditulis. Jangan sekat hantar
-		// emel — lebih baik satu resend "percuma" drpd user tersekat.
+		// emel - lebih baik satu resend "percuma" drpd user tersekat.
 		log.Printf("gagal catat email verification send untuk user %s: %v", userID, err)
 	}
 
 	// Kalau EMAIL_VERIFY_URL configure (Stage 8, portfolio-astro), link
 	// arah ke page branded tu. Kalau tidak, fallback ke Go punya HTML page
-	// sendiri (GET /auth/verify-email/confirm) — dev/belum-setup portfolio.
+	// sendiri (GET /auth/verify-email/confirm) - dev/belum-setup portfolio.
 	verifyPageBase := h.emailVerifyURL
 	if verifyPageBase == "" {
 		verifyPageBase = h.publicBaseURL + "/auth/verify-email/confirm"
@@ -507,7 +507,7 @@ func (h *AuthHandler) RequestEmailVerification(c *gin.Context) {
 
 // consumeEmailVerificationToken kongsi logic antara confirm via JSON
 // body (app punya API call) dan confirm via GET link (klik terus dari
-// email — tak perlu login/app dibuka).
+// email - tak perlu login/app dibuka).
 func (h *AuthHandler) consumeEmailVerificationToken(ctx context.Context, token string) error {
 	rec, err := h.queries.GetEmailVerificationTokenByHash(ctx, auth.HashToken(token))
 	if err != nil {
@@ -536,7 +536,7 @@ type confirmEmailVerificationRequest struct {
 	Token string `json:"token" binding:"required"`
 }
 
-// ConfirmEmailVerification — dipanggil dari app (JSON body).
+// ConfirmEmailVerification - dipanggil dari app (JSON body).
 func (h *AuthHandler) ConfirmEmailVerification(c *gin.Context) {
 	var req confirmEmailVerificationRequest
 	if !bindJSON(c, &req) {
@@ -556,7 +556,7 @@ func (h *AuthHandler) ConfirmEmailVerification(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ConfirmEmailVerificationLink — dipanggil terus dari pautan dalam
+// ConfirmEmailVerificationLink - dipanggil terus dari pautan dalam
 // email (klik, browser buka GET request). Render HTML ringkas, bukan
 // JSON, sebab ni dibuka dalam browser bukan dipanggil app.
 func (h *AuthHandler) ConfirmEmailVerificationLink(c *gin.Context) {
@@ -574,7 +574,7 @@ func (h *AuthHandler) ConfirmEmailVerificationLink(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(verificationHTMLPage("Email anda berjaya disahkan. Boleh kembali ke app MARC.")))
 }
 
-// verificationEmailHTML — templat emel pengesahan, padanan jenama
+// verificationEmailHTML - templat emel pengesahan, padanan jenama
 // donationReceiptHTML (#2F6B4F / #FAF9F6 / #1C1B19). Inline style
 // sengaja: Gmail/Outlook buang blok `<style>`. Escape emel + pautan
 // sebab kedua-duanya masuk HTML.
@@ -640,25 +640,25 @@ func isUniqueViolation(err error) bool {
 
 type passwordResetRequestBody struct {
 	// `required,email` sengaja PADAN registerRequest/loginRequest. Emel
-	// berruang ditolak 400 pada ketiga-tiga laluan — konsisten, dan 400 tak
+	// berruang ditolak 400 pada ketiga-tiga laluan - konsisten, dan 400 tak
 	// membocorkan apa-apa (ia tak bezakan akaun wujud atau tidak). Klien
 	// menghantar emel yang sudah di-trim.
 	Email string `json:"email" binding:"required,email"`
 }
 
-// RequestPasswordReset — POST /auth/password-reset/request. AWAM.
+// RequestPasswordReset - POST /auth/password-reset/request. AWAM.
 //
 // Pulang 204 SENTIASA, sama ada akaun wujud atau tidak. Kalau ia
 // membezakan, endpoint ni jadi alat menyenaraikan emel mana yang
 // berdaftar. UI mengimbangi dgn mesej "Kalau emel itu berdaftar, kami
-// dah hantar pautan reset" — ahli yang tersilap taip tetap dapat maklum
+// dah hantar pautan reset" - ahli yang tersilap taip tetap dapat maklum
 // balas berguna tanpa server mengesahkan kewujudan akaun.
 //
 // TIADA gate status: ahli `pending`/`rejected` yang paling mungkin
 // terkunci keluar, dan tiada laluan lain untuk mereka pulih. Alasan sama
 // dengan `/me` (lihat ARCHITECTURE.md, Lapisan akses).
 func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
-	// Ciri dimatikan bila halaman belum dikonfigur — disemak SEBELUM
+	// Ciri dimatikan bila halaman belum dikonfigur - disemak SEBELUM
 	// sebarang kerja DB supaya tiada token ditulis untuk pautan yang
 	// takkan pernah boleh dibuka.
 	if h.passwordResetURL == "" {
@@ -677,7 +677,7 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 	ctx := c.Request.Context()
 	user, err := h.queries.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		// Akaun tiada. Pulang 204 yang SAMA — lihat komen fungsi.
+		// Akaun tiada. Pulang 204 yang SAMA - lihat komen fungsi.
 		c.Status(http.StatusNoContent)
 		return
 	}
@@ -719,7 +719,7 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 	// keputusan 204 di atas.
 	//
 	// Mitigasi SEPARA: kerja DB masih berbeza beberapa milisaat antara
-	// dua laluan. Jauh di bawah bunyi rangkaian, jadi diterima — tapi
+	// dua laluan. Jauh di bawah bunyi rangkaian, jadi diterima - tapi
 	// bukan sifar, dan tiada siapa patut membaca ni dan menganggap
 	// masanya seragam.
 	//
@@ -729,7 +729,7 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 		`<p>Kami terima permintaan untuk reset kata laluan akaun MARC anda. `+
 			`Klik pautan di bawah untuk tetapkan kata laluan baharu (luput dalam 1 jam):</p>`+
 			`<p><a href="%s">%s</a></p>`+
-			`<p>Kalau bukan anda yang minta, abaikan emel ni — kata laluan anda tak berubah.</p>`,
+			`<p>Kalau bukan anda yang minta, abaikan emel ni - kata laluan anda tak berubah.</p>`,
 		link, link,
 	)
 	go func(to string) {
@@ -748,13 +748,13 @@ type passwordResetConfirmBody struct {
 	Password string `json:"password" binding:"required,min=6,max=72"`
 }
 
-// ConfirmPasswordReset — POST /auth/password-reset/confirm. AWAM.
+// ConfirmPasswordReset - POST /auth/password-reset/confirm. AWAM.
 //
 // Dipanggil dari halaman Astro (bukan app), jadi route ni dapat CORS +
-// pengendali OPTIONS — padanan tepat verify-email/confirm.
+// pengendali OPTIONS - padanan tepat verify-email/confirm.
 //
 // Tuntutan token (`ConsumePasswordResetToken`) ialah pernyataan PERTAMA
-// dalam transaksi, bukan SELECT sebelum tx dibuka — kalau tidak, dua
+// dalam transaksi, bukan SELECT sebelum tx dibuka - kalau tidak, dua
 // permintaan serentak dgn token yang sama kedua-duanya lulus bacaan
 // sebelum mana-mana pun menulis, dan kedua-duanya berjaya reset. Kunci
 // baris `delete ... returning` jamin hanya SATU permintaan dapat baris;
@@ -787,7 +787,7 @@ func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
 		return
 	}
 	if rec.ExpiresAt.Time.Before(time.Now()) {
-		// Token dah tertuntut (dipadam) di atas — COMMIT supaya pemadaman
+		// Token dah tertuntut (dipadam) di atas - COMMIT supaya pemadaman
 		// itu berkuat kuasa. Rollback di sini akan mengembalikan baris
 		// luput itu, membenarkan ia dituntut lagi kemudian.
 		if err := tx.Commit(ctx); err != nil {
@@ -816,7 +816,7 @@ func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
 		return
 	}
-	// Batalkan SETIAP sesi — lihat komen fungsi.
+	// Batalkan SETIAP sesi - lihat komen fungsi.
 	if err := q.DeleteRefreshTokensByUser(ctx, rec.UserID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tukar kata laluan"})
 		return

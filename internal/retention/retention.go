@@ -3,16 +3,16 @@
 // Tiga sapuan berasingan, sengaja dengan tempoh yang BERBEZA-beza kerana
 // data yang berlainan mempunyai justifikasi simpanan yang berlainan:
 //
-//	Redaksi PII audit  — buang ip_address/user_agent (data peribadi),
+//	Redaksi PII audit  - buang ip_address/user_agent (data peribadi),
 //	                     catatan audit itu sendiri DIKEKALKAN
-//	Padam audit        — buang catatan sepenuhnya bila dah tak berguna
-//	Prune batu nisan   — kemas rekod perkemasan R2 yang dah selesai
+//	Padam audit        - buang catatan sepenuhnya bila dah tak berguna
+//	Prune batu nisan   - kemas rekod perkemasan R2 yang dah selesai
 //
 // Perbezaan antara dua yang pertama ialah keseluruhan idea di sini.
 // "Siapa naikkan pangkat siapa pada Mac lepas" berbaloi disimpan lama;
 // "dari alamat IP mana" tidak. Menggabungkan keduanya memaksa pilihan
 // palsu antara jejak audit yang berguna dan simpanan data peribadi yang
-// minimum — sedangkan kedua-duanya boleh dicapai serentak.
+// minimum - sedangkan kedua-duanya boleh dicapai serentak.
 package retention
 
 import (
@@ -25,16 +25,16 @@ import (
 	"marc/internal/db/sqlc"
 )
 
-// Policy — tempoh simpanan. Sifar bermakna sapuan itu dimatikan.
+// Policy - tempoh simpanan. Sifar bermakna sapuan itu dimatikan.
 type Policy struct {
-	// AuditPII — umur sebelum ip_address/user_agent diredaksi.
+	// AuditPII - umur sebelum ip_address/user_agent diredaksi.
 	AuditPII time.Duration
-	// AuditRecord — umur sebelum catatan audit dipadam terus.
+	// AuditRecord - umur sebelum catatan audit dipadam terus.
 	AuditRecord time.Duration
-	// UploadTombstone — umur sebelum baris deleted_uploads yang selesai
+	// UploadTombstone - umur sebelum baris deleted_uploads yang selesai
 	// dibuang.
 	UploadTombstone time.Duration
-	// PaymentLog — umur sebelum baris payment_logs dipadam (lihat
+	// PaymentLog - umur sebelum baris payment_logs dipadam (lihat
 	// internal/paymentlog).
 	PaymentLog time.Duration
 }

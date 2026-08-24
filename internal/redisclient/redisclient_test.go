@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// URL kosong MESTI menghasilkan client dimatikan dan bukan ralat — app
+// URL kosong MESTI menghasilkan client dimatikan dan bukan ralat - app
 // perlu boot tanpa Redis, sama macam tanpa R2/Stripe/Resend.
 func TestUrlKosongJadiDimatikanBukanRalat(t *testing.T) {
 	c, err := New("")

@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Pelengkap kepada senarai statik terbenam (internal/disposableemail) —
+-- Pelengkap kepada senarai statik terbenam (internal/disposableemail) -
 -- BUKAN gantinya. Utk management tambah domain BAHARU yang senarai
 -- statik terlepas (atau domain organisasi spesifik) TANPA perlu deploy
 -- kod. Lihat internal/disposableemail/disposableemail.go untuk rasional

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Pakej ni TULEN — tiada DB, tiada rangkaian. Ujiannya benar-benar
+// Pakej ni TULEN - tiada DB, tiada rangkaian. Ujiannya benar-benar
 // berjalan dalam CI (tak macam ujian live repo ni yang SKIP tanpa
 // Postgres), jadi ia antara sedikit tempat yang regresi auth ditangkap
 // SEBELUM merge. Lihat TODO.md L36.
@@ -46,7 +46,7 @@ func TestAccessTokenLuputDitolak(t *testing.T) {
 	}
 
 	if _, err := j.ParseAccessToken(token); err == nil {
-		t.Fatal("token LUPUT diterima — sesi tak pernah tamat")
+		t.Fatal("token LUPUT diterima - sesi tak pernah tamat")
 	}
 }
 
@@ -59,24 +59,24 @@ func TestAccessTokenRahsiaLainDitolak(t *testing.T) {
 
 	verifier := NewJWT("rahsia-yang-berbeza-sama-sekali", 15*time.Minute)
 	if _, err := verifier.ParseAccessToken(token); err == nil {
-		t.Fatal("token ditandatangani rahsia LAIN diterima — sesiapa yang " +
+		t.Fatal("token ditandatangani rahsia LAIN diterima - sesiapa yang " +
 			"boleh jana JWT boleh menyamar sebagai mana-mana ahli")
 	}
 }
 
-// Kekeliruan algoritma (`alg` confusion) — token `alg: none` mesti
+// Kekeliruan algoritma (`alg` confusion) - token `alg: none` mesti
 // ditolak.
 //
 // BUKAN tripwire bagi semakan `t.Method.(*jwt.SigningMethodHMAC)` dalam
 // `ParseAccessToken`. Disahkan 2026-08-22: membuang semakan itu, ujian
-// ni TETAP lulus. Sebabnya jwt/v5 sendiri menaip kuncinya —
+// ni TETAP lulus. Sebabnya jwt/v5 sendiri menaip kuncinya -
 // `signingMethodNone.Verify` menuntut kunci ialah
 // `UnsafeAllowNoneSignatureType` (none.go:31) dan keyfunc kita
 // memulangkan `[]byte`, jadi pustaka yang menolaknya. RSA/ECDSA sama:
 // `Verify` mereka menuntut jenis kunci khusus, bukan `[]byte`.
 //
 // Jadi semakan HMAC eksplisit itu ialah pertahanan-berlapis, bukan
-// penanggung beban dalam jwt/v5 v5.3.1 — ia mesti disemak dengan
+// penanggung beban dalam jwt/v5 v5.3.1 - ia mesti disemak dengan
 // MEMBACA, bukan dianggap dilitupi ujian.
 //
 // Ujian ni tetap berbaloi: ia mengunci TINGKAH LAKU yang boleh dilihat.
@@ -91,7 +91,7 @@ func TestParseAccessTokenTolakAlgBukanHMAC(t *testing.T) {
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 	}
 
-	// `alg: none` — jwt/v5 memerlukan sentinel khas untuk membenarkan
+	// `alg: none` - jwt/v5 memerlukan sentinel khas untuk membenarkan
 	// penandatanganan tanpa kunci, tepat kerana ia berbahaya.
 	unsigned := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
 	tokenNone, err := unsigned.SignedString(jwt.UnsafeAllowNoneSignatureType)
@@ -100,7 +100,7 @@ func TestParseAccessTokenTolakAlgBukanHMAC(t *testing.T) {
 	}
 
 	if _, err := j.ParseAccessToken(tokenNone); err == nil {
-		t.Fatal("token `alg: none` DITERIMA — sesiapa boleh mengarang token " +
+		t.Fatal("token `alg: none` DITERIMA - sesiapa boleh mengarang token " +
 			"untuk mana-mana user id tanpa sebarang rahsia")
 	}
 }
@@ -109,7 +109,7 @@ func TestParseAccessTokenTolakSampahDanSubjectCacat(t *testing.T) {
 	j := NewJWT(testSecret, 15*time.Minute)
 
 	// Subject yang BUKAN UUID: ditandatangani dengan betul, jadi
-	// tandatangan lulus — cuma `uuid.Parse` yang menahannya.
+	// tandatangan lulus - cuma `uuid.Parse` yang menahannya.
 	claims := jwt.RegisteredClaims{
 		Subject:   "bukan-uuid-langsung",
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
@@ -173,7 +173,7 @@ func TestPasswordHashBergaram(t *testing.T) {
 	}
 
 	if a == b {
-		t.Fatal("dua hash bagi kata laluan sama adalah SERUPA — tiada garam")
+		t.Fatal("dua hash bagi kata laluan sama adalah SERUPA - tiada garam")
 	}
 	if !VerifyPassword(a, "sama") || !VerifyPassword(b, "sama") {
 		t.Fatal("hash bergaram tak boleh disahkan semula")
@@ -181,11 +181,11 @@ func TestPasswordHashBergaram(t *testing.T) {
 }
 
 // bcrypt menolak input melebihi 72 bait. Handler mengehadkan `max=72`
-// pada tag binding — ujian ni merekod SEBAB had itu wujud, supaya tiada
+// pada tag binding - ujian ni merekod SEBAB had itu wujud, supaya tiada
 // siapa melonggarkannya tanpa menyedari HashPassword akan mula gagal.
 func TestPasswordLebih72BaitDitolakBcrypt(t *testing.T) {
 	if _, err := HashPassword(strings.Repeat("a", 73)); err == nil {
-		t.Fatal("bcrypt menerima >72 bait — had `max=72` pada handler " +
+		t.Fatal("bcrypt menerima >72 bait - had `max=72` pada handler " +
 			"mungkin tak lagi diperlukan, sahkan sebelum melonggarkannya")
 	}
 }
@@ -211,7 +211,7 @@ func TestGenerateOpaqueTokenUnikDanCukupPanjang(t *testing.T) {
 		}
 		// 32 bait rawak → 43 aksara base64url tanpa padding.
 		if len(tok) < 40 {
-			t.Fatalf("token terlalu pendek (%d aksara) — entropi tak cukup "+
+			t.Fatalf("token terlalu pendek (%d aksara) - entropi tak cukup "+
 				"untuk kelayakan pembawa", len(tok))
 		}
 		if seen[tok] {
@@ -221,7 +221,7 @@ func TestGenerateOpaqueTokenUnikDanCukupPanjang(t *testing.T) {
 	}
 }
 
-// Token base64url tanpa padding SELAMAT dalam URL — ia masuk ke pautan
+// Token base64url tanpa padding SELAMAT dalam URL - ia masuk ke pautan
 // pengesahan emel (`?token=`) dan laluan pengesahan sijil, jadi aksara
 // yang perlu di-escape akan pecah secara senyap.
 func TestGenerateOpaqueTokenSelamatDalamURL(t *testing.T) {
@@ -244,10 +244,10 @@ func TestHashTokenStabilDanSatuArah(t *testing.T) {
 
 	h1, h2 := HashToken(tok), HashToken(tok)
 	if h1 != h2 {
-		t.Fatal("HashToken tak deterministik — carian ikut hash takkan pernah padan")
+		t.Fatal("HashToken tak deterministik - carian ikut hash takkan pernah padan")
 	}
 	if h1 == tok {
-		t.Fatal("HashToken memulangkan input — token disimpan sebagai teks biasa")
+		t.Fatal("HashToken memulangkan input - token disimpan sebagai teks biasa")
 	}
 	if len(h1) != 64 {
 		t.Errorf("panjang hash = %d, mahu 64 (hex SHA-256)", len(h1))

@@ -16,7 +16,7 @@ join profiles pr on pr.user_id = p.author_id
 where p.id = $1 and p.deleted_at is null;
 
 -- name: ListPosts :many
--- Keyset pagination atas (created_at, id) — bukan created_at je, elak
+-- Keyset pagination atas (created_at, id) - bukan created_at je, elak
 -- row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 -- (null cursor = page pertama).
 select

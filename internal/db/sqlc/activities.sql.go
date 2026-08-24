@@ -20,7 +20,7 @@ returning id, category_id, title, description, location_name, location_address, 
 `
 
 // Peralihan status automatik 'published' -> 'completed' bila aktiviti
-// dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) —
+// dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) -
 // sapuan berjadual (internal/activitylifecycle). Guard `status =
 // 'published'` buat kemas kini idempoten merentas replika, padanan
 // gaya `CancelStaleUnstartedPayments` (activitysweep).
@@ -402,7 +402,7 @@ type ListActivitiesRow struct {
 	RegistrationCount      int64              `json:"registration_count"`
 }
 
-// Keyset pagination atas (starts_at, id) — sama corak dengan ListPosts,
+// Keyset pagination atas (starts_at, id) - sama corak dengan ListPosts,
 // elak baris terlepas bila dua aktiviti berkongsi timestamp tepat.
 // upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir
 // dahulu). upcoming=false → yang dah tamat, isih menurun.
@@ -466,7 +466,7 @@ where status = 'published' and reminder_sent_at is null
 `
 
 // Aktiviti akan bermula dlm ~24 jam (H-1) yang belum pernah dihantar
-// peringatan — sapuan berjadual (internal/activitylifecycle). Guard
+// peringatan - sapuan berjadual (internal/activitylifecycle). Guard
 // `reminder_sent_at is null` buat kemas kini idempoten merentas
 // replika. `starts_at > now()` elak hantar peringatan utk aktiviti yang
 // dah bermula (cth aktiviti baharu diterbitkan lepas tetingkap H-1
@@ -614,7 +614,7 @@ select id, key, name, sort_order, is_active, created_at from activity_categories
 order by sort_order, name
 `
 
-// Untuk skrin pengurusan CRUD kategori (manager ke atas) — TERMASUK yang
+// Untuk skrin pengurusan CRUD kategori (manager ke atas) - TERMASUK yang
 // tidak aktif, supaya boleh diaktifkan semula. Borang cipta aktiviti guna
 // ListActivityCategories (aktif sahaja) di atas.
 func (q *Queries) ListAllActivityCategories(ctx context.Context) ([]ActivityCategory, error) {
@@ -649,7 +649,7 @@ update activities set reminder_sent_at = now()
 where id = $1 and reminder_sent_at is null
 `
 
-// Guard `reminder_sent_at is null` — dua replika yang baca baris SAMA
+// Guard `reminder_sent_at is null` - dua replika yang baca baris SAMA
 // dlm ListActivitiesNeedingReminder serentak, cuma SATU yang berjaya
 // UPDATE (baris kedua affect 0 rows), elak hantar push berganda.
 func (q *Queries) MarkActivityReminderSent(ctx context.Context, id uuid.UUID) (int64, error) {
@@ -673,7 +673,7 @@ where a.id = $1 and s.min_start is not null
 `
 
 // Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
-// selepas cipta — dipanggil dalam transaksi yang sama dengan setiap
+// selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 // perubahan set sesi.
 func (q *Queries) RecomputeActivityWindow(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, recomputeActivityWindow, id)
@@ -816,7 +816,7 @@ type UpdateActivityCategoryParams struct {
 	IsActive  pgtype.Bool `json:"is_active"`
 }
 
-// `key` sengaja tidak boleh diubah selepas cipta — padanan corak role.key,
+// `key` sengaja tidak boleh diubah selepas cipta - padanan corak role.key,
 // ia pengecam stabil (bukan medan paparan macam `name`).
 func (q *Queries) UpdateActivityCategory(ctx context.Context, arg UpdateActivityCategoryParams) (ActivityCategory, error) {
 	row := q.db.QueryRow(ctx, updateActivityCategory,

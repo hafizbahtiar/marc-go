@@ -32,7 +32,7 @@ func TestNormalizeMYFormatTidakSah(t *testing.T) {
 		"0123456789012", // terlalu panjang
 		"abcdefghij",
 		"03-12345678", // talian tetap, bukan mudah alih
-		"0111234567",  // "011"+7 digit (10 digit) — MESTI tolak, cabang
+		"0111234567",  // "011"+7 digit (10 digit) - MESTI tolak, cabang
 		// 011 sengaja 11 digit; kelas digit ketiga cabang biasa
 		// kecualikan '1' khusus untuk elak pertindihan ni.
 	}

@@ -1,6 +1,6 @@
 -- +goose Up
 
--- L35 — like pada KOMEN kini menghantar notifikasi kepada penulis komen
+-- L35 - like pada KOMEN kini menghantar notifikasi kepada penulis komen
 -- (keputusan produk 2026-08-22). Sebelum ni cuma like pada POST yang
 -- memberitahu; ketiadaan `comment_like` bukan keputusan yang direkod,
 -- ia jurang.
@@ -17,7 +17,7 @@ alter table notifications add constraint notifications_type_check
 
 -- +goose Down
 
--- ⚠️ Gagal kalau baris 'comment_like' sudah wujud — dijangka untuk
+-- ⚠️ Gagal kalau baris 'comment_like' sudah wujud - dijangka untuk
 -- rollback dev, padanan gelagat 20260807120100/20260810100600.
 alter table notifications drop constraint notifications_type_check;
 alter table notifications add constraint notifications_type_check

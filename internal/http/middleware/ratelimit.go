@@ -16,7 +16,7 @@ import (
 )
 
 // ipRateLimiter simpan satu token-bucket limiter per client IP. State
-// dalam memory (bukan Redis) — cukup untuk single-instance deployment;
+// dalam memory (bukan Redis) - cukup untuk single-instance deployment;
 // kalau nanti scale ke banyak instance Go, pindah ke shared store (Redis)
 // supaya had dikuatkuasakan across instance, bukan per-instance.
 type ipRateLimiter struct {
@@ -49,7 +49,7 @@ func (rl *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
 }
 
 // cleanupLoop buang entry lama-lama supaya map ni tak membesar tak
-// terhingga — setiap IP unik yang pernah hit route ni akan tinggal
+// terhingga - setiap IP unik yang pernah hit route ni akan tinggal
 // selama-lamanya kalau tak dibersih. Limiter yang tokennya dah penuh
 // semula (tak dipakai sekejap) selamat dibuang, dicipta balik bila IP
 // tu request lagi.
@@ -71,18 +71,18 @@ func (rl *ipRateLimiter) cleanupLoop() {
 // r = kadar request dibenarkan (per saat), burst = berapa banyak boleh
 // terkumpul serta-merta sebelum ditolak.
 //
-// Guna RateLimiter.Limit kalau ada Redis — had setempat jadi N kali lebih
+// Guna RateLimiter.Limit kalau ada Redis - had setempat jadi N kali lebih
 // longgar bila ada N replika.
 func RateLimit(r rate.Limit, burst int) gin.HandlerFunc {
 	return (&RateLimiter{}).Limit("", r, burst)
 }
 
-// tokenBucketScript — token bucket teragih dalam Lua.
+// tokenBucketScript - token bucket teragih dalam Lua.
 //
 // Lua (bukan INCR/EXPIRE) sebab dua sebab. Pertama, baca-kira-tulis mesti
 // atomik; dua instance yang menyemak serentak dengan MULTI biasa boleh
 // dua-dua lulus. Kedua, ia mengekalkan semantik `rate.Limiter` yang sama
-// (isi semula berterusan + burst) — kaunter tetingkap-tetap akan
+// (isi semula berterusan + burst) - kaunter tetingkap-tetap akan
 // membenarkan 2x had di sempadan tetingkap.
 const tokenBucketScript = `
 local key   = KEYS[1]
@@ -122,7 +122,7 @@ type RateLimiter struct {
 	script *redis.Script
 }
 
-// NewRateLimiter — `client` boleh nil/dimatikan; middleware yang terhasil
+// NewRateLimiter - `client` boleh nil/dimatikan; middleware yang terhasil
 // akan guna state setempat.
 func NewRateLimiter(client *redisclient.Client) *RateLimiter {
 	if client == nil || !client.Enabled() {
@@ -135,7 +135,7 @@ func NewRateLimiter(client *redisclient.Client) *RateLimiter {
 }
 
 // Limit bina middleware. `name` mengasingkan baldi antara had yang
-// berbeza — tanpa ia, login/upload/donation akan berkongsi baldi yang
+// berbeza - tanpa ia, login/upload/donation akan berkongsi baldi yang
 // SAMA dalam Redis dan saling menghabiskan kuota masing-masing. (Versi
 // setempat tak ada masalah ni sebab setiap panggilan cipta map sendiri.)
 func (rl *RateLimiter) Limit(name string, r rate.Limit, burst int) gin.HandlerFunc {
@@ -172,7 +172,7 @@ func (rl *RateLimiter) allow(
 	if err != nil {
 		// GAGAL-TERBUKA kepada had setempat, bukan gagal-tertutup.
 		// Redis yang mati tak boleh mengunci ahli keluar daripada log
-		// masuk — tapi "terbuka" di sini bermakna jatuh balik kepada
+		// masuk - tapi "terbuka" di sini bermakna jatuh balik kepada
 		// baldi per-instance, bukan membenarkan segalanya.
 		log.Printf("rate limit: redis gagal, guna had setempat: %v", err)
 		return local.getLimiter(ip).Allow()

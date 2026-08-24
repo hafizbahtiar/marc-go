@@ -53,7 +53,7 @@ const deletePaymentLogsOlderThan = `-- name: DeletePaymentLogsOlderThan :execrow
 delete from payment_logs where created_at < $1
 `
 
-// Retention 3 bulan (keputusan produk 2026-08-15) — dipanggil
+// Retention 3 bulan (keputusan produk 2026-08-15) - dipanggil
 // internal/retention, padanan pola sapuan audit_logs sedia ada.
 func (q *Queries) DeletePaymentLogsOlderThan(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, deletePaymentLogsOlderThan, createdAt)
@@ -75,7 +75,7 @@ type ListPaymentLogsByGatewayRefParams struct {
 }
 
 // Sejarah penuh satu bayaran (semua peristiwa: checkout, webhook,
-// reconcile) — untuk diagnosis satu insiden, bukan tinjauan am.
+// reconcile) - untuk diagnosis satu insiden, bukan tinjauan am.
 func (q *Queries) ListPaymentLogsByGatewayRef(ctx context.Context, arg ListPaymentLogsByGatewayRefParams) ([]PaymentLog, error) {
 	rows, err := q.db.Query(ctx, listPaymentLogsByGatewayRef, arg.Gateway, arg.GatewayRef)
 	if err != nil {
@@ -123,13 +123,13 @@ type ListRecentPaymentLogsParams struct {
 	BeforeID pgtype.Int8 `json:"before_id"`
 }
 
-// Tinjauan am terkini merentas modul — endpoint admin (GET /admin/payments).
-// `modules` — SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
-// yang KIRA senarai modul dibenarkan (bukan SQL) — donation cuma untuk
+// Tinjauan am terkini merentas modul - endpoint admin (GET /admin/payments).
+// `modules` - SENGAJA array bukan-null (bukan sqlc.narg tunggal): handler
+// yang KIRA senarai modul dibenarkan (bukan SQL) - donation cuma untuk
 // superadmin (keputusan produk 2026-08-15), jadi handler hantar
 // {registration_fee, activity_fee} untuk management biasa, atau ketiga-
 // tiga (termasuk donation) untuk superadmin, atau satu modul tunggal
-// kalau caller tapis eksplisit. Query ni buta pada perbezaan tu — ia
+// kalau caller tapis eksplisit. Query ni buta pada perbezaan tu - ia
 // cuma tapis `= any(modules)`, kawalan kebenaran 100% di Go.
 // `before_id` = keyset cursor (padanan corak ListPosts): pulangkan baris
 // id < cursor, supaya "muat lagi" stabil walau baris baharu terus masuk

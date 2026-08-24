@@ -24,9 +24,9 @@ type upsertDeviceTokenRequest struct {
 	Platform    string `json:"platform"`
 }
 
-// Upsert setara RPC `upsert_device_token` — daftar/kemas kini push
+// Upsert setara RPC `upsert_device_token` - daftar/kemas kini push
 // subscription id peranti untuk user semasa. Kalau onesignal_id ni dah
-// wujud dan kepunyaan USER LAIN, tolak (409) — elak hijack push
+// wujud dan kepunyaan USER LAIN, tolak (409) - elak hijack push
 // notification orang lain dengan cuma tahu onesignal_id mereka.
 func (h *DeviceTokenHandler) Upsert(c *gin.Context) {
 	var req upsertDeviceTokenRequest
@@ -51,7 +51,7 @@ func (h *DeviceTokenHandler) Upsert(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Delete buang device token — discope terus dalam query (id + user_id),
+// Delete buang device token - discope terus dalam query (id + user_id),
 // jadi user tak boleh padam token orang lain walaupun teka id betul.
 func (h *DeviceTokenHandler) Delete(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
@@ -71,7 +71,7 @@ func (h *DeviceTokenHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// DeleteByOnesignalID — sama macam Delete, tapi discope guna onesignal_id
+// DeleteByOnesignalID - sama macam Delete, tapi discope guna onesignal_id
 // (bukan row id Postgres). Dipakai waktu logout: Flutter tahu
 // `OneSignal.User.pushSubscription.id` terus dari SDK, tak perlu simpan/
 // query row id balik daripada POST /device-tokens (yang cuma pulang 204).

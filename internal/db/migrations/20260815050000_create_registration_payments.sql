@@ -10,7 +10,7 @@ create table registration_payments (
   created_at timestamptz not null default now()
 );
 
--- gateway_ref (ToyyibPay billcode) unik setiap gateway — webhook update
+-- gateway_ref (ToyyibPay billcode) unik setiap gateway - webhook update
 -- row guna combo ni, elak race dua webhook retry terguna row lain (sama
 -- pola `donations_gateway_gateway_ref_idx`).
 create unique index registration_payments_gateway_gateway_ref_idx on registration_payments (gateway, gateway_ref);

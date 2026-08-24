@@ -1,9 +1,9 @@
-// Package receiptmail hantar emel resit — yuran pendaftaran, yuran
-// aktiviti, ATAU donation — selepas webhook gateway sahkan bayaran
+// Package receiptmail hantar emel resit - yuran pendaftaran, yuran
+// aktiviti, ATAU donation - selepas webhook gateway sahkan bayaran
 // berjaya.
 //
 // SATU skeleton HTML + SATU fungsi `Send` dikongsi SEMUA jenis resit
-// (bukan satu templat/fungsi berasingan setiap jenis macam sebelum ni —
+// (bukan satu templat/fungsi berasingan setiap jenis macam sebelum ni -
 // `donationReceiptHTML`/`sendReceiptEmail` dalam `donations.go` dan
 // `feeReceiptHTML`/`Send` dalam package ni sendiri hampir 100% sama
 // struktur HTML, cuma teks/label berbeza). Tambah jenis resit baharu
@@ -12,16 +12,16 @@
 //
 // SENGAJA package BERASINGAN drpd `internal/receipt` (jana PDF, tiada
 // kebergantungan emel) dan drpd `internal/http/handlers` (tiga laluan
-// webhook — registration_payment.go/activity_registration_payment.go/
-// donations.go — tak perlu import satu sama lain atau salin-tampal
+// webhook - registration_payment.go/activity_registration_payment.go/
+// donations.go - tak perlu import satu sama lain atau salin-tampal
 // logik emel tiga kali). Loose coupling dua hala:
 //   - Package ni TAK TAHU langsung pasal `receipt.FeePayment`/
-//     `receipt.Donation` (struct PDF yang berbeza bentuk — cth
-//     GatewayChargeCents cuma wujud pada satu) — caller jana PDF
+//     `receipt.Donation` (struct PDF yang berbeza bentuk - cth
+//     GatewayChargeCents cuma wujud pada satu) - caller jana PDF
 //     SENDIRI (guna generator yang sesuai dgn Kind dia) dan hantar
 //     bait siap jadi (`Receipt.PDFBytes`), package ni cuma lampir +
 //     hantar.
-//   - Caller (webhook) hantar SATU struct [Receipt] — package ni tak
+//   - Caller (webhook) hantar SATU struct [Receipt] - package ni tak
 //     tahu/tak kisah ia dari pendaftaran ahli, aktiviti, atau
 //     donation; `Kind` je yang tentukan copy/label yang dipakai.
 package receiptmail
@@ -38,11 +38,11 @@ import (
 	"marc/internal/receipt"
 )
 
-// Kind — jenis resit. String (bukan iota int) supaya log mesej terus
-// boleh dibaca (`kind=activity_fee`, bukan `kind=1`) — padanan gaya
+// Kind - jenis resit. String (bukan iota int) supaya log mesej terus
+// boleh dibaca (`kind=activity_fee`, bukan `kind=1`) - padanan gaya
 // `paymentlog.Module*` (internal/paymentlog) yang guna string sama
 // corak, walaupun package ni sengaja TAK import paymentlog terus
-// (elak kebergantungan yang tak diperlukan — Kind di sini pasal
+// (elak kebergantungan yang tak diperlukan - Kind di sini pasal
 // PILIH TEMPLAT emel, bukan audit trail).
 type Kind string
 
@@ -52,7 +52,7 @@ const (
 	KindDonation        Kind = "donation"
 )
 
-// Receipt — parameter loosely-coupled untuk [Send]. Caller (webhook
+// Receipt - parameter loosely-coupled untuk [Send]. Caller (webhook
 // handler) isi struct ni drpd baris DB yang dia dah ada; package ni
 // sendiri TAK PERNAH query DB atau jana PDF, cuma render HTML + hantar
 // drpd nilai yang dihantar.
@@ -61,42 +61,42 @@ type Receipt struct {
 	To        string
 	PayerName string
 
-	// Purpose — teks penuh dipaparkan pada perenggan pengenalan emel
+	// Purpose - teks penuh dipaparkan pada perenggan pengenalan emel
 	// untuk kind FEE sahaja (cth "Yuran Pendaftaran Ahli" atau tajuk
-	// aktiviti sebenar) — DIABAIKAN untuk KindDonation (perenggan
-	// donation statik, tiada slot purpose — lihat kindConfigs).
+	// aktiviti sebenar) - DIABAIKAN untuk KindDonation (perenggan
+	// donation statik, tiada slot purpose - lihat kindConfigs).
 	Purpose string
 
 	AmountCents int64
 	Currency    string
 	GatewayRef  string
 
-	// FallbackID — dipakai `receipt.Filename` HANYA bila GatewayRef
-	// kosong (jaring keselamatan, bukan kes dijangka — [Send] dipanggil
+	// FallbackID - dipakai `receipt.Filename` HANYA bila GatewayRef
+	// kosong (jaring keselamatan, bukan kes dijangka - [Send] dipanggil
 	// lepas status 'succeeded'/'paid' sahaja). Donation
 	// hantar id baris (UUID) di sini (padanan tingkah laku asal
 	// `donations.go`); dua kind fee tinggalkan kosong (padanan asal
-	// `receiptmail.Send` — GatewayRef fee SENTIASA diisi selepas
+	// `receiptmail.Send` - GatewayRef fee SENTIASA diisi selepas
 	// status 'succeeded', jadi fallback tak pernah kena guna).
 	FallbackID string
 
 	PaidAt time.Time
 
-	// PDFBytes — caller jana PDF SENDIRI (`receipt.GenerateFeePDF` utk
-	// kind fee, `receipt.GeneratePDF` utk KindDonation — dua struct
+	// PDFBytes - caller jana PDF SENDIRI (`receipt.GenerateFeePDF` utk
+	// kind fee, `receipt.GeneratePDF` utk KindDonation - dua struct
 	// parameter tu bentuk BERBEZA, itu sebab package ni tak generate
 	// PDF sendiri) dan hantar bait siap di sini. `nil` = jana PDF gagal
-	// di caller (log di sana, bukan di sini) — emel tetap dihantar,
+	// di caller (log di sana, bukan di sini) - emel tetap dihantar,
 	// versi HTML sahaja tanpa lampiran.
 	PDFBytes []byte
 }
 
-// kindCopy — teks/label yang BERBEZA setiap Kind. Semua medan lain
+// kindCopy - teks/label yang BERBEZA setiap Kind. Semua medan lain
 // (jalur header, panel jumlah, baris ref/tarikh) DIKONGSI SATU
-// skeleton HTML (`htmlSkeleton`) — tambah Kind baharu = tambah SATU
+// skeleton HTML (`htmlSkeleton`) - tambah Kind baharu = tambah SATU
 // entri kindConfigs, tak perlu tulis HTML baharu.
 type kindCopy struct {
-	// label — digunakan DUA tempat: (1) `receipt.Filename(label, ...)`
+	// label - digunakan DUA tempat: (1) `receipt.Filename(label, ...)`
 	// bina nama fail lampiran ("Resit-{label}-MARC-{ref}.pdf"), (2)
 	// subject emel rujuk label ni scr tersirat (subject sendiri
 	// STATIK setiap kind, lihat medan `subject`).
@@ -104,19 +104,19 @@ type kindCopy struct {
 	subject string
 	tagline string
 
-	// intro — perenggan SELEPAS "Terima kasih, {nama}." — terima
+	// intro - perenggan SELEPAS "Terima kasih, {nama}." - terima
 	// (safeName, safePurpose) YANG SUDAH di-html.EscapeString, pulang
 	// HTML siap sedia utk disisip terus (fungsi, bukan templat
-	// Sprintf, sengaja — elak footgun bilangan `%s` tak padan bila
+	// Sprintf, sengaja - elak footgun bilangan `%s` tak padan bila
 	// sesetengah kind tak perlukan purpose langsung, cth donation).
 	intro func(safeName, safePurpose string) string
 
 	amountLabel string
 	footerHTML  string
 
-	// defaultPayerName — fallback bila PayerName kosong. Beza sengaja
+	// defaultPayerName - fallback bila PayerName kosong. Beza sengaja
 	// antara kind (padanan tingkah laku ASAL sebelum refactor ni):
-	// fee kata "Ahli MARC", donation kata "Penyumbang" — donation
+	// fee kata "Ahli MARC", donation kata "Penyumbang" - donation
 	// terima sumbangan anonymous (tiada akaun ahli), "Ahli MARC" utk
 	// kes tu salah konteks.
 	defaultPayerName string
@@ -138,14 +138,14 @@ const donationFooterHTML = `<p style="margin:0 0 10px;font-size:12px;color:#6B6B
             &mdash; Hafiz, pembangun MARC
           </p>`
 
-// feeIntro — perenggan sama utk KEDUA-DUA kind fee (pendaftaran dan
+// feeIntro - perenggan sama utk KEDUA-DUA kind fee (pendaftaran dan
 // aktiviti); cuma `Purpose` (activity title / "Yuran Pendaftaran
 // Ahli") yang beza antara dua panggilan, bukan copy sekeliling dia.
 func feeIntro(_, safePurpose string) string {
 	return fmt.Sprintf(`Pembayaran anda untuk <strong>%s</strong> dah disahkan berjaya.`, safePurpose)
 }
 
-// kindConfigs — SATU tempat tambah Kind baharu. `map` (bukan slice/
+// kindConfigs - SATU tempat tambah Kind baharu. `map` (bukan slice/
 // switch) supaya lookup di [Send] pulang "Kind tak dikenali" dgn jelas
 // (`ok == false`) drpd senyap jatuh ke kes lalai yang salah.
 var kindConfigs = map[Kind]kindCopy{
@@ -172,7 +172,7 @@ var kindConfigs = map[Kind]kindCopy{
 		subject: "Terima kasih kerana menyokong MARC",
 		tagline: "Resit sokongan penyelenggaraan",
 		intro: func(_, _ string) string {
-			// Perenggan STATIK — donation TIADA slot purpose (beza
+			// Perenggan STATIK - donation TIADA slot purpose (beza
 			// drpd fee) sebab ia bukan bayaran utk satu perkara
 			// spesifik, ia sokongan am kpd penyelenggaraan app.
 			return `Sokongan anda untuk MARC dah selamat diterima. Duit ni pergi
@@ -186,8 +186,8 @@ var kindConfigs = map[Kind]kindCopy{
 	},
 }
 
-// htmlSkeleton — SATU jalur/panel/susun atur dikongsi SEMUA kind.
-// Inline style sengaja (bukan `<style>`/class) — ramai email client
+// htmlSkeleton - SATU jalur/panel/susun atur dikongsi SEMUA kind.
+// Inline style sengaja (bukan `<style>`/class) - ramai email client
 // (Gmail, Outlook) buang `<style>` block atau CSS luaran. Slot (ikut
 // turutan `%s`): tagline, safeName (tajuk salam), introHTML, amountLabel,
 // amount, safeRef, tarikh, footerHTML.
@@ -229,8 +229,8 @@ const htmlSkeleton = `<!doctype html>
 </body>
 </html>`
 
-// renderHTML — `html.EscapeString` pada SEMUA nilai user-supplied yang
-// landing dlm HTML (nama, purpose, DAN ref — ref pun kini di-escape
+// renderHTML - `html.EscapeString` pada SEMUA nilai user-supplied yang
+// landing dlm HTML (nama, purpose, DAN ref - ref pun kini di-escape
 // walau ia gateway-controlled/tak pernah bawa teks penyerang serang
 // pada hari ni, sebab ia dah lalui pengesahan server-side ToyyibPay/
 // Stripe sebelum sampai sini; escape defensif konsisten dgn dua medan
@@ -247,7 +247,7 @@ func renderHTML(k kindCopy, name, purpose, amount, ref string, paidAt time.Time)
 
 // Send jana emel HTML (+ lampir PDF kalau `r.PDFBytes` bukan nil),
 // hantar. TAK PERNAH gagal secara boleh nampak kepada caller (webhook
-// mesti tetap pulang 200 ke gateway tak kira emel berjaya/gagal) —
+// mesti tetap pulang 200 ke gateway tak kira emel berjaya/gagal) -
 // kegagalan cuma di-log.
 //
 // `emailClient.SendWithAttachments` sendiri no-op senyap kalau
@@ -255,7 +255,7 @@ func renderHTML(k kindCopy, name, purpose, amount, ref string, paidAt time.Time)
 // perlu semak konfigurasi sebelum panggil [Send].
 func Send(ctx context.Context, emailClient *email.Client, r Receipt) {
 	if r.To == "" {
-		// Sepatutnya tak berlaku — caller (webhook) MESTI dah sahkan
+		// Sepatutnya tak berlaku - caller (webhook) MESTI dah sahkan
 		// profil/penerima wujud sebelum panggil Send. Jangan panic,
 		// log sahaja.
 		log.Printf("resit emel %s: tiada alamat penerima (ref=%s)", r.Kind, r.GatewayRef)
@@ -264,11 +264,11 @@ func Send(ctx context.Context, emailClient *email.Client, r Receipt) {
 
 	cfg, ok := kindConfigs[r.Kind]
 	if !ok {
-		// Sepatutnya tak berlaku — Kind cuma set oleh kod dalam repo
+		// Sepatutnya tak berlaku - Kind cuma set oleh kod dalam repo
 		// ni sendiri (bukan input luaran). Fail-loud dlm log (bukan
 		// panic) supaya Kind baharu yang terlepas tambah entri
 		// kindConfigs cepat ketara, bukan senyap hantar emel kosong.
-		log.Printf("resit emel: Kind %q tak dikenali dlm kindConfigs — emel TAK dihantar (ref=%s)", r.Kind, r.GatewayRef)
+		log.Printf("resit emel: Kind %q tak dikenali dlm kindConfigs - emel TAK dihantar (ref=%s)", r.Kind, r.GatewayRef)
 		return
 	}
 
@@ -292,20 +292,20 @@ func Send(ctx context.Context, emailClient *email.Client, r Receipt) {
 	}
 }
 
-// formatRinggit — SATU salinan dikongsi (dulu ada DUA: satu private
-// dlm donations.go, satu private dlm package ni — bersatu di sini
+// formatRinggit - SATU salinan dikongsi (dulu ada DUA: satu private
+// dlm donations.go, satu private dlm package ni - bersatu di sini
 // sebab kedua-dua caller kini funnel lalui [Send]).
 //
-// `strings.ToLower(currency)` WAJIB sebelum banding — `activities.
+// `strings.ToLower(currency)` WAJIB sebelum banding - `activities.
 // currency` default UPPERCASE ('MYR', lihat migration
 // 20260810100100_create_activities.sql), manakala `donations.currency`/
 // `registration_payments.currency` default lowercase ('myr'). Tanpa
 // lower-case dulu, banding `currency != "myr"` silap anggap "MYR"
 // (huruf besar) sbg mata wang ASING dan cetak "MYR35.00" bukan
-// "RM35.00" — emel resit yuran AKTIVITI akan papar jumlah berbeza drpd
+// "RM35.00" - emel resit yuran AKTIVITI akan papar jumlah berbeza drpd
 // lampiran PDF-nya sendiri (`receipt.formatAmount` dah betul buat
 // lower-case dulu; bug ni cuma di formatter emel). Ditemui Opus verify
-// 2026-08-24 pada versi SEBELUM refactor ni — dibaiki serentak sekali
+// 2026-08-24 pada versi SEBELUM refactor ni - dibaiki serentak sekali
 // gus bersatu jadi satu fungsi.
 func formatRinggit(cents int64, currency string) string {
 	symbol := "RM"

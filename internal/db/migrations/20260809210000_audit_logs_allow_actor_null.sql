@@ -12,7 +12,7 @@
 -- Peraturan baharu, lebih tepat dan meliputi kedua-dua kes: tiga lajur
 -- (`actor_id`, `ip_address`, `user_agent`) boleh DIKOSONGKAN kepada NULL
 -- dan tiada apa lagi. Setiap lajur lain mesti kekal sama, dan lajur yang
--- boleh dikosongkan itu tak boleh ditulis ganti dengan nilai LAIN — cuma
+-- boleh dikosongkan itu tak boleh ditulis ganti dengan nilai LAIN - cuma
 -- dibuang. Sejarah kekal tak boleh ditulis semula.
 -- +goose StatementBegin
 create or replace function audit_logs_reject_update() returns trigger as $$

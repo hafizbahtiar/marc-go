@@ -57,7 +57,7 @@ func main() {
 
 	// Redis pilihan. Sahkan kebolehcapaian semasa boot supaya salah
 	// konfigurasi muncul di sini dan bukan pada permintaan pengguna
-	// pertama — tapi JANGAN gagalkan boot: tiada apa dalam app ni yang
+	// pertama - tapi JANGAN gagalkan boot: tiada apa dalam app ni yang
 	// menyimpan kebenaran dalam Redis, jadi kehilangannya bermakna hilang
 	// penyelarasan antara instance, bukan hilang data.
 	redisCli, err := redisclient.New(cfg.RedisURL)
@@ -67,7 +67,7 @@ func main() {
 	defer redisCli.Close()
 	switch {
 	case !redisCli.Enabled():
-		log.Printf("redis: REDIS_URL kosong — ciri berkaitan guna state setempat")
+		log.Printf("redis: REDIS_URL kosong - ciri berkaitan guna state setempat")
 	default:
 		if err := redisCli.Ping(ctx); err != nil {
 			log.Printf("AMARAN redis: dikonfigur tapi tak dapat dicapai: %v", err)
@@ -79,15 +79,15 @@ func main() {
 	jwtSvc := auth.NewJWT(cfg.JWTSecret, cfg.AccessTokenTTL)
 	emailClient := email.NewClient(cfg.ResendAPIKey, cfg.EmailFrom)
 	r2Client := storage.NewR2Client(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2Bucket, cfg.R2PublicURL)
-	// R2_PUBLIC_URL tak lagi diperlukan untuk memapar gambar — SignedURL
+	// R2_PUBLIC_URL tak lagi diperlukan untuk memapar gambar - SignedURL
 	// bina URL dari endpoint S3 dan berfungsi pada bucket persendirian.
 	// Kalau ia masih diset, bucket berkemungkinan masih terdedah secara
 	// awam, yang membatalkan tujuan URL bertandatangan.
 	if r2Client.Enabled() && r2Client.HasPublicURL() {
-		log.Printf("AMARAN: R2_PUBLIC_URL masih diset — kalau Public Development URL masih hidup di Cloudflare, objek boleh diambil TANPA tandatangan dan URL bertandatangan tak melindungi apa-apa")
+		log.Printf("AMARAN: R2_PUBLIC_URL masih diset - kalau Public Development URL masih hidup di Cloudflare, objek boleh diambil TANPA tandatangan dan URL bertandatangan tak melindungi apa-apa")
 	}
 	// URL R2 yang ditandatangani dicache supaya rentetan URL kekal stabil
-	// dalam satu tetingkap — cache imej peranti dikunci ikut URL, jadi
+	// dalam satu tetingkap - cache imej peranti dikunci ikut URL, jadi
 	// menandatangani semula setiap permintaan akan memaksa muat turun
 	// semula setiap gambar. Cache Redis (bukan per-instance) supaya semua
 	// replika memulangkan URL yang sama.
@@ -98,11 +98,11 @@ func main() {
 	onesignalClient := onesignal.NewClient(cfg.OneSignalAppID, cfg.OneSignalAPIKey)
 	pushSvc := push.NewService(sqlc.New(pool), onesignalClient)
 
-	// Payment gateway registry (Stage 12) — tambah SociaBuzz sini bila
+	// Payment gateway registry (Stage 12) - tambah SociaBuzz sini bila
 	// siap, satu baris, tiada perubahan lain.
 	//
 	// "toyyibpay" kini diwiring ke RegistrationPaymentHandler (yuran
-	// pendaftaran ahli SEKALI BAYAR — lihat TODO.md bahagian Payment).
+	// pendaftaran ahli SEKALI BAYAR - lihat TODO.md bahagian Payment).
 	// Enabled() pulang false sehingga TOYYIBPAY_SECRET_KEY/
 	// TOYYIBPAY_CATEGORY_CODE diisi. callbackURL/returnURL kini route
 	// SEBENAR yang berdaftar dalam router.go (bukan placeholder /dues/...
@@ -116,12 +116,12 @@ func main() {
 			cfg.PublicBaseURL+"/registration-payments/webhook/toyyibpay",
 			cfg.PublicBaseURL+"/registration-payments/return/toyyibpay",
 		),
-		// "toyyibpay-activity" — instance KEDUA, kredential SAMA (satu
+		// "toyyibpay-activity" - instance KEDUA, kredential SAMA (satu
 		// akaun ToyyibPay), tapi callbackURL/returnURL berbeza (dibakar
 		// tetap semasa dibina, lihat komennya di internal/http/router.go
 		// atas laluan /activity-registrations/...). Wired ke
 		// ActivityRegistrationPaymentHandler (yuran aktiviti berbayar,
-		// activities.fee_cents) — BUKAN "toyyibpay" (yuran pendaftaran
+		// activities.fee_cents) - BUKAN "toyyibpay" (yuran pendaftaran
 		// ahli sekali bayar).
 		"toyyibpay-activity": payment.NewToyyibPayGateway(
 			cfg.ToyyibPayBaseURL,
@@ -132,11 +132,11 @@ func main() {
 		),
 	}
 
-	// Pembersih storan (Stage 10 lanjutan) — gambar post yang dipadam dan
+	// Pembersih storan (Stage 10 lanjutan) - gambar post yang dipadam dan
 	// karangan post yang ditinggalkan sebelum ni kekal dalam R2 selamanya.
 	reaper.New(sqlc.New(pool), r2Client, 15*time.Minute).Start(ctx)
 
-	// Polisi simpanan — jalan sekali sehari (lihat internal/retention).
+	// Polisi simpanan - jalan sekali sehari (lihat internal/retention).
 	retention.New(sqlc.New(pool), retention.Policy{
 		AuditPII:        cfg.AuditPIIRetention,
 		AuditRecord:     cfg.AuditRecordRetention,
@@ -144,13 +144,13 @@ func main() {
 		PaymentLog:      cfg.PaymentLogRetention,
 	}, 24*time.Hour).Start(ctx)
 
-	// Sapuan pendaftaran aktiviti berbayar yang ditinggalkan — bebaskan
+	// Sapuan pendaftaran aktiviti berbayar yang ditinggalkan - bebaskan
 	// slot kapasiti yang tersilap dipegang (lihat internal/activitysweep).
 	// Kadar sama dengan reaper (15 minit); umur lapuk (45 minit) dikawal
 	// dalam package itu sendiri.
 	activitysweep.New(sqlc.New(pool), 15*time.Minute).Start(ctx)
 
-	// Sapuan yuran pendaftaran 'pending' lapuk — tandakan 'failed' supaya
+	// Sapuan yuran pendaftaran 'pending' lapuk - tandakan 'failed' supaya
 	// gate bypass admin tak tersekat (padan billExpiryDate 30 min default).
 	registrationsweep.New(
 		sqlc.New(pool),
@@ -160,12 +160,12 @@ func main() {
 	).Start(ctx)
 
 	// Peringatan H-1 + auto-complete aktiviti tamat (lihat
-	// internal/activitylifecycle). 1 jam — cukup halus utk tetingkap H-1
+	// internal/activitylifecycle). 1 jam - cukup halus utk tetingkap H-1
 	// (~24 jam) tanpa kerap macam sapuan kapasiti/storan.
 	activitylifecycle.New(sqlc.New(pool), pushSvc, time.Hour).Start(ctx)
 
 	// Reconcile bayaran 'pending' lapuk terus pada gateway merentas
-	// ketiga-tiga modul (lihat internal/paymentreconcile) — 30 minit
+	// ketiga-tiga modul (lihat internal/paymentreconcile) - 30 minit
 	// dipilih sebagai kadar sapuan latar: cukup kerap untuk tangkap
 	// webhook yang gagal senyap dalam masa munasabah, tapi tak terlalu
 	// kerap sampai membebankan API gateway untuk bayaran yang MEMANG
@@ -215,24 +215,24 @@ func main() {
 		// dihoskan handler, bukan sekadar "nilai yang nampak selamat"
 		// (Opus verify 2026-08-22, L31). Pada 15s ia lebih PENDEK drpd
 		// dua muat naik R2 sisi-pelayan yang ada had 30s masing-masing
-		// (PDF sijil, PDF resit) — dan penerbitan sijil menjalankan muat
+		// (PDF sijil, PDF resit) - dan penerbitan sijil menjalankan muat
 		// naik itu BERJUJUKAN untuk setiap penerima, jadi aktiviti
 		// 50-200 orang dijamin putus sambungan.
 		//
 		// Go TIDAK membatalkan Request.Context() atas write deadline
 		// (ia cuma menetapkan deadline pada ResponseWriter), jadi
-		// handler tetap habis dan datanya betul — cuma RESPONSnya yang
+		// handler tetap habis dan datanya betul - cuma RESPONSnya yang
 		// hilang. Pengurus nampak "gagal" pada operasi yang sebenarnya
 		// berjaya, tanpa cara membezakannya daripada kegagalan sebenar.
 		//
 		// Webhook ToyyibPay pula duduk tepat di tepi: VerifyWebhook buat
 		// poll keluar 15s (httpClient.Timeout) SEBELUM kerja DB, jadi
-		// jumlahnya melebihi 15s sebaik ToyyibPay perlahan — dan
+		// jumlahnya melebihi 15s sebaik ToyyibPay perlahan - dan
 		// ToyyibPay retry atas sambungan putus.
 		//
 		// 90s dipilih: cukup untuk penerbitan sijil bersaiz sebenar,
 		// masih jauh drpd "tiada had". Ini timeout GLOBAL, jadi ia turut
-		// melonggarkan perlindungan pada route lain — diterima kerana
+		// melonggarkan perlindungan pada route lain - diterima kerana
 		// MaxBodySize (1MB) dan had kadar menangani vektor kehabisan
 		// sumber yang berbeza. Pembaikan sebenar ialah jadikan fasa 2
 		// sijil kerja latar + pulang 202; sehingga itu, ini.

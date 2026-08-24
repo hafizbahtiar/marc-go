@@ -4,7 +4,7 @@ where is_active = true
 order by sort_order, name;
 
 -- name: ListAllActivityCategories :many
--- Untuk skrin pengurusan CRUD kategori (manager ke atas) — TERMASUK yang
+-- Untuk skrin pengurusan CRUD kategori (manager ke atas) - TERMASUK yang
 -- tidak aktif, supaya boleh diaktifkan semula. Borang cipta aktiviti guna
 -- ListActivityCategories (aktif sahaja) di atas.
 select * from activity_categories
@@ -19,7 +19,7 @@ values ($1, $2, $3)
 returning *;
 
 -- name: UpdateActivityCategory :one
--- `key` sengaja tidak boleh diubah selepas cipta — padanan corak role.key,
+-- `key` sengaja tidak boleh diubah selepas cipta - padanan corak role.key,
 -- ia pengecam stabil (bukan medan paparan macam `name`).
 update activity_categories
 set
@@ -45,7 +45,7 @@ where a.id = $1 and a.deleted_at is null;
 
 -- name: CompleteEndedActivities :many
 -- Peralihan status automatik 'published' -> 'completed' bila aktiviti
--- dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) —
+-- dah tamat sepenuhnya (`ends_at` ternormal, max(session.ends_at)) -
 -- sapuan berjadual (internal/activitylifecycle). Guard `status =
 -- 'published'` buat kemas kini idempoten merentas replika, padanan
 -- gaya `CancelStaleUnstartedPayments` (activitysweep).
@@ -56,7 +56,7 @@ returning *;
 
 -- name: ListActivitiesNeedingReminder :many
 -- Aktiviti akan bermula dlm ~24 jam (H-1) yang belum pernah dihantar
--- peringatan — sapuan berjadual (internal/activitylifecycle). Guard
+-- peringatan - sapuan berjadual (internal/activitylifecycle). Guard
 -- `reminder_sent_at is null` buat kemas kini idempoten merentas
 -- replika. `starts_at > now()` elak hantar peringatan utk aktiviti yang
 -- dah bermula (cth aktiviti baharu diterbitkan lepas tetingkap H-1
@@ -66,14 +66,14 @@ where status = 'published' and reminder_sent_at is null
   and starts_at > now() and starts_at <= now() + interval '24 hours';
 
 -- name: MarkActivityReminderSent :execrows
--- Guard `reminder_sent_at is null` — dua replika yang baca baris SAMA
+-- Guard `reminder_sent_at is null` - dua replika yang baca baris SAMA
 -- dlm ListActivitiesNeedingReminder serentak, cuma SATU yang berjaya
 -- UPDATE (baris kedua affect 0 rows), elak hantar push berganda.
 update activities set reminder_sent_at = now()
 where id = $1 and reminder_sent_at is null;
 
 -- name: ListActivities :many
--- Keyset pagination atas (starts_at, id) — sama corak dengan ListPosts,
+-- Keyset pagination atas (starts_at, id) - sama corak dengan ListPosts,
 -- elak baris terlepas bila dua aktiviti berkongsi timestamp tepat.
 -- upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir
 -- dahulu). upcoming=false → yang dah tamat, isih menurun.
@@ -128,7 +128,7 @@ where id = $1;
 
 -- name: RecomputeActivityWindow :exec
 -- Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
--- selepas cipta — dipanggil dalam transaksi yang sama dengan setiap
+-- selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 -- perubahan set sesi.
 update activities a set
   starts_at = s.min_start,

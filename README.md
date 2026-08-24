@@ -10,22 +10,22 @@ Client Flutter: repo `marc_flutter` (sibling).
 
 ## Tech stack
 
-- **Go 1.26** + **Gin** — HTTP framework
-- **Postgres** — dev lokal (Homebrew), prod di Railway
-- **goose** — migration (single-file `Up`/`Down`, embedded + auto-run on startup)
-- **sqlc** — generate Go type-safe daripada raw SQL (`queries/*.sql` → `internal/db/sqlc`)
-- **pgx/v5** — Postgres driver
-- **JWT (access) + opaque token (refresh, rotated)** — auth custom
-- **Cloudflare R2** — storan gambar + PDF (upload presigned terus dari client;
+- **Go 1.26** + **Gin** - HTTP framework
+- **Postgres** - dev lokal (Homebrew), prod di Railway
+- **goose** - migration (single-file `Up`/`Down`, embedded + auto-run on startup)
+- **sqlc** - generate Go type-safe daripada raw SQL (`queries/*.sql` → `internal/db/sqlc`)
+- **pgx/v5** - Postgres driver
+- **JWT (access) + opaque token (refresh, rotated)** - auth custom
+- **Cloudflare R2** - storan gambar + PDF (upload presigned terus dari client;
   PDF dijana server ditolak terus)
-- **Redis** — *pilihan*: had kadar teragih + kestabilan URL R2 antara replika.
+- **Redis** - *pilihan*: had kadar teragih + kestabilan URL R2 antara replika.
   Kosong = jatuh balik per-instance, bukan gagal
-- **Stripe** — derma (kad + FPX) melalui interface `payment.Gateway`
-- **ToyyibPay** — yuran pendaftaran ahli + yuran aktiviti (dua instance,
+- **Stripe** - derma (kad + FPX) melalui interface `payment.Gateway`
+- **ToyyibPay** - yuran pendaftaran ahli + yuran aktiviti (dua instance,
   kredential sama, callback berbeza)
-- **go-pdf/fpdf** + **skip2/go-qrcode** — PDF resit & sijil, QR pengesahan
-- **Resend** — emel pengesahan + resit derma (dengan lampiran PDF)
-- **OneSignal** — push notification
+- **go-pdf/fpdf** + **skip2/go-qrcode** - PDF resit & sijil, QR pengesahan
+- **Resend** - emel pengesahan + resit derma (dengan lampiran PDF)
+- **OneSignal** - push notification
 
 ## Kerja latar
 
@@ -45,17 +45,17 @@ Butiran reka bentuk: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 ## Quickstart (dev)
 
 ```bash
-# 1. Postgres lokal — sekali sahaja
+# 1. Postgres lokal - sekali sahaja
 brew services start postgresql@18
 createdb marc
 
 # 2. .env
 cp .env.example .env
 # WAJIB: DATABASE_URL, JWT_SECRET (openssl rand -base64 48)
-# Selebihnya optional — no-op senyap kalau kosong (R2, Stripe, Resend,
+# Selebihnya optional - no-op senyap kalau kosong (R2, Stripe, Resend,
 # OneSignal). App tetap boot; ciri berkenaan pulang 503 yang jelas.
 
-# 3. Run — migration auto-apply on startup
+# 3. Run - migration auto-apply on startup
 go run ./cmd/api
 ```
 
@@ -73,28 +73,28 @@ Lapisan akses bertingkat: **auth** → **approved** (status diluluskan) →
 
 | Method | Path | Akses | Nota |
 |---|---|---|---|
-| POST | `/auth/register` | — | cipta user + profile (member_id auto), issue token pair |
-| POST | `/auth/login` | — | rate limit 5/min per IP |
-| POST | `/auth/refresh` | — | rotate refresh token (single-use, atomic) |
-| POST | `/auth/logout` | — | revoke satu refresh token |
+| POST | `/auth/register` | - | cipta user + profile (member_id auto), issue token pair |
+| POST | `/auth/login` | - | rate limit 5/min per IP |
+| POST | `/auth/refresh` | - | rotate refresh token (single-use, atomic) |
+| POST | `/auth/logout` | - | revoke satu refresh token |
 | POST | `/auth/logout-all` | ✓ | revoke semua sesi |
-| POST | `/auth/password-reset/request` | — | sentiasa 204 (tiada enumerasi); 503 kalau `PASSWORD_RESET_URL` kosong |
-| POST | `/auth/password-reset/confirm` | — | dari halaman Astro; tukar kata laluan + batal SEMUA sesi |
+| POST | `/auth/password-reset/request` | - | sentiasa 204 (tiada enumerasi); 503 kalau `PASSWORD_RESET_URL` kosong |
+| POST | `/auth/password-reset/confirm` | - | dari halaman Astro; tukar kata laluan + batal SEMUA sesi |
 | POST | `/auth/verify-email/request` | ✓ | hantar emel pengesahan |
-| POST | `/auth/verify-email/confirm` | — | confirm via JSON (dari app) |
-| GET | `/auth/verify-email/confirm?token=` | — | confirm via klik link (render HTML) |
+| POST | `/auth/verify-email/confirm` | - | confirm via JSON (dari app) |
+| GET | `/auth/verify-email/confirm?token=` | - | confirm via klik link (render HTML) |
 
 ### Profil & ahli
 
 | Method | Path | Akses | Nota |
 |---|---|---|---|
-| GET | `/me` | ✓ | sengaja TIDAK perlu approved — user pending kena boleh baca status sendiri; bawa `telegram_linked`/`telegram_username` |
+| GET | `/me` | ✓ | sengaja TIDAK perlu approved - user pending kena boleh baca status sendiri; bawa `telegram_linked`/`telegram_username` |
 | PATCH | `/me` | ✓ | display_name / phone |
 | POST | `/me/telegram-link/token` | ✓ | jana deep-link binding Telegram; 503 kalau `TELEGRAM_BOT_TOKEN` kosong |
 | DELETE | `/me/telegram-link` | ✓ | nyahikat akaun Telegram; idempoten |
-| POST | `/webhooks/telegram` | — | dipanggil Telegram sahaja; route tak berdaftar bila ciri dimatikan |
+| POST | `/webhooks/telegram` | - | dipanggil Telegram sahaja; route tak berdaftar bila ciri dimatikan |
 | GET | `/members` | approved | keterlihatan ikut `roles.rank`; emel ahli lain management sahaja |
-| GET | `/members?status=pending` | approved | barisan kelulusan — management sahaja |
+| GET | `/members?status=pending` | approved | barisan kelulusan - management sahaja |
 | POST | `/members/:id/approve` | approved | management; diaudit |
 | POST | `/members/:id/reject` | approved | management; diaudit + revoke sesi target |
 | PATCH | `/members/:id/role` | approved | hierarki rank; diaudit |
@@ -164,11 +164,11 @@ dibuat **dalam handler**, bukan pada grup route.
 
 ### Bayaran
 
-Tiga modul **berasingan** — jangan keliru. Butiran: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+Tiga modul **berasingan** - jangan keliru. Butiran: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 | Method | Path | Akses | Nota |
 |---|---|---|---|
-| POST | `/donations/checkout` | **awam** | OptionalAuth — guest boleh derma (emel wajib) |
+| POST | `/donations/checkout` | **awam** | OptionalAuth - guest boleh derma (emel wajib) |
 | POST | `/webhooks/:gateway` | **awam** | verify tandatangan; `:gateway` = `stripe` |
 | POST | `/registration-payments/checkout` | ✓ | yuran ahli SEKALI bayar; `protected` supaya ahli `pending` boleh bayar |
 | POST | `/registration-payments/webhook/toyyibpay` | **awam** | ambil `billcode`, sahkan via poll `getBillTransactions` |
@@ -176,12 +176,12 @@ Tiga modul **berasingan** — jangan keliru. Butiran: [`ARCHITECTURE.md`](./ARCH
 | POST | `/activities/:id/registration/checkout` | verified | yuran AKTIVITI; mesti dah berdaftar dahulu |
 | POST | `/activity-registrations/webhook/toyyibpay` | **awam** | instance gateway KEDUA (callback berbeza) |
 | GET | `/activity-registrations/return/toyyibpay` | **awam** | |
-| GET | `/me/payments` | ✓ | sejarah sendiri — yuran pendaftaran + yuran aktiviti + derma (derma tanpa nama dikecualikan) |
+| GET | `/me/payments` | ✓ | sejarah sendiri - yuran pendaftaran + yuran aktiviti + derma (derma tanpa nama dikecualikan) |
 | GET | `/me/payments/registration/:id/receipt` | ✓ | jana PDF + pulang URL bertandatangan |
 | GET | `/me/payments/activity/:id/receipt` | ✓ | `:id` = id **pendaftaran**, bukan id aktiviti |
 | GET | `/me/payments/donation/:id/receipt` | ✓ | |
 
-Route checkout melalui `BlockTesterWrites` — akaun `tester` (review Google
+Route checkout melalui `BlockTesterWrites` - akaun `tester` (review Google
 Play/App Store) berkelakuan macam ahli biasa untuk SEMUA tindakan lain,
 cuma bayaran sebenar yang disekat.
 
@@ -204,26 +204,26 @@ go test ./...
 golangci-lint run
 ```
 
-Ujian lawan infra sebenar (R2, Postgres) di-skip secara lalai — lihat
+Ujian lawan infra sebenar (R2, Postgres) di-skip secara lalai - lihat
 [`TODO.md`](./TODO.md) untuk cara jalankannya.
 
 CI menjalankan perkhidmatan **Postgres 18 + Redis 8** sebenar, jadi ujian
-bersandar-DB benar-benar berjalan pada setiap PR — **202 PASS / 9 SKIP**,
+bersandar-DB benar-benar berjalan pada setiap PR - **202 PASS / 9 SKIP**,
 dan kesembilan-sembilan SKIP itu ujian R2 (perlukan kredential Cloudflare).
 `-race` dihidupkan.
 
 Satu langkah **tripwire** menggagalkan job kalau mana-mana ujian melapor
-SKIP atas sebab env var DB hilang — supaya menamakan semula satu env var
+SKIP atas sebab env var DB hilang - supaya menamakan semula satu env var
 tak boleh senyap mengembalikan CI kepada keadaan lama (dulu: 89 PASS /
 122 SKIP).
 
-Setempat, ujian bersandar-DB dilangkau melainkan env var diset — arahan
+Setempat, ujian bersandar-DB dilangkau melainkan env var diset - arahan
 penuh dalam [`TODO.md`](./TODO.md) bahagian Ujian.
 
 ## Deployment
 
 Railway (projek `marc`, environment `staging` live). `config.Load()` baca
-`DATABASE_URL` terus daripada Postgres plugin Railway — tiada perubahan kod
+`DATABASE_URL` terus daripada Postgres plugin Railway - tiada perubahan kod
 antara dev/staging/prod. Migration auto-apply on boot.
 
 ```bash
