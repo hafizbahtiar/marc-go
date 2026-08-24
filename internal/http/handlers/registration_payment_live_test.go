@@ -80,7 +80,7 @@ func checkoutCall(t *testing.T, pool *pgxpool.Pool, gw payment.Gateway, userID u
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("userID", userID)
 
-	NewRegistrationPaymentHandler(pool, gw, 1000, 100, email.NewClient("", "")).Checkout(c)
+	NewRegistrationPaymentHandler(pool, gw, 1000, 100, 30, email.NewClient("", "")).Checkout(c)
 	return rec
 }
 

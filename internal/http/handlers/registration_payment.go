@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,21 +30,23 @@ import (
 // DonationHandler), walaupun buat masa ni cuma SATU gateway berdaftar
 // ("toyyibpay") — swap/tambah gateway lain kelak tak sentuh handler ni.
 type RegistrationPaymentHandler struct {
-	gw                 payment.Gateway
-	queries            *sqlc.Queries
-	pool               *pgxpool.Pool
-	feeCents           int64
-	gatewayChargeCents int64
-	emailClient        *email.Client
+	gw                    payment.Gateway
+	queries               *sqlc.Queries
+	pool                  *pgxpool.Pool
+	feeCents              int64
+	gatewayChargeCents    int64
+	billExpiryMinutes     int
+	emailClient           *email.Client
 }
 
-func NewRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, feeCents, gatewayChargeCents int, emailClient *email.Client) *RegistrationPaymentHandler {
+func NewRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, feeCents, gatewayChargeCents, billExpiryMinutes int, emailClient *email.Client) *RegistrationPaymentHandler {
 	return &RegistrationPaymentHandler{
 		gw:                 gw,
 		queries:            sqlc.New(pool),
 		pool:               pool,
 		feeCents:           int64(feeCents),
 		gatewayChargeCents: int64(gatewayChargeCents),
+		billExpiryMinutes:  billExpiryMinutes,
 		emailClient:        emailClient,
 	}
 }
@@ -180,11 +183,12 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	}
 
 	metadata := map[string]string{
-		"description": "Yuran pendaftaran ahli MARC",
-		"reference":   profile.MemberID,
-		"billTo":      billTo,
-		"billEmail":   profile.Email,
-		"billPhone":   billPhone,
+		"description":         "Yuran pendaftaran ahli MARC",
+		"reference":           profile.MemberID,
+		"billTo":              billTo,
+		"billEmail":           profile.Email,
+		"billPhone":           billPhone,
+		"billExpiryMinutes":   strconv.Itoa(h.billExpiryMinutes),
 	}
 
 	// ---- L29: BARIS DB DAHULU, BIL GATEWAY KEMUDIAN ----

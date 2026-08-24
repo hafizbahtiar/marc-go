@@ -20,25 +20,29 @@ import (
 	"marc/internal/db/sqlc"
 	"marc/internal/email"
 	"marc/internal/http/middleware"
+	"marc/internal/payment"
+	"marc/internal/paymentlog"
 	"marc/internal/phone"
 	"marc/internal/storage"
 )
 
 type ProfileHandler struct {
-	pool        *pgxpool.Pool
-	queries     *sqlc.Queries
-	emailClient *email.Client
-	r2          *storage.R2Client
-	feeCents    int64
+	pool           *pgxpool.Pool
+	queries        *sqlc.Queries
+	emailClient    *email.Client
+	r2             *storage.R2Client
+	feeCents       int64
+	regPaymentGW   payment.Gateway
 }
 
-func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client, registrationFeeCents int) *ProfileHandler {
+func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client, registrationFeeCents int, regPaymentGW payment.Gateway) *ProfileHandler {
 	return &ProfileHandler{
-		pool:        pool,
-		queries:     sqlc.New(pool),
-		emailClient: emailClient,
-		r2:          r2,
-		feeCents:    int64(registrationFeeCents),
+		pool:         pool,
+		queries:      sqlc.New(pool),
+		emailClient:  emailClient,
+		r2:           r2,
+		feeCents:     int64(registrationFeeCents),
+		regPaymentGW: regPaymentGW,
 	}
 }
 
@@ -798,7 +802,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 			// tandakan 'succeeded', jadi terima 2 pengesahan bayaran
 			// (tunai + bil online lama) tanpa refund path. Blok sehingga
 			// baris lama diselesaikan (webhook/pautan manual) atau tamat
-			// tempoh (paymentreconcile).
+			// tempoh (registrationsweep + billExpiryDate ToyyibPay).
 			hasPendingBill, err := h.queries.HasPendingRegistrationPayment(ctx, targetID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
@@ -850,7 +854,11 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 
 	// Kelulusan keahlian ialah keputusan pentadbiran — siapa yang benarkan
 	// (atau halang) seseorang masuk mesti dapat dijawab kemudian.
-	newAuditFields := map[string]any{"status": updated.Status}
+	actor := auditActor(c, q)
+	newAuditFields := mergeAuditFields(
+		map[string]any{"status": updated.Status},
+		actorAuditFields(actor),
+	)
 	if status == "approved" && req.BypassPayment {
 		// Ahli ni approved TANPA baris 'succeeded' dalam
 		// registration_payments — nota+aktor di sini ialah SATU-SATUNYA
@@ -862,7 +870,7 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 		EntityType: audit.EntityProfile,
 		EntityID:   targetID,
 		Action:     audit.ActionUpdate,
-		Actor:      auditActor(c, q),
+		Actor:      actor,
 		Old:        map[string]any{"status": target.Status},
 		New:        newAuditFields,
 	}); err != nil {
@@ -917,6 +925,146 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 		Status:     updated.Status,
 		ApprovedBy: nullableUUIDString(updated.ApprovedBy),
 		ApprovedAt: formatTimeNullable(updated.ApprovedAt),
+	})
+}
+
+// CancelMemberRegistrationPayment — POST /members/:id/cancel-registration-payment.
+// Admin/superadmin batalkan bil yuran pendaftaran 'pending' ahli supaya
+// laluan langkau bayaran boleh digunakan (ahli lama migrasi manual).
+// Semak gateway DULU — kalau dah bayar, tolak; kalau masih pending,
+// tandakan 'failed' + audit.
+func (h *ProfileHandler) CancelMemberRegistrationPayment(c *gin.Context) {
+	targetID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	isAdminUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "admin")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+		return
+	}
+	if !isAdminUp {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma admin/superadmin boleh batalkan bil pendaftaran"})
+		return
+	}
+
+	if targetID == callerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak boleh laksanakan tindakan ini pada akaun sendiri"})
+		return
+	}
+
+	if _, err := h.queries.GetProfileByUserID(ctx, targetID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+
+	pending, err := h.queries.GetLatestPendingRegistrationPayment(ctx, targetID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tiada bil pendaftaran pending untuk ahli ini"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+		return
+	}
+
+	if pending.GatewayRef.Valid && pending.GatewayRef.String != "" && h.regPaymentGW != nil && h.regPaymentGW.Enabled() {
+		status, err := h.regPaymentGW.CheckStatus(ctx, pending.GatewayRef.String)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "gagal semak status bil di gateway"})
+			return
+		}
+		switch status {
+		case "succeeded":
+			if _, uerr := h.queries.UpdateRegistrationPaymentStatusByGatewayRef(ctx, sqlc.UpdateRegistrationPaymentStatusByGatewayRefParams{
+				Gateway: pending.Gateway, GatewayRef: pending.GatewayRef, Status: "succeeded",
+			}); uerr != nil && !errors.Is(uerr, pgx.ErrNoRows) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+				return
+			}
+			c.JSON(http.StatusConflict, gin.H{"error": "ahli sudah bayar yuran pendaftaran — luluskan tanpa langkau bayaran"})
+			return
+		case "failed":
+			if _, uerr := h.queries.UpdateRegistrationPaymentStatusByGatewayRef(ctx, sqlc.UpdateRegistrationPaymentStatusByGatewayRefParams{
+				Gateway: pending.Gateway, GatewayRef: pending.GatewayRef, Status: "failed",
+			}); uerr != nil && !errors.Is(uerr, pgx.ErrNoRows) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+				return
+			}
+			if err := h.recordCancelRegistrationPaymentAudit(c, targetID, pending); err != nil {
+				log.Printf("audit batalkan bil pendaftaran: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "failed", "payment_id": pending.ID.String()})
+			return
+		}
+	} else if !pending.GatewayRef.Valid || pending.GatewayRef.String == "" {
+		if err := h.queries.MarkRegistrationPaymentFailed(ctx, pending.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+			return
+		}
+		if err := h.recordCancelRegistrationPaymentAudit(c, targetID, pending); err != nil {
+			log.Printf("audit batalkan bil pendaftaran: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "failed", "payment_id": pending.ID.String()})
+		return
+	}
+
+	expired, err := h.queries.ExpireRegistrationPayment(ctx, pending.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusConflict, gin.H{"error": "bil pendaftaran sudah tidak pending"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+		return
+	}
+
+	if err := h.recordCancelRegistrationPaymentAudit(c, targetID, pending); err != nil {
+		log.Printf("audit batalkan bil pendaftaran: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal batalkan bil pendaftaran"})
+		return
+	}
+
+	amount := int64(expired.AmountCents)
+	paymentlog.Record(ctx, h.queries, paymentlog.Entry{
+		Module: paymentlog.ModuleRegistrationFee, Event: paymentlog.EventReconcileCheck,
+		Status: "failed", Gateway: expired.Gateway,
+		GatewayRef: expired.GatewayRef.String, AmountCents: &amount,
+		UserID: &targetID, RelatedID: &expired.ID,
+		Message: "admin batalkan bil pending",
+	})
+
+	c.JSON(http.StatusOK, gin.H{"status": "failed", "payment_id": expired.ID.String()})
+}
+
+// recordCancelRegistrationPaymentAudit — jejak siapa batalkan bil pending
+// ahli mana (entity_id = user ahli; actor = admin/superadmin snapshot).
+func (h *ProfileHandler) recordCancelRegistrationPaymentAudit(c *gin.Context, targetID uuid.UUID, pending sqlc.RegistrationPayment) error {
+	old := map[string]any{"registration_payment_status": "pending"}
+	if pending.GatewayRef.Valid && pending.GatewayRef.String != "" {
+		old["gateway_ref"] = pending.GatewayRef.String
+	}
+	actor := auditActor(c, h.queries)
+	return audit.Record(c.Request.Context(), h.queries, audit.Entry{
+		EntityType: audit.EntityProfile,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      actor,
+		Old:        old,
+		New: mergeAuditFields(map[string]any{
+			"registration_payment_status": "failed",
+			"cancelled_by_admin":            true,
+			"payment_id":                    pending.ID.String(),
+		}, actorAuditFields(actor)),
 	})
 }
 
