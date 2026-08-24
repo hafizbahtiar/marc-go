@@ -194,7 +194,7 @@ func main() {
 		}
 	}
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, redisCli, paymentReconciler, cfg.CORSAllowedOrigins, cfg.RegistrationPaymentReturnURL, cfg.ActivityPaymentReturnURL, cfg.CertificateVerifyURL, cfg.PasswordResetURL, telegramHandler, tgBot)
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, cfg.GatewayChargeCents, redisCli, paymentReconciler, cfg.CORSAllowedOrigins, cfg.RegistrationPaymentReturnURL, cfg.ActivityPaymentReturnURL, cfg.CertificateVerifyURL, cfg.PasswordResetURL, telegramHandler, tgBot)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -82,12 +82,24 @@ func seedSucceededRegistrationPayment(t *testing.T, ctx context.Context, pool *p
 
 func callSetStatus(t *testing.T, pool *pgxpool.Pool, callerID, targetID uuid.UUID, action string) *httptest.ResponseRecorder {
 	t.Helper()
+	return callSetStatusWithBody(t, pool, callerID, targetID, action, "")
+}
+
+func callSetStatusWithBody(t *testing.T, pool *pgxpool.Pool, callerID, targetID uuid.UUID, action, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	h := &ProfileHandler{pool: pool, queries: sqlc.New(pool), emailClient: email.NewClient("", "")}
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/members/"+targetID.String()+"/"+action, nil)
+	var bodyReader *strings.Reader
+	if body == "" {
+		bodyReader = strings.NewReader("")
+	} else {
+		bodyReader = strings.NewReader(body)
+	}
+	c.Request = httptest.NewRequest(http.MethodPost, "/members/"+targetID.String()+"/"+action, bodyReader)
+	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: targetID.String()}}
 	c.Set("userID", callerID)
 
@@ -171,6 +183,209 @@ func TestApproveBerulangTidakCiptaCatatanKedua(t *testing.T) {
 
 	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 1 {
 		t.Fatalf("mahu kekal 1 catatan, dapat %d", len(logs))
+	}
+}
+
+// Gate bayaran sedia ada mesti kekal berkuat kuasa bila bypass_payment
+// TIDAK dihantar — ahli belum bayar tak boleh diluluskan.
+func TestApproveTanpaBayaranDitolak(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	manager := seedMember(t, ctx, pool, "manager", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+
+	rec := callSetStatus(t, pool, manager, target, "approve")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, mahu 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
+		t.Fatalf("gate ditolak tapi menulis %d catatan audit", len(logs))
+	}
+}
+
+// Supervisor/manager (rank < admin) TAK boleh langkau bayaran walaupun
+// mereka management — bypass mesti terhad kepada admin/superadmin sahaja.
+func TestApproveBypassPaymentDitolakUntukManager(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	manager := seedMember(t, ctx, pool, "manager", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+
+	rec := callSetStatusWithBody(t, pool, manager, target, "approve",
+		`{"bypass_payment":true,"bypass_reason":"dah bayar tunai"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, mahu 403 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
+		t.Fatalf("bypass ditolak tapi menulis %d catatan audit", len(logs))
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx, `select status from profiles where user_id = $1`, target).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" {
+		t.Errorf("status berubah kepada %q walaupun bypass ditolak", status)
+	}
+}
+
+// Admin/superadmin cuba bypass tanpa nota mesti ditolak — nota wajib
+// untuk jejak audit ahli lama->digital.
+func TestApproveBypassPaymentPerluNota(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	admin := seedMember(t, ctx, pool, "admin", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+
+	rec := callSetStatusWithBody(t, pool, admin, target, "approve", `{"bypass_payment":true}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, mahu 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
+		t.Fatalf("bypass tanpa nota ditolak tapi menulis %d catatan audit", len(logs))
+	}
+}
+
+// Laluan penuh berjaya: admin bypass ahli yang belum bayar, dengan nota.
+// Audit mesti rekod payment_bypassed + bypass_reason.
+func TestApproveBypassPaymentBerjayaUntukAdmin(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	admin := seedMember(t, ctx, pool, "admin", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+
+	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
+		`{"bypass_payment":true,"bypass_reason":"ahli lama, dah bayar tunai sebelum sistem digital"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, mahu 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	logs := auditRowsFor(t, ctx, pool, target)
+	if len(logs) != 1 {
+		t.Fatalf("mahu 1 catatan audit, dapat %d", len(logs))
+	}
+	newVals := logs[0]["new"].(map[string]any)
+	if newVals["status"] != "approved" {
+		t.Errorf("status = %v, mahu approved", newVals["status"])
+	}
+	if newVals["payment_bypassed"] != true {
+		t.Errorf("payment_bypassed = %v, mahu true", newVals["payment_bypassed"])
+	}
+	if newVals["bypass_reason"] != "ahli lama, dah bayar tunai sebelum sistem digital" {
+		t.Errorf("bypass_reason = %v, tak dirakam betul", newVals["bypass_reason"])
+	}
+}
+
+// Ahli yang DAH bayar (baris 'succeeded' wujud) tak patut direkod sebagai
+// "payment_bypassed" walaupun admin hantar bypass_payment=true — bypass
+// tak relevan bila bayaran sebenar dah berjaya (Opus verify LOW#1).
+func TestApproveBypassPaymentDiabaikanBilaSudahBayar(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	admin := seedMember(t, ctx, pool, "admin", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+	seedSucceededRegistrationPayment(t, ctx, pool, target)
+
+	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
+		`{"bypass_payment":true,"bypass_reason":"patut diabaikan"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, mahu 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	logs := auditRowsFor(t, ctx, pool, target)
+	if len(logs) != 1 {
+		t.Fatalf("mahu 1 catatan audit, dapat %d", len(logs))
+	}
+	newVals := logs[0]["new"].(map[string]any)
+	if _, ok := newVals["payment_bypassed"]; ok {
+		t.Errorf("payment_bypassed tercatat walaupun ahli dah bayar: %v", newVals)
+	}
+}
+
+// Bil ToyyibPay 'pending' dengan gateway_ref (bil hidup, boleh dibayar
+// bila-bila masa) mesti sekat bypass — kalau tidak ahli boleh bayar bil
+// tu lepas diluluskan dan terima 2 pengesahan bayaran (Opus verify
+// MEDIUM).
+func TestApproveBypassPaymentDitolakBilaAdaBilPending(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	admin := seedMember(t, ctx, pool, "admin", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+
+	if _, err := pool.Exec(ctx,
+		`insert into registration_payments (user_id, amount_cents, currency, gateway, gateway_ref, status)
+		 values ($1, 1000, 'myr', 'toyyibpay', $2, 'pending')`,
+		target, "bill-"+uuid.NewString()); err != nil {
+		t.Fatalf("seed bil pending: %v", err)
+	}
+
+	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
+		`{"bypass_payment":true,"bypass_reason":"dah bayar tunai"}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, mahu 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
+		t.Fatalf("bypass ditolak tapi menulis %d catatan audit", len(logs))
+	}
+}
+
+// Baris 'pending' TANPA gateway_ref (createBill berjaya cipta bil di
+// ToyyibPay tapi SetRegistrationPaymentGatewayRef gagal selepas itu —
+// "TETINGKAP BAKI" dlm registration_payment.go Checkout) MESTI turut
+// sekat bypass — bil sebenar tetap wujud di ToyyibPay walaupun ref tak
+// sempat disimpan, jadi tapisan `gateway_ref is not null` TAK boleh
+// dipakai di sini (beza drpd ListPendingRegistrationPaymentsOlderThan,
+// Opus verify susulan).
+func TestApproveBypassPaymentDitolakBilaAdaBarisPendingTanpaRef(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	admin := seedMember(t, ctx, pool, "admin", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+
+	if _, err := pool.Exec(ctx,
+		`insert into registration_payments (user_id, amount_cents, currency, gateway, status)
+		 values ($1, 1000, 'myr', 'toyyibpay', 'pending')`,
+		target); err != nil {
+		t.Fatalf("seed baris pending tanpa ref: %v", err)
+	}
+
+	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
+		`{"bypass_payment":true,"bypass_reason":"dah bayar tunai"}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, mahu 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// Body cacat (bypass_payment jenis string bukan bool) mesti pulang 400
+// jelas, bukan senyap jadi false lalu terus approve (Opus verify LOW#2).
+//
+// Target SENGAJA ahli yang DAH bayar (bukan pending belum bayar) — kalau
+// ujian ni guna target belum bayar, 400 boleh berlaku sebab GATE BAYARAN
+// biasa (kod lama `_ = c.ShouldBindJSON` pun akan pulang 400 yang sama,
+// atas sebab berbeza — ujian jadi tak bererti/trivially-pass, Opus
+// verify tangkap isu ni pada pusingan ke-2). Dengan target dah bayar,
+// laluan biasa tanpa body cacat akan approve BERJAYA (200) — jadi 400 di
+// sini HANYA boleh datang daripada bind gagal, bukan gate bayaran.
+func TestApproveBodyBypassPaymentJenisSalahDitolak(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	admin := seedMember(t, ctx, pool, "admin", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+	seedSucceededRegistrationPayment(t, ctx, pool, target)
+
+	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
+		`{"bypass_payment":"true","bypass_reason":"nota"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, mahu 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
+		t.Fatalf("body cacat ditolak tapi menulis %d catatan audit", len(logs))
+	}
+}
+
+// Superadmin (rank tertinggi) mesti lulus semakan IsAtLeastRole("admin")
+// yang sama macam admin — bukan cuma tier admin literal.
+func TestApproveBypassPaymentBerjayaUntukSuperadmin(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	superadmin := seedMember(t, ctx, pool, "superadmin", "approved")
+	target := seedMember(t, ctx, pool, "ahli", "pending")
+
+	rec := callSetStatusWithBody(t, pool, superadmin, target, "approve",
+		`{"bypass_payment":true,"bypass_reason":"migrasi ahli lama"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, mahu 200 (body: %s)", rec.Code, rec.Body.String())
 	}
 }
 

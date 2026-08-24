@@ -204,8 +204,13 @@ where payment_status = 'pending' and status <> 'cancelled'
 returning *;
 
 -- name: ListMyRegistrations :many
+-- fee_cents guna coalesce(r.fee_cents_paid, a.fee_cents) — sama pola
+-- GetMyActivityFeeByID/ListMyActivityPayments: sebelum bayar, papar
+-- yuran SEMASA (a.fee_cents boleh berubah selepas PATCH); selepas bayar,
+-- kunci pada jumlah yang benar-benar dibayar.
 select r.*, a.title, a.starts_at, a.ends_at, a.status as activity_status,
-  c.name as category_name
+  c.name as category_name, coalesce(r.fee_cents_paid, a.fee_cents) as fee_cents,
+  a.currency
 from activity_registrations r
 join activities a on a.id = r.activity_id
 join activity_categories c on c.id = a.category_id

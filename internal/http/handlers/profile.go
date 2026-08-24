@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -28,14 +29,16 @@ type ProfileHandler struct {
 	queries     *sqlc.Queries
 	emailClient *email.Client
 	r2          *storage.R2Client
+	feeCents    int64
 }
 
-func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client) *ProfileHandler {
+func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storage.R2Client, registrationFeeCents int) *ProfileHandler {
 	return &ProfileHandler{
 		pool:        pool,
 		queries:     sqlc.New(pool),
 		emailClient: emailClient,
 		r2:          r2,
+		feeCents:    int64(registrationFeeCents),
 	}
 }
 
@@ -58,8 +61,15 @@ type profileResponse struct {
 	// berlaku" walau hasil sebenar sentiasa betul di sisi pelayan. Cuma
 	// diisi untuk ahli `pending` (approved tak perlu, dah lepas gate).
 	RegistrationPaymentStatus *string `json:"registration_payment_status"`
-	TelegramLinked            bool    `json:"telegram_linked"`
-	TelegramUsername          *string `json:"telegram_username"`
+	// RegistrationFeeCents — jumlah (sen) yuran pendaftaran SEMASA
+	// (`REGISTRATION_FEE_CENTS`), supaya client boleh papar jumlah SEBELUM
+	// ahli tekan bayar (checkout ToyyibPay tak dedah jumlah dalam app —
+	// cuma redirect ke halaman ToyyibPay). Cuma diisi untuk ahli belum
+	// `approved`, padan skop `RegistrationPaymentStatus` di atas — ahli
+	// approved dah lepas gate, tak perlu tahu angka ni lagi.
+	RegistrationFeeCents *int64  `json:"registration_fee_cents"`
+	TelegramLinked       bool    `json:"telegram_linked"`
+	TelegramUsername     *string `json:"telegram_username"`
 }
 
 // Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
@@ -76,12 +86,14 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 	}
 
 	var paymentStatus *string
+	var feeCents *int64
 	if row.Status != "approved" {
 		if status, err := h.queries.GetLatestRegistrationPaymentStatus(ctx, userID); err == nil {
 			paymentStatus = &status
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("baca status bayaran pendaftaran (user=%s): %v", userID, err)
 		}
+		feeCents = &h.feeCents
 	}
 
 	c.JSON(http.StatusOK, profileResponse{
@@ -97,6 +109,7 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		RoleRank:                  row.RoleRank,
 		AvatarURL:                 h.avatarURL(ctx, row.AvatarR2Key),
 		RegistrationPaymentStatus: paymentStatus,
+		RegistrationFeeCents:      feeCents,
 		TelegramLinked:            row.TelegramChatID.Valid,
 		TelegramUsername:          textToPtr(row.TelegramUsername),
 	})
@@ -643,20 +656,44 @@ type memberActionResponse struct {
 	ApprovedAt *string `json:"approved_at"`
 }
 
+type approveMemberRequest struct {
+	// BypassPayment — admin/superadmin sahaja (rank >= "admin"). Langkau
+	// gate `HasSucceededRegistrationPayment` untuk ahli lama yang dah
+	// bayar secara manual sebelum sistem digital wujud. Nota WAJIB bila
+	// ni true — jejak audit kelab lama->digital kena jelas siapa langkau
+	// bayaran, untuk siapa, dan kenapa.
+	BypassPayment bool   `json:"bypass_payment"`
+	BypassReason  string `json:"bypass_reason" binding:"max=500"`
+}
+
 // ApproveMember (Stage 11) — management sahaja. Set status='approved',
 // hantar email + in-app notification kepada ahli berkenaan.
 func (h *ProfileHandler) ApproveMember(c *gin.Context) {
-	h.setMemberStatus(c, "approved")
+	// Body ini pilihan sepenuhnya (ahli biasa diluluskan tanpa body
+	// langsung sebelum ni) — kosong terus laluan sedia ada (gate bayaran
+	// biasa) tidak berubah. Semak `err` terus terhadap io.EOF (bukan
+	// `ContentLength > 0`, Opus verify: ContentLength == -1 untuk
+	// Transfer-Encoding: chunked/unknown, jadi guard ContentLength tu
+	// terlepas body cacat yang dihantar TANPA Content-Length eksplisit)
+	// — body cacat (cth `bypass_payment` jenis string bukan bool) pulang
+	// 400 jelas, bukan senyap gagal-jadi-false lalu mengelirukan admin
+	// dengan mesej "ahli belum bayar" walhal dia memang cuba bypass.
+	var req approveMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": friendlyBindError(err)})
+		return
+	}
+	h.setMemberStatus(c, "approved", req)
 }
 
 // RejectMember (Stage 11) — management sahaja. Set status='rejected'
 // (row KEKAL, bukan padam — audit trail + boleh undo via ApproveMember
 // lain kali). Hantar email + in-app notification kepada ahli berkenaan.
 func (h *ProfileHandler) RejectMember(c *gin.Context) {
-	h.setMemberStatus(c, "rejected")
+	h.setMemberStatus(c, "rejected", approveMemberRequest{})
 }
 
-func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
+func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req approveMemberRequest) {
 	targetID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
@@ -722,12 +759,58 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 	// Diletak SEBELUM tx.Begin sengaja: kalau tak lulus, tiada transaksi
 	// untuk dibuka langsung.
 	if status == "approved" {
+		// Semak bayaran SEBENAR dulu, tak kira flag bypass — kalau ahli
+		// dah bayar (online, atau padanan lain), langkau tak relevan
+		// langsung. Ni sengaja ditulis SEBELUM cawangan bypass (Opus
+		// verify: admin yang tersilap hantar bypass_payment=true untuk
+		// ahli yang DAH bayar tak patut buat audit rekod
+		// "payment_bypassed" palsu bagi yuran yang sebenarnya dikutip).
 		paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
 			return
 		}
-		if !paid {
+		if paid {
+			req.BypassPayment = false
+		} else if req.BypassPayment {
+			// Langkau bayaran — hanya admin/superadmin (rank >= "admin"),
+			// BUKAN supervisor/manager. IsAtLeastRole (bukan IsManagement)
+			// sengaja dipakai di sini supaya tier di bawah admin tak boleh
+			// langkau gate kewangan ni.
+			isAdminUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "admin")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+				return
+			}
+			if !isAdminUp {
+				c.JSON(http.StatusForbidden, gin.H{"error": "cuma admin/superadmin boleh langkau bayaran yuran"})
+				return
+			}
+			if strings.TrimSpace(req.BypassReason) == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "nota diperlukan untuk langkau bayaran yuran"})
+				return
+			}
+
+			// Baris pembayaran 'pending' yang masih boleh diselesaikan
+			// bila-bila masa (Opus verify: MEDIUM, dan verify susulan —
+			// TANPA tapisan gateway_ref, lihat komen query) — kalau baris
+			// begini wujud, ahli boleh bayar lepas diluluskan dan webhook
+			// tandakan 'succeeded', jadi terima 2 pengesahan bayaran
+			// (tunai + bil online lama) tanpa refund path. Blok sehingga
+			// baris lama diselesaikan (webhook/pautan manual) atau tamat
+			// tempoh (paymentreconcile).
+			hasPendingBill, err := h.queries.HasPendingRegistrationPayment(ctx, targetID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+				return
+			}
+			if hasPendingBill {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "ahli ada bil pendaftaran online yang belum selesai — selesaikan/tamatkan bil tu dulu sebelum langkau bayaran, kalau tidak ahli boleh bayar dua kali",
+				})
+				return
+			}
+		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
 			return
 		}
@@ -767,13 +850,21 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 
 	// Kelulusan keahlian ialah keputusan pentadbiran — siapa yang benarkan
 	// (atau halang) seseorang masuk mesti dapat dijawab kemudian.
+	newAuditFields := map[string]any{"status": updated.Status}
+	if status == "approved" && req.BypassPayment {
+		// Ahli ni approved TANPA baris 'succeeded' dalam
+		// registration_payments — nota+aktor di sini ialah SATU-SATUNYA
+		// tempat sebab tu direkod, jadi wajib ada nilai (bukan best-effort).
+		newAuditFields["payment_bypassed"] = true
+		newAuditFields["bypass_reason"] = req.BypassReason
+	}
 	if err := audit.Record(ctx, q, audit.Entry{
 		EntityType: audit.EntityProfile,
 		EntityID:   targetID,
 		Action:     audit.ActionUpdate,
 		Actor:      auditActor(c, q),
 		Old:        map[string]any{"status": target.Status},
-		New:        map[string]any{"status": updated.Status},
+		New:        newAuditFields,
 	}); err != nil {
 		log.Printf("audit status ahli: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})

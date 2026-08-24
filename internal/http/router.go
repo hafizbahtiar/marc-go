@@ -66,6 +66,7 @@ func NewRouter(
 	pushSvc *push.Service,
 	paymentGateways map[string]payment.Gateway,
 	registrationFeeCents int,
+	gatewayChargeCents int,
 	redisCli *redisclient.Client,
 	paymentReconciler *paymentreconcile.Reconciler,
 	corsAllowedOrigins []string,
@@ -126,7 +127,7 @@ func NewRouter(
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
 
-	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client)
+	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client, registrationFeeCents)
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
 
 	// profileUpdateRateLimiter (L25) — /me tak ada mekanisme dedup macam
@@ -193,7 +194,7 @@ func NewRouter(
 	approved.POST("/admin/payments/reconcile", handlers.NewPaymentReconcileHandler(paymentReconciler, sqlc.New(pool)).Run)
 
 	// Sejarah bayaran (bacaan sahaja) — lihat internal/http/handlers/payments.go.
-	paymentsHandler := handlers.NewPaymentsHandler(pool, r2Client)
+	paymentsHandler := handlers.NewPaymentsHandler(pool, gatewayChargeCents)
 	// `protected` (bukan `approved`) SENGAJA — checkout yuran pendaftaran
 	// sendiri duduk atas `protected` (baris /registration-payments/checkout
 	// di bawah), jadi ahli `pending` yang DAH bayar mesti boleh tengok
@@ -339,7 +340,7 @@ func NewRouter(
 	// diletak atas `approved` mereka takkan sampai ke sini langsung.
 	// Webhook AWAM, gateway dihardcode "toyyibpay" (satu-satunya gateway
 	// ciri ni guna) — lihat komen RegistrationPaymentHandler.Webhook.
-	registrationPaymentHandler := handlers.NewRegistrationPaymentHandler(pool, paymentGateways["toyyibpay"], registrationFeeCents)
+	registrationPaymentHandler := handlers.NewRegistrationPaymentHandler(pool, paymentGateways["toyyibpay"], registrationFeeCents, gatewayChargeCents, emailClient)
 	// Had kadar (Opus verify 2026-08-15 tandakan MEDIUM tanpanya): checkout
 	// padan bucket `donation` (sama corak — tindakan pembayaran sengaja,
 	// jarang berulang secara sah). Webhook padan `verifyRateLimiter`
@@ -354,6 +355,14 @@ func NewRouter(
 	r.POST("/registration-payments/webhook/toyyibpay", registrationWebhookRateLimiter, registrationPaymentHandler.Webhook)
 	r.GET("/registration-payments/return/toyyibpay", redirectIfConfigured(registrationPaymentReturnURL), registrationPaymentHandler.ReturnPage)
 
+	// Config checkout GENERIK (bukan spesifik satu modul) — client (mana-
+	// mana skrin checkout) papar breakdown invoice "Yuran"+"Caj
+	// Pemprosesan"="Jumlah". `protected` (RequireAuth sahaja) sama sebab
+	// sama di atas — ahli pending checkout yuran pendaftaran perlu nilai
+	// ni juga. Tiada rate limiter khusus: bacaan statik, tiada kerja DB.
+	paymentConfigHandler := handlers.NewPaymentConfigHandler(gatewayChargeCents)
+	protected.GET("/payment-config", paymentConfigHandler.Get)
+
 	// Yuran AKTIVITI (activities.fee_cents) — berasingan konseptual drpd
 	// yuran pendaftaran ahli di atas (padanan ActivityRegistrationPaymentHandler
 	// vs RegistrationPaymentHandler, jangan keliru dua-dua).
@@ -367,7 +376,7 @@ func NewRouter(
 	// return BERBEZA) ialah satu-satunya cara ToyyibPay benar-benar panggil
 	// balik /activity-registrations/webhook/toyyibpay tanpa menyentuh
 	// toyyibpay.go atau registration_payment.go (dua-dua di luar skop).
-	activityRegistrationPaymentHandler := handlers.NewActivityRegistrationPaymentHandler(pool, paymentGateways["toyyibpay-activity"])
+	activityRegistrationPaymentHandler := handlers.NewActivityRegistrationPaymentHandler(pool, paymentGateways["toyyibpay-activity"], gatewayChargeCents, emailClient)
 	activityPaymentCheckoutRateLimiter := rateLimiter.Limit("activity-payment-checkout", rate.Every(6*time.Second), 5)
 	verified.POST("/activities/:id/registration/checkout", activityPaymentCheckoutRateLimiter, middleware.BlockTesterWrites(sqlc.New(pool)), activityRegistrationPaymentHandler.Checkout)
 	r.POST("/activity-registrations/webhook/toyyibpay", registrationWebhookRateLimiter, activityRegistrationPaymentHandler.Webhook)

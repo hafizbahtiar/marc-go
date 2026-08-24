@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -12,10 +13,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"marc/internal/db/sqlc"
+	"marc/internal/email"
 	"marc/internal/http/middleware"
 	"marc/internal/payment"
 	"marc/internal/paymentlog"
 	"marc/internal/phone"
+	"marc/internal/receipt"
+	"marc/internal/receiptmail"
 )
 
 // RegistrationPaymentHandler — yuran pendaftaran ahli SEKALI BAYAR
@@ -25,14 +29,23 @@ import (
 // DonationHandler), walaupun buat masa ni cuma SATU gateway berdaftar
 // ("toyyibpay") — swap/tambah gateway lain kelak tak sentuh handler ni.
 type RegistrationPaymentHandler struct {
-	gw       payment.Gateway
-	queries  *sqlc.Queries
-	pool     *pgxpool.Pool
-	feeCents int64
+	gw                 payment.Gateway
+	queries            *sqlc.Queries
+	pool               *pgxpool.Pool
+	feeCents           int64
+	gatewayChargeCents int64
+	emailClient        *email.Client
 }
 
-func NewRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, feeCents int) *RegistrationPaymentHandler {
-	return &RegistrationPaymentHandler{gw: gw, queries: sqlc.New(pool), pool: pool, feeCents: int64(feeCents)}
+func NewRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, feeCents, gatewayChargeCents int, emailClient *email.Client) *RegistrationPaymentHandler {
+	return &RegistrationPaymentHandler{
+		gw:                 gw,
+		queries:            sqlc.New(pool),
+		pool:               pool,
+		feeCents:           int64(feeCents),
+		gatewayChargeCents: int64(gatewayChargeCents),
+		emailClient:        emailClient,
+	}
 }
 
 // Checkout mulakan bayaran yuran pendaftaran untuk ahli LOG MASUK
@@ -381,6 +394,58 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 			AmountCents: &amountCents,
 			RelatedID:   &updated.ID,
 		})
+
+		// Resit emel — HANYA bila peralihan ni betul-betul "succeeded"
+		// (bukan "failed", yang turut lalui cabang ni sebab guard SQL
+		// cuma `status <> 'succeeded'`, bukan `status = 'succeeded'`).
+		// Kegagalan cari profil/hantar emel TAK menjejaskan respons 200
+		// ke ToyyibPay — `receiptmail.Send` log sahaja, tak pulang
+		// ralat (lihat komen package tu).
+		if event.Status == "succeeded" {
+			if profile, perr := h.queries.GetProfileByUserID(c.Request.Context(), updated.UserID); perr != nil {
+				log.Printf("resit emel yuran pendaftaran: gagal cari profil user %s: %v", updated.UserID, perr)
+			} else {
+				displayName := ""
+				if profile.DisplayName.Valid {
+					displayName = profile.DisplayName.String
+				}
+				const purpose = "Yuran Pendaftaran Ahli"
+				paidAt := time.Now()
+
+				// PDF dijana DI SINI (caller), bukan dalam receiptmail —
+				// package tu sengaja tak tahu bentuk `receipt.FeePayment`
+				// (loose coupling, lihat komen package). `nil` pada
+				// kegagalan: `receiptmail.Send` tetap hantar emel versi
+				// HTML sahaja tanpa lampiran, bukan skip terus.
+				pdfBytes, perr := receipt.GenerateFeePDF(receipt.FeePayment{
+					MemberID:           profile.MemberID,
+					PayerName:          displayName,
+					PayerEmail:         profile.Email,
+					AmountCents:        amountCents,
+					Currency:           updated.Currency,
+					GatewayRef:         event.GatewayRef,
+					PaidAt:             paidAt,
+					Purpose:            purpose,
+					GatewayChargeCents: h.gatewayChargeCents,
+				})
+				if perr != nil {
+					log.Printf("resit emel yuran pendaftaran: gagal jana PDF (ref=%s): %v", event.GatewayRef, perr)
+					pdfBytes = nil
+				}
+
+				receiptmail.Send(c.Request.Context(), h.emailClient, receiptmail.Receipt{
+					Kind:        receiptmail.KindRegistrationFee,
+					To:          profile.Email,
+					PayerName:   displayName,
+					Purpose:     purpose,
+					AmountCents: amountCents,
+					Currency:    updated.Currency,
+					GatewayRef:  event.GatewayRef,
+					PaidAt:      paidAt,
+					PDFBytes:    pdfBytes,
+				})
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})

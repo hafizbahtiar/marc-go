@@ -241,6 +241,24 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserIDByTelegramChatID(ctx context.Context, telegramChatID pgtype.Int8) (uuid.UUID, error)
+	// Baris 'pending' MANA-MANA PUN — SENGAJA TANPA tapisan `gateway_ref is
+	// not null` (Opus verify 2026-08-24: tak macam
+	// ListPendingRegistrationPaymentsOlderThan, baris `gateway_ref` NULL di
+	// sini BUKAN bukti "tiada bil sebenar". Lihat komen "TETINGKAP BAKI" di
+	// `registration_payment.go` `Checkout` — createBill BOLEH berjaya
+	// [bil sebenar wujud di ToyyibPay] tapi `SetRegistrationPaymentGatewayRef`
+	// gagal selepas tu, meninggalkan baris 'pending' TANPA ref walaupun bil
+	// boleh dibayar. Tapisan ref bertujuan bagi query reconcile [nak tahu
+	// bil MANA nak poll], bukan bagi gate ni [nak tahu ADA-TAK bil terbuka
+	// langsung] — dua soalan berbeza.
+	//
+	// Dipakai oleh gate langkau-bayaran (`ApproveMember` bypass, admin/
+	// superadmin) — kalau baris begini wujud, ahli boleh terima 2 pengesahan
+	// bayaran (tunai + bil online lama yang masih dibayar lepas approve),
+	// jadi bypass MESTI ditolak sehingga baris lama diselesaikan (webhook/
+	// pautan manual tandakan succeeded/failed) atau tamat tempoh
+	// (paymentreconcile).
+	HasPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	InsertEmailVerificationSend(ctx context.Context, userID uuid.UUID) error
 	// Semakan pendaftaran (/auth/register) — pelengkap kpd senarai statik
@@ -331,6 +349,10 @@ type Querier interface {
 	// status terkini macam GetLatestRegistrationPaymentStatus) — utk skrin
 	// "Sejarah Bayaran Saya".
 	ListMyRegistrationPayments(ctx context.Context, userID uuid.UUID) ([]RegistrationPayment, error)
+	// fee_cents guna coalesce(r.fee_cents_paid, a.fee_cents) — sama pola
+	// GetMyActivityFeeByID/ListMyActivityPayments: sebelum bayar, papar
+	// yuran SEMASA (a.fee_cents boleh berubah selepas PATCH); selepas bayar,
+	// kunci pada jumlah yang benar-benar dibayar.
 	ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyRegistrationsRow, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk

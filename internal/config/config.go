@@ -61,6 +61,16 @@ type Config struct {
 	// production.
 	RegistrationFeeCents int
 
+	// GatewayChargeCents — anggaran fi transaksi gateway pembayaran
+	// (ToyyibPay FPX B2C ~RM1.00/transaksi, lihat
+	// marc_flutter/PAYMENT-TOYYIB.md) — GENERIK untuk SEMUA checkout
+	// (yuran pendaftaran, yuran aktiviti, modul depan), bukan spesifik
+	// satu modul. Dedah via `GET /payment-config` untuk client papar
+	// breakdown invoice ("Yuran" + "Caj Pemprosesan" = "Jumlah"). TAK
+	// menyentuh jumlah SEBENAR yang dihantar ke gateway — paparan
+	// sahaja. Default 100 sen (RM1).
+	GatewayChargeCents int
+
 	// Optional — kosong = ciri yang bergantung padanya jatuh balik kepada
 	// tingkah laku setempat (per-instance), bukan gagal.
 	RedisURL string
@@ -149,6 +159,7 @@ func Load() (Config, error) {
 
 		// Default RM10 (1000 sen) — placeholder, lihat komen field.
 		RegistrationFeeCents: getEnvInt("REGISTRATION_FEE_CENTS", 1000),
+		GatewayChargeCents:   getEnvInt("GATEWAY_CHARGE_CENTS", 100),
 
 		RedisURL: os.Getenv("REDIS_URL"),
 
