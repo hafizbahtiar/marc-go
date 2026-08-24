@@ -15,6 +15,7 @@ type Querier interface {
 	// `on conflict do nothing` — idempoten, tambah domain yang dah wujud
 	// bukan ralat (padanan pola ApproveProfile `status <> 'approved'`).
 	AddBlockedEmailDomain(ctx context.Context, arg AddBlockedEmailDomainParams) (BlockedEmailDomain, error)
+	AddDepartment(ctx context.Context, arg AddDepartmentParams) (Department, error)
 	ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error)
 	// `a.ends_at > now()` (L15, 2026-08-22): pendaftaran TAK boleh dibatalkan
 	// selepas aktiviti tamat.
@@ -94,6 +95,10 @@ type Querier interface {
 	ConsumeTelegramLinkToken(ctx context.Context, tokenHash string) (TelegramLinkToken, error)
 	CountActiveRegistrations(ctx context.Context, activityID uuid.UUID) (int64, error)
 	CountActivitySessions(ctx context.Context, activityID uuid.UUID) (int64, error)
+	// Had 3 alamat/ahli disemak app-layer (bukan constraint DB, "3" ialah
+	// peraturan produk boleh berubah) — dipanggil dalam transaksi yang sama
+	// sebelum INSERT, padanan cara sequences/nombor ahli dikira.
+	CountAddressesByUser(ctx context.Context, userID uuid.UUID) (int64, error)
 	CountAttendanceByRegistration(ctx context.Context, registrationID uuid.UUID) (int64, error)
 	CountCommentLikesByCommentIDs(ctx context.Context, commentIds []uuid.UUID) ([]CountCommentLikesByCommentIDsRow, error)
 	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
@@ -111,6 +116,7 @@ type Querier interface {
 	CreateActivity(ctx context.Context, arg CreateActivityParams) (Activity, error)
 	CreateActivityCategory(ctx context.Context, arg CreateActivityCategoryParams) (ActivityCategory, error)
 	CreateActivitySession(ctx context.Context, arg CreateActivitySessionParams) (ActivitySession, error)
+	CreateAddress(ctx context.Context, arg CreateAddressParams) (MemberAddress, error)
 	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) error
 	CreateCertificate(ctx context.Context, arg CreateCertificateParams) (ActivityCertificate, error)
 	CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error)
@@ -138,6 +144,7 @@ type Querier interface {
 	CreateTelegramLinkToken(ctx context.Context, arg CreateTelegramLinkTokenParams) (TelegramLinkToken, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteActivitySessions(ctx context.Context, activityID uuid.UUID) error
+	DeleteAddress(ctx context.Context, arg DeleteAddressParams) error
 	DeleteAttendance(ctx context.Context, arg DeleteAttendanceParams) (int64, error)
 	// Pruning polisi simpanan (lihat internal/retention).
 	DeleteAuditLogsBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
@@ -162,6 +169,7 @@ type Querier interface {
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeleteTelegramLinkTokensByUser(ctx context.Context, userID uuid.UUID) error
+	DepartmentExists(ctx context.Context, code string) (bool, error)
 	// on conflict do nothing: padam post yang sama dua kali (atau retry) tak
 	// patut gagal, dan objek tu memang dah dalam gilir.
 	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
@@ -176,6 +184,10 @@ type Querier interface {
 	GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivityByIDRow, error)
 	GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error)
 	GetActivitySessionByID(ctx context.Context, id uuid.UUID) (ActivitySession, error)
+	// Ownership dikuatkuasakan DALAM query (bukan cuma filter selepas fetch)
+	// — padanan corak `authz` package: query yang tak filter guna user id
+	// dari token bermakna ownership tak dikuatkuasakan.
+	GetAddressByIDAndUser(ctx context.Context, arg GetAddressByIDAndUserParams) (MemberAddress, error)
 	GetAttendance(ctx context.Context, arg GetAttendanceParams) (ActivityAttendance, error)
 	GetCertificateByID(ctx context.Context, id uuid.UUID) (ActivityCertificate, error)
 	GetCertificateByVerifyToken(ctx context.Context, verifyToken string) (ActivityCertificate, error)
@@ -224,6 +236,9 @@ type Querier interface {
 	// Resit — hanya baris SENDIRI (user_id caller), sertakan medan papar
 	// (no. ahli/nama/emel) supaya handler resit tak perlu query kedua.
 	GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyRegistrationPaymentByIDParams) (GetMyRegistrationPaymentByIDRow, error)
+	// Auto-promote lepas default dipadam — baris PALING LAMA (created_at)
+	// selain baris yang baru dipadam jadi default baharu.
+	GetOldestOtherByUser(ctx context.Context, arg GetOldestOtherByUserParams) (MemberAddress, error)
 	// UJIAN SAHAJA — tiada pemanggil produksi, dan jangan tambah satu. Kod
 	// produksi MESTI guna ConsumePasswordResetToken: membaca token
 	// dgn SELECT lalu memadamnya kemudian ialah tepat jurang TOCTOU yang
@@ -264,7 +279,7 @@ type Querier interface {
 	// bayaran (tunai + bil online lama yang masih dibayar lepas approve),
 	// jadi bypass MESTI ditolak sehingga baris lama diselesaikan (webhook/
 	// pautan manual tandakan succeeded/failed) atau tamat tempoh
-	// (paymentreconcile).
+	// (registrationsweep + billExpiryDate ToyyibPay).
 	HasPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	HasSucceededRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error)
 	InsertEmailVerificationSend(ctx context.Context, userID uuid.UUID) error
@@ -295,6 +310,7 @@ type Querier interface {
 	ListActivityCategories(ctx context.Context) ([]ActivityCategory, error)
 	ListActivitySessions(ctx context.Context, activityID uuid.UUID) ([]ActivitySession, error)
 	ListActivitySessionsByIDs(ctx context.Context, activityIds []uuid.UUID) ([]ActivitySession, error)
+	ListAddressesByUser(ctx context.Context, userID uuid.UUID) ([]MemberAddress, error)
 	// Untuk skrin pengurusan CRUD kategori (manager ke atas) — TERMASUK yang
 	// tidak aktif, supaya boleh diaktifkan semula. Borang cipta aktiviti guna
 	// ListActivityCategories (aktif sahaja) di atas.
@@ -317,6 +333,8 @@ type Querier interface {
 	// Flat list, semua comment (top-level + reply) untuk satu post. Client
 	// bina tree guna parent_comment_id.
 	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)
+	// Skrin pengurusan CRUD bahagian/jabatan - susunan organisasi (bukan abjad).
+	ListDepartments(ctx context.Context) ([]Department, error)
 	ListDeviceTokensByUser(ctx context.Context, userID uuid.UUID) ([]DeviceToken, error)
 	ListDueDeletedUploads(ctx context.Context, limit int32) ([]DeletedUpload, error)
 	// Server mengira sendiri siapa layak — management tidak menyenaraikan.
@@ -555,11 +573,13 @@ type Querier interface {
 	RedactAuditLogPIIBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error)
 	RejectProfile(ctx context.Context, arg RejectProfileParams) (Profile, error)
 	RemoveBlockedEmailDomain(ctx context.Context, domain string) (int64, error)
+	RemoveDepartment(ctx context.Context, code string) (int64, error)
 	RevokeCertificate(ctx context.Context, arg RevokeCertificateParams) (ActivityCertificate, error)
 	RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error
 	SetActivityCertificatesIssuedAt(ctx context.Context, id uuid.UUID) error
 	SetActivityStatus(ctx context.Context, arg SetActivityStatusParams) (Activity, error)
 	SetCertificateR2Key(ctx context.Context, arg SetCertificateR2KeyParams) error
+	SetDefault(ctx context.Context, arg SetDefaultParams) (MemberAddress, error)
 	// Isi `gateway_ref` sebaik createBill berjaya. Dikunci pada `id` (bukan
 	// ref) sebab ref itulah yang belum wujud.
 	//
@@ -581,11 +601,22 @@ type Querier interface {
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
+	// Nyahtetapkan default LAMA sebelum tetapkan default BAHARU, dalam
+	// transaksi yang sama — partial unique index (satu default/ahli) akan
+	// tolak dua baris `is_default=true` serentak kalau susunan ni songsang.
+	UnsetDefaultForUser(ctx context.Context, userID uuid.UUID) error
 	UpdateActivity(ctx context.Context, arg UpdateActivityParams) (Activity, error)
 	// `key` sengaja tidak boleh diubah selepas cipta — padanan corak role.key,
 	// ia pengecam stabil (bukan medan paparan macam `name`).
 	UpdateActivityCategory(ctx context.Context, arg UpdateActivityCategoryParams) (ActivityCategory, error)
+	// Partial update — medan tak dihantar (narg NULL) kekal nilai asal,
+	// padanan pola UpdateProfile. `is_default` sengaja TIDAK di sini —
+	// ditetapkan berasingan (SetDefault) dalam transaksi yang turut
+	// nyahtetapkan default lama, supaya invariant "paling banyak SATU
+	// default" sentiasa dikekalkan sepanjang transaksi.
+	UpdateAddress(ctx context.Context, arg UpdateAddressParams) (MemberAddress, error)
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
+	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error)
 	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
 	// retry/replay (atau event lewat sampai tak ikut turutan) tak boleh
 	// turunkan donation yang dah berjaya jadi 'failed'. Kad yang ditolak
@@ -594,7 +625,15 @@ type Querier interface {
 	UpdateDonationStatusByGatewayRef(ctx context.Context, arg UpdateDonationStatusByGatewayRefParams) (Donation, error)
 	UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error)
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
+	// Status AKTIF/TAK AKTIF keahlian — berasingan drpd `status` (kelulusan).
+	// Management sahaja (dikuatkuasakan handler), padanan pola UpdateProfileRole.
+	UpdateProfileActive(ctx context.Context, arg UpdateProfileActiveParams) (Profile, error)
 	UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvatarParams) (Profile, error)
+	// Bahagian/jawatan ahli — management (manager ke atas) sahaja. Semantik
+	// GANTI PENUH (bukan partial-coalesce macam UpdateProfile) — handler
+	// hantar nilai akhir terus (Valid:false = kosongkan), sebab tindakan ni
+	// satu borang "tetapkan bahagian+jawatan skrg", bukan patch berperingkat.
+	UpdateProfileDepartment(ctx context.Context, arg UpdateProfileDepartmentParams) (Profile, error)
 	UpdateProfileRole(ctx context.Context, arg UpdateProfileRoleParams) (Profile, error)
 	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
 	// retry/replay (atau event lewat sampai tak ikut turutan) tak boleh

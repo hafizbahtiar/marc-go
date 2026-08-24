@@ -74,6 +74,21 @@ type profileResponse struct {
 	RegistrationFeeCents *int64  `json:"registration_fee_cents"`
 	TelegramLinked       bool    `json:"telegram_linked"`
 	TelegramUsername     *string `json:"telegram_username"`
+
+	// EmergencyContactName/Phone/HealthNotes — self-service (PATCH /me).
+	EmergencyContactName  *string `json:"emergency_contact_name"`
+	EmergencyContactPhone *string `json:"emergency_contact_phone"`
+	HealthNotes           *string `json:"health_notes"`
+	// IsActive — flag keahlian (BUKAN status kelulusan). Baca sahaja di
+	// sini — cuma management boleh tukar, via PATCH /members/:id/active.
+	IsActive bool `json:"is_active"`
+
+	// DepartmentCode/DepartmentName/Position — baca sahaja di sini, cuma
+	// manager ke atas boleh tukar (via PATCH /members/:id/department),
+	// BUKAN self-service (beza drpd EmergencyContact*/HealthNotes).
+	DepartmentCode *string `json:"department_code"`
+	DepartmentName *string `json:"department_name"`
+	Position       *string `json:"position"`
 }
 
 // Me setara `myProfileProvider` di Flutter — profil user semasa. Sengaja
@@ -116,6 +131,13 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		RegistrationFeeCents:      feeCents,
 		TelegramLinked:            row.TelegramChatID.Valid,
 		TelegramUsername:          textToPtr(row.TelegramUsername),
+		EmergencyContactName:      textToPtr(row.EmergencyContactName),
+		EmergencyContactPhone:     textToPtr(row.EmergencyContactPhone),
+		HealthNotes:               textToPtr(row.HealthNotes),
+		IsActive:                  row.IsActive,
+		DepartmentCode:            textToPtr(row.DepartmentCode),
+		DepartmentName:            textToPtr(row.DepartmentName),
+		Position:                  textToPtr(row.Position),
 	})
 }
 
@@ -132,6 +154,12 @@ type updateMeRequest struct {
 	// keadaan boleh dibezakan: tak dihantar (biar), string kosong (buang
 	// avatar), atau kunci baharu (ganti).
 	AvatarR2Key *string `json:"avatar_r2_key"`
+
+	// EmergencyContactName/Phone/HealthNotes — sama pola DisplayName/Phone:
+	// nil = tak dihantar (biar), string kosong dibenarkan (buang nilai).
+	EmergencyContactName  *string `json:"emergency_contact_name"`
+	EmergencyContactPhone *string `json:"emergency_contact_phone"`
+	HealthNotes           *string `json:"health_notes"`
 }
 
 // UpdateMe setara `ProfileRepository.update` di Flutter — field yang
@@ -149,6 +177,18 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 	}
 	if req.Phone != nil && len(*req.Phone) > 30 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor telefon terlalu panjang (maksimum 30 aksara)"})
+		return
+	}
+	if req.EmergencyContactName != nil && len(*req.EmergencyContactName) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nama waris terlalu panjang (maksimum 100 aksara)"})
+		return
+	}
+	if req.EmergencyContactPhone != nil && len(*req.EmergencyContactPhone) > 30 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor telefon waris terlalu panjang (maksimum 30 aksara)"})
+		return
+	}
+	if req.HealthNotes != nil && len(*req.HealthNotes) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nota kesihatan terlalu panjang (maksimum 500 aksara)"})
 		return
 	}
 	// Sahkan format Malaysia sama macam /auth/register (Opus verify
@@ -170,6 +210,20 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 			normalizedPhone = normalized
 		}
 	}
+	// Sama pola `Phone` — waris pun nombor Malaysia, sahkan format sama
+	// (string kosong tetap dibenarkan, buang nombor).
+	var normalizedEmergencyPhone string
+	if req.EmergencyContactPhone != nil {
+		trimmed := strings.TrimSpace(*req.EmergencyContactPhone)
+		if trimmed != "" {
+			normalized, ok := phone.NormalizeMY(trimmed)
+			if !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "format nombor telefon waris tidak sah"})
+				return
+			}
+			normalizedEmergencyPhone = normalized
+		}
+	}
 
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
@@ -180,6 +234,15 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 	}
 	if req.Phone != nil {
 		params.Phone = pgtype.Text{String: normalizedPhone, Valid: true}
+	}
+	if req.EmergencyContactName != nil {
+		params.EmergencyContactName = pgtype.Text{String: strings.TrimSpace(*req.EmergencyContactName), Valid: true}
+	}
+	if req.EmergencyContactPhone != nil {
+		params.EmergencyContactPhone = pgtype.Text{String: normalizedEmergencyPhone, Valid: true}
+	}
+	if req.HealthNotes != nil {
+		params.HealthNotes = pgtype.Text{String: strings.TrimSpace(*req.HealthNotes), Valid: true}
 	}
 
 	updated, err := h.queries.UpdateProfile(ctx, params)
@@ -360,6 +423,19 @@ type memberResponse struct {
 	// biasa dapat null (bukan medan yang perlu didedahkan untuk lihat
 	// ahli lain).
 	RegistrationPaymentStatus *string `json:"registration_payment_status"`
+
+	// IsActive — flag keahlian (bukan status kelulusan). Dedah kepada
+	// semua viewer (bukan cuma management, padanan `Status`) supaya
+	// senarai ahli papar status aktif konsisten dgn cara `Status` sedia
+	// ada dipapar.
+	IsActive bool `json:"is_active"`
+
+	// DepartmentCode/DepartmentName/Position — dedah kepada semua viewer
+	// (padanan IsActive) - info organisasi, bukan data sensitif macam
+	// Email/RegistrationPaymentStatus.
+	DepartmentCode *string `json:"department_code"`
+	DepartmentName *string `json:"department_name"`
+	Position       *string `json:"position"`
 }
 
 // Members setara `membersProvider` di Flutter — gantian RLS
@@ -425,6 +501,8 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 			Email: email, RoleKey: row.RoleKey, RoleName: row.RoleName,
 			RoleRank: row.RoleRank, Category: row.RoleCategory, Status: row.Status,
 			AvatarKey: row.AvatarR2Key, RegistrationPaymentStatus: paymentStatus,
+			IsActive: row.IsActive, DepartmentCode: row.DepartmentCode,
+			DepartmentName: row.DepartmentName, Position: row.Position,
 		})
 	}
 	c.JSON(http.StatusOK, members)
@@ -482,6 +560,10 @@ type memberRow struct {
 	Status                    string
 	AvatarKey                 pgtype.Text
 	RegistrationPaymentStatus string // kosong = sembunyikan medan (padanan Email)
+	IsActive                  bool
+	DepartmentCode            pgtype.Text
+	DepartmentName            pgtype.Text
+	Position                  pgtype.Text
 }
 
 func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memberResponse {
@@ -505,6 +587,10 @@ func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memb
 		Status:                    m.Status,
 		AvatarURL:                 h.avatarURL(ctx, m.AvatarKey),
 		RegistrationPaymentStatus: paymentStatusPtr,
+		IsActive:                  m.IsActive,
+		DepartmentCode:            textToPtr(m.DepartmentCode),
+		DepartmentName:            textToPtr(m.DepartmentName),
+		Position:                  textToPtr(m.Position),
 	}
 }
 
@@ -649,8 +735,252 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		UserID: updated.UserID, MemberID: updated.MemberID, DisplayName: updated.DisplayName,
 		Email: target.Email, RoleKey: newRole.Key, RoleName: newRole.Name,
 		RoleRank: newRole.Rank, Category: newRole.Category, Status: updated.Status,
-		AvatarKey: updated.AvatarR2Key,
+		AvatarKey: updated.AvatarR2Key, IsActive: updated.IsActive,
 	}))
+}
+
+type updateMemberActiveRequest struct {
+	IsActive bool `json:"is_active"`
+}
+
+type memberActiveResponse struct {
+	UserID   string `json:"user_id"`
+	IsActive bool   `json:"is_active"`
+}
+
+// UpdateMemberActive — PATCH /members/:id/active. Tukar flag KEAHLIAN
+// (`is_active`), BERASINGAN drpd `status` (kelulusan) — ahli `approved`
+// boleh jadi tak aktif kemudian (cth berhenti) tanpa perlu tolak
+// pendaftaran asal. Gate sama hierarki rank macam UpdateMemberRole.
+func (h *ProfileHandler) UpdateMemberActive(c *gin.Context) {
+	targetID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
+		return
+	}
+
+	var req updateMemberActiveRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	if targetID == callerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak boleh tukar status aktif akaun sendiri"})
+		return
+	}
+
+	caller, err := h.queries.GetProfileByUserID(ctx, callerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status aktif ahli"})
+		return
+	}
+	if caller.RoleCategory != authz.CategoryManagement {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma pengurusan boleh tukar status aktif ahli"})
+		return
+	}
+
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+	if caller.RoleRank <= target.RoleRank {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh edit ahli setaraf/lebih tinggi drpd anda"})
+		return
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status aktif ahli"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	updated, err := q.UpdateProfileActive(ctx, sqlc.UpdateProfileActiveParams{
+		UserID:   targetID,
+		IsActive: req.IsActive,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status aktif ahli"})
+		return
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityProfile,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, q),
+		Old:        map[string]any{"is_active": target.IsActive},
+		New:        map[string]any{"is_active": updated.IsActive},
+	}); err != nil {
+		log.Printf("audit tukar status aktif: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status aktif ahli"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status aktif ahli"})
+		return
+	}
+
+	c.JSON(http.StatusOK, memberActiveResponse{
+		UserID:   updated.UserID.String(),
+		IsActive: updated.IsActive,
+	})
+}
+
+type updateMemberDepartmentRequest struct {
+	// DepartmentCode/Position — GANTI PENUH (bukan partial macam UpdateMe):
+	// nil ATAU string kosong = kosongkan, kod bukan-kosong = tetapkan.
+	// Borang "tetapkan bahagian+jawatan skrg" satu tindakan, bukan patch
+	// berperingkat.
+	DepartmentCode *string `json:"department_code"`
+	Position       *string `json:"position"`
+}
+
+type memberDepartmentResponse struct {
+	UserID         string  `json:"user_id"`
+	DepartmentCode *string `json:"department_code"`
+	DepartmentName *string `json:"department_name"`
+	Position       *string `json:"position"`
+}
+
+// UpdateMemberDepartment — PATCH /members/:id/department. Manager KE ATAS
+// sahaja (superadmin/admin/manager — bukan supervisor, keputusan produk
+// 2026-08-25), gate rank "SETARAF DAN KE BAWAH sahaja"
+// (caller.RoleRank >= target.RoleRank) — BEZA drpd UpdateMemberRole/
+// UpdateMemberActive yang caller.RoleRank kena STRICTLY lebih tinggi
+// (>). Bahagian/jawatan bukan keistimewaan sistem (role/status aktif),
+// jadi manager boleh tetapkan utk manager lain yang setaraf — termasuk
+// diri sendiri (tiada sekatan targetID == callerID).
+func (h *ProfileHandler) UpdateMemberDepartment(c *gin.Context) {
+	targetID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
+		return
+	}
+
+	var req updateMemberDepartmentRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if req.Position != nil && len(*req.Position) > 150 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "jawatan terlalu panjang (maksimum 150 aksara)"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	isManagerUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "manager")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+		return
+	}
+	if !isManagerUp {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma manager ke atas boleh tukar bahagian/jawatan ahli"})
+		return
+	}
+
+	caller, err := h.queries.GetProfileByUserID(ctx, callerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+		return
+	}
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+	if caller.RoleRank < target.RoleRank {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh edit ahli lebih tinggi drpd anda"})
+		return
+	}
+
+	deptCode := pgtype.Text{}
+	if req.DepartmentCode != nil {
+		code := strings.TrimSpace(*req.DepartmentCode)
+		if code != "" {
+			exists, err := h.queries.DepartmentExists(ctx, code)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+				return
+			}
+			if !exists {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "bahagian tidak sah"})
+				return
+			}
+			deptCode = pgtype.Text{String: code, Valid: true}
+		}
+	}
+	position := pgtype.Text{}
+	if req.Position != nil {
+		trimmed := strings.TrimSpace(*req.Position)
+		if trimmed != "" {
+			position = pgtype.Text{String: trimmed, Valid: true}
+		}
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
+	if _, err := q.UpdateProfileDepartment(ctx, sqlc.UpdateProfileDepartmentParams{
+		UserID:         targetID,
+		DepartmentCode: deptCode,
+		Position:       position,
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+		return
+	}
+
+	// Baca semula MELALUI tx (bukan h.queries) — perlukan department_name
+	// terjoin, dan mesti nampak baris yang baru dikemas kini dalam
+	// transaksi yang sama (isolation default belum commit lagi).
+	updated, err := q.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+		return
+	}
+
+	if err := audit.Record(ctx, q, audit.Entry{
+		EntityType: audit.EntityProfile,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      auditActor(c, q),
+		Old: map[string]any{
+			"department_code": textToPtr(target.DepartmentCode),
+			"position":        textToPtr(target.Position),
+		},
+		New: map[string]any{
+			"department_code": textToPtr(updated.DepartmentCode),
+			"position":        textToPtr(updated.Position),
+		},
+	}); err != nil {
+		log.Printf("audit tukar bahagian/jawatan: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
+		return
+	}
+
+	c.JSON(http.StatusOK, memberDepartmentResponse{
+		UserID:         updated.UserID.String(),
+		DepartmentCode: textToPtr(updated.DepartmentCode),
+		DepartmentName: textToPtr(updated.DepartmentName),
+		Position:       textToPtr(updated.Position),
+	})
 }
 
 type memberActionResponse struct {

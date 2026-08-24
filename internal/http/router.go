@@ -150,6 +150,14 @@ func NewRouter(
 	protected.POST("/me/deletion-request", accountDeletionRateLimiter, profileHandler.RequestAccountDeletion)
 	protected.POST("/auth/logout-all", authHandler.LogoutAll)
 
+	// Alamat ahli (self-service) — sama gate `protected` dgn /me di atas
+	// (RequireAuth sahaja, tiada RequireApprovedStatus — padanan alasan
+	// yang sama: data peribadi profil, bukan aktiviti kelab).
+	protected.GET("/me/addresses", profileHandler.ListMyAddresses)
+	protected.POST("/me/addresses", profileUpdateRateLimiter, profileHandler.CreateAddress)
+	protected.PATCH("/me/addresses/:id", profileUpdateRateLimiter, profileHandler.UpdateAddress)
+	protected.DELETE("/me/addresses/:id", profileUpdateRateLimiter, profileHandler.DeleteAddress)
+
 	// Baldi berasingan drpd 'auth'/'password-reset' (pengajaran L26):
 	// trafik binding Telegram tak patut kongsi kuota dgn laluan lain.
 	telegramLinkRateLimiter := rateLimiter.Limit("telegram-link", authRateLimit, authRateBurst)
@@ -174,6 +182,13 @@ func NewRouter(
 	approved.POST("/members/:id/reject", profileHandler.RejectMember)
 	approved.POST("/members/:id/cancel-registration-payment", profileHandler.CancelMemberRegistrationPayment)
 	approved.PATCH("/members/:id/role", profileHandler.UpdateMemberRole)
+	// Status AKTIF/TAK AKTIF keahlian — BERASINGAN drpd approve/reject
+	// (status kelulusan). Gate hierarki rank sama pola /role di atas.
+	approved.PATCH("/members/:id/active", profileHandler.UpdateMemberActive)
+	// Bahagian/jawatan ahli — manager KE ATAS, gate rank SETARAF DAN KE
+	// BAWAH (bukan strictly lebih tinggi macam /role & /active di atas —
+	// lihat komen UpdateMemberDepartment).
+	approved.PATCH("/members/:id/department", profileHandler.UpdateMemberDepartment)
 
 	// Jejak audit (management sahaja, dikuatkuasakan dalam handler).
 	approved.GET("/audit-logs", handlers.NewAuditHandler(pool).List)
@@ -188,6 +203,17 @@ func NewRouter(
 	approved.GET("/admin/blocked-email-domains", blockedEmailDomainsHandler.List)
 	approved.POST("/admin/blocked-email-domains", blockedEmailDomainsHandler.Create)
 	approved.DELETE("/admin/blocked-email-domains/:domain", blockedEmailDomainsHandler.Delete)
+
+	// Rujukan bahagian/jabatan organisasi — superadmin SAHAJA, sama gate
+	// & rasional dgn blockedEmailDomainsHandler di atas.
+	departmentsHandler := handlers.NewDepartmentsHandler(pool)
+	approved.GET("/admin/departments", departmentsHandler.List)
+	approved.POST("/admin/departments", departmentsHandler.Create)
+	approved.PATCH("/admin/departments/:code", departmentsHandler.Update)
+	approved.DELETE("/admin/departments/:code", departmentsHandler.Delete)
+	// Baca-sahaja, manager ke atas — pemilih bahagian utk
+	// PATCH /members/:id/department (bukan skrin CRUD superadmin di atas).
+	approved.GET("/departments", departmentsHandler.ListForAssignment)
 
 	// Pencetus manual internal/paymentreconcile (management sahaja,
 	// dikuatkuasakan dalam handler) — padanan pola /audit-logs di atas.
