@@ -146,6 +146,14 @@ type DeletedUpload struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+type Department struct {
+	Code      string             `json:"code"`
+	Name      string             `json:"name"`
+	SortOrder int32              `json:"sort_order"`
+	AddedBy   pgtype.UUID        `json:"added_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type DeviceToken struct {
 	ID          uuid.UUID          `json:"id"`
 	UserID      uuid.UUID          `json:"user_id"`
@@ -180,6 +188,24 @@ type EmailVerificationToken struct {
 	TokenHash string             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type MemberAddress struct {
+	ID          uuid.UUID          `json:"id"`
+	UserID      uuid.UUID          `json:"user_id"`
+	Label       pgtype.Text        `json:"label"`
+	IsDefault   bool               `json:"is_default"`
+	AddressType string             `json:"address_type"`
+	UnitNumber  pgtype.Text        `json:"unit_number"`
+	Floor       pgtype.Text        `json:"floor"`
+	Block       pgtype.Text        `json:"block"`
+	Street      pgtype.Text        `json:"street"`
+	Township    pgtype.Text        `json:"township"`
+	City        string             `json:"city"`
+	Postcode    string             `json:"postcode"`
+	State       string             `json:"state"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Notification struct {
@@ -248,21 +274,27 @@ type PostLike struct {
 }
 
 type Profile struct {
-	ID               uuid.UUID          `json:"id"`
-	UserID           uuid.UUID          `json:"user_id"`
-	MemberID         string             `json:"member_id"`
-	DisplayName      pgtype.Text        `json:"display_name"`
-	Phone            pgtype.Text        `json:"phone"`
-	RoleID           int16              `json:"role_id"`
-	EmailVerified    bool               `json:"email_verified"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	Status           string             `json:"status"`
-	ApprovedBy       pgtype.UUID        `json:"approved_by"`
-	ApprovedAt       pgtype.Timestamptz `json:"approved_at"`
-	AvatarR2Key      pgtype.Text        `json:"avatar_r2_key"`
-	TelegramChatID   pgtype.Int8        `json:"telegram_chat_id"`
-	TelegramUsername pgtype.Text        `json:"telegram_username"`
-	TelegramLinkedAt pgtype.Timestamptz `json:"telegram_linked_at"`
+	ID                    uuid.UUID          `json:"id"`
+	UserID                uuid.UUID          `json:"user_id"`
+	MemberID              string             `json:"member_id"`
+	DisplayName           pgtype.Text        `json:"display_name"`
+	Phone                 pgtype.Text        `json:"phone"`
+	RoleID                int16              `json:"role_id"`
+	EmailVerified         bool               `json:"email_verified"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	Status                string             `json:"status"`
+	ApprovedBy            pgtype.UUID        `json:"approved_by"`
+	ApprovedAt            pgtype.Timestamptz `json:"approved_at"`
+	AvatarR2Key           pgtype.Text        `json:"avatar_r2_key"`
+	TelegramChatID        pgtype.Int8        `json:"telegram_chat_id"`
+	TelegramUsername      pgtype.Text        `json:"telegram_username"`
+	TelegramLinkedAt      pgtype.Timestamptz `json:"telegram_linked_at"`
+	EmergencyContactName  pgtype.Text        `json:"emergency_contact_name"`
+	EmergencyContactPhone pgtype.Text        `json:"emergency_contact_phone"`
+	HealthNotes           pgtype.Text        `json:"health_notes"`
+	IsActive              bool               `json:"is_active"`
+	DepartmentCode        pgtype.Text        `json:"department_code"`
+	Position              pgtype.Text        `json:"position"`
 }
 
 type RefreshToken struct {

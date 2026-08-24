@@ -10,18 +10,42 @@ select
   r.key as role_key,
   r.name as role_name,
   r.category as role_category,
-  r.rank as role_rank
+  r.rank as role_rank,
+  d.name as department_name
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
+left join departments d on d.code = p.department_code
 where p.user_id = $1;
 
 -- name: UpdateProfile :one
 update profiles
 set
   display_name = coalesce(sqlc.narg('display_name')::text, display_name),
-  phone = coalesce(sqlc.narg('phone')::text, phone)
+  phone = coalesce(sqlc.narg('phone')::text, phone),
+  emergency_contact_name = coalesce(sqlc.narg('emergency_contact_name')::text, emergency_contact_name),
+  emergency_contact_phone = coalesce(sqlc.narg('emergency_contact_phone')::text, emergency_contact_phone),
+  health_notes = coalesce(sqlc.narg('health_notes')::text, health_notes)
 where user_id = $1
+returning *;
+
+-- name: UpdateProfileActive :one
+-- Status AKTIF/TAK AKTIF keahlian — berasingan drpd `status` (kelulusan).
+-- Management sahaja (dikuatkuasakan handler), padanan pola UpdateProfileRole.
+update profiles
+set is_active = $2
+where user_id = $1
+returning *;
+
+-- name: UpdateProfileDepartment :one
+-- Bahagian/jawatan ahli — management (manager ke atas) sahaja. Semantik
+-- GANTI PENUH (bukan partial-coalesce macam UpdateProfile) — handler
+-- hantar nilai akhir terus (Valid:false = kosongkan), sebab tindakan ni
+-- satu borang "tetapkan bahagian+jawatan skrg", bukan patch berperingkat.
+update profiles
+set department_code = sqlc.narg('department_code')::text,
+  position = sqlc.narg('position')::text
+where user_id = sqlc.arg('user_id')
 returning *;
 
 -- name: UpdateProfileRole :one
@@ -82,10 +106,12 @@ select
   -- supaya management NAMPAK siapa dah bayar SEBELUM tekan Luluskan,
   -- bukan dapat ralat lepas fakta (gate `ApproveMember` sedia ada sejak
   -- awal, cuma tak kelihatan di sini).
-  coalesce(latest_payment.status, '') as registration_payment_status
+  coalesce(latest_payment.status, '') as registration_payment_status,
+  d.name as department_name
 from profiles p
 join users u on u.id = p.user_id
 join roles r on r.id = p.role_id
+left join departments d on d.code = p.department_code
 left join lateral (
   select rp.status
   from registration_payments rp

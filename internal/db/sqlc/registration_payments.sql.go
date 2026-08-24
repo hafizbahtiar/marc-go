@@ -205,7 +205,7 @@ select exists(
 // bayaran (tunai + bil online lama yang masih dibayar lepas approve),
 // jadi bypass MESTI ditolak sehingga baris lama diselesaikan (webhook/
 // pautan manual tandakan succeeded/failed) atau tamat tempoh
-// (paymentreconcile).
+// (registrationsweep + billExpiryDate ToyyibPay).
 func (q *Queries) HasPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, hasPendingRegistrationPayment, userID)
 	var exists bool
