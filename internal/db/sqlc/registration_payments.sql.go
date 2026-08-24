@@ -131,6 +131,37 @@ func (q *Queries) GetMyRegistrationPaymentByID(ctx context.Context, arg GetMyReg
 	return i, err
 }
 
+const hasPendingRegistrationPayment = `-- name: HasPendingRegistrationPayment :one
+select exists(
+  select 1 from registration_payments
+  where user_id = $1 and status = 'pending'
+)
+`
+
+// Baris 'pending' MANA-MANA PUN — SENGAJA TANPA tapisan `gateway_ref is
+// not null` (Opus verify 2026-08-24: tak macam
+// ListPendingRegistrationPaymentsOlderThan, baris `gateway_ref` NULL di
+// sini BUKAN bukti "tiada bil sebenar". Lihat komen "TETINGKAP BAKI" di
+// `registration_payment.go` `Checkout` — createBill BOLEH berjaya
+// [bil sebenar wujud di ToyyibPay] tapi `SetRegistrationPaymentGatewayRef`
+// gagal selepas tu, meninggalkan baris 'pending' TANPA ref walaupun bil
+// boleh dibayar. Tapisan ref bertujuan bagi query reconcile [nak tahu
+// bil MANA nak poll], bukan bagi gate ni [nak tahu ADA-TAK bil terbuka
+// langsung] — dua soalan berbeza.
+//
+// Dipakai oleh gate langkau-bayaran (`ApproveMember` bypass, admin/
+// superadmin) — kalau baris begini wujud, ahli boleh terima 2 pengesahan
+// bayaran (tunai + bil online lama yang masih dibayar lepas approve),
+// jadi bypass MESTI ditolak sehingga baris lama diselesaikan (webhook/
+// pautan manual tandakan succeeded/failed) atau tamat tempoh
+// (paymentreconcile).
+func (q *Queries) HasPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasPendingRegistrationPayment, userID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const hasSucceededRegistrationPayment = `-- name: HasSucceededRegistrationPayment :one
 select exists(
   select 1 from registration_payments where user_id = $1 and status = 'succeeded'

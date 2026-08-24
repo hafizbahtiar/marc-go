@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -662,18 +663,26 @@ type approveMemberRequest struct {
 	// ni true — jejak audit kelab lama->digital kena jelas siapa langkau
 	// bayaran, untuk siapa, dan kenapa.
 	BypassPayment bool   `json:"bypass_payment"`
-	BypassReason  string `json:"bypass_reason"`
+	BypassReason  string `json:"bypass_reason" binding:"max=500"`
 }
 
 // ApproveMember (Stage 11) — management sahaja. Set status='approved',
 // hantar email + in-app notification kepada ahli berkenaan.
 func (h *ProfileHandler) ApproveMember(c *gin.Context) {
 	// Body ini pilihan sepenuhnya (ahli biasa diluluskan tanpa body
-	// langsung sebelum ni) — ShouldBindJSON pada body kosong pulang
-	// io.EOF, bukan ralat sebenar, jadi req kekal zero-value dan laluan
-	// sedia ada (gate bayaran biasa) tidak berubah.
+	// langsung sebelum ni) — kosong terus laluan sedia ada (gate bayaran
+	// biasa) tidak berubah. Semak `err` terus terhadap io.EOF (bukan
+	// `ContentLength > 0`, Opus verify: ContentLength == -1 untuk
+	// Transfer-Encoding: chunked/unknown, jadi guard ContentLength tu
+	// terlepas body cacat yang dihantar TANPA Content-Length eksplisit)
+	// — body cacat (cth `bypass_payment` jenis string bukan bool) pulang
+	// 400 jelas, bukan senyap gagal-jadi-false lalu mengelirukan admin
+	// dengan mesej "ahli belum bayar" walhal dia memang cuba bypass.
 	var req approveMemberRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": friendlyBindError(err)})
+		return
+	}
 	h.setMemberStatus(c, "approved", req)
 }
 
@@ -750,7 +759,20 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 	// Diletak SEBELUM tx.Begin sengaja: kalau tak lulus, tiada transaksi
 	// untuk dibuka langsung.
 	if status == "approved" {
-		if req.BypassPayment {
+		// Semak bayaran SEBENAR dulu, tak kira flag bypass — kalau ahli
+		// dah bayar (online, atau padanan lain), langkau tak relevan
+		// langsung. Ni sengaja ditulis SEBELUM cawangan bypass (Opus
+		// verify: admin yang tersilap hantar bypass_payment=true untuk
+		// ahli yang DAH bayar tak patut buat audit rekod
+		// "payment_bypassed" palsu bagi yuran yang sebenarnya dikutip).
+		paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+			return
+		}
+		if paid {
+			req.BypassPayment = false
+		} else if req.BypassPayment {
 			// Langkau bayaran — hanya admin/superadmin (rank >= "admin"),
 			// BUKAN supervisor/manager. IsAtLeastRole (bukan IsManagement)
 			// sengaja dipakai di sini supaya tier di bawah admin tak boleh
@@ -768,16 +790,29 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 				c.JSON(http.StatusBadRequest, gin.H{"error": "nota diperlukan untuk langkau bayaran yuran"})
 				return
 			}
-		} else {
-			paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
+
+			// Baris pembayaran 'pending' yang masih boleh diselesaikan
+			// bila-bila masa (Opus verify: MEDIUM, dan verify susulan —
+			// TANPA tapisan gateway_ref, lihat komen query) — kalau baris
+			// begini wujud, ahli boleh bayar lepas diluluskan dan webhook
+			// tandakan 'succeeded', jadi terima 2 pengesahan bayaran
+			// (tunai + bil online lama) tanpa refund path. Blok sehingga
+			// baris lama diselesaikan (webhook/pautan manual) atau tamat
+			// tempoh (paymentreconcile).
+			hasPendingBill, err := h.queries.HasPendingRegistrationPayment(ctx, targetID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
 				return
 			}
-			if !paid {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
+			if hasPendingBill {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "ahli ada bil pendaftaran online yang belum selesai — selesaikan/tamatkan bil tu dulu sebelum langkau bayaran, kalau tidak ahli boleh bayar dua kali",
+				})
 				return
 			}
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
+			return
 		}
 	}
 
