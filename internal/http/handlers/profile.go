@@ -655,20 +655,36 @@ type memberActionResponse struct {
 	ApprovedAt *string `json:"approved_at"`
 }
 
+type approveMemberRequest struct {
+	// BypassPayment — admin/superadmin sahaja (rank >= "admin"). Langkau
+	// gate `HasSucceededRegistrationPayment` untuk ahli lama yang dah
+	// bayar secara manual sebelum sistem digital wujud. Nota WAJIB bila
+	// ni true — jejak audit kelab lama->digital kena jelas siapa langkau
+	// bayaran, untuk siapa, dan kenapa.
+	BypassPayment bool   `json:"bypass_payment"`
+	BypassReason  string `json:"bypass_reason"`
+}
+
 // ApproveMember (Stage 11) — management sahaja. Set status='approved',
 // hantar email + in-app notification kepada ahli berkenaan.
 func (h *ProfileHandler) ApproveMember(c *gin.Context) {
-	h.setMemberStatus(c, "approved")
+	// Body ini pilihan sepenuhnya (ahli biasa diluluskan tanpa body
+	// langsung sebelum ni) — ShouldBindJSON pada body kosong pulang
+	// io.EOF, bukan ralat sebenar, jadi req kekal zero-value dan laluan
+	// sedia ada (gate bayaran biasa) tidak berubah.
+	var req approveMemberRequest
+	_ = c.ShouldBindJSON(&req)
+	h.setMemberStatus(c, "approved", req)
 }
 
 // RejectMember (Stage 11) — management sahaja. Set status='rejected'
 // (row KEKAL, bukan padam — audit trail + boleh undo via ApproveMember
 // lain kali). Hantar email + in-app notification kepada ahli berkenaan.
 func (h *ProfileHandler) RejectMember(c *gin.Context) {
-	h.setMemberStatus(c, "rejected")
+	h.setMemberStatus(c, "rejected", approveMemberRequest{})
 }
 
-func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
+func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req approveMemberRequest) {
 	targetID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
@@ -734,14 +750,34 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 	// Diletak SEBELUM tx.Begin sengaja: kalau tak lulus, tiada transaksi
 	// untuk dibuka langsung.
 	if status == "approved" {
-		paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
-			return
-		}
-		if !paid {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
-			return
+		if req.BypassPayment {
+			// Langkau bayaran — hanya admin/superadmin (rank >= "admin"),
+			// BUKAN supervisor/manager. IsAtLeastRole (bukan IsManagement)
+			// sengaja dipakai di sini supaya tier di bawah admin tak boleh
+			// langkau gate kewangan ni.
+			isAdminUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "admin")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+				return
+			}
+			if !isAdminUp {
+				c.JSON(http.StatusForbidden, gin.H{"error": "cuma admin/superadmin boleh langkau bayaran yuran"})
+				return
+			}
+			if strings.TrimSpace(req.BypassReason) == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "nota diperlukan untuk langkau bayaran yuran"})
+				return
+			}
+		} else {
+			paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+				return
+			}
+			if !paid {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
+				return
+			}
 		}
 	}
 
@@ -779,13 +815,21 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string) {
 
 	// Kelulusan keahlian ialah keputusan pentadbiran — siapa yang benarkan
 	// (atau halang) seseorang masuk mesti dapat dijawab kemudian.
+	newAuditFields := map[string]any{"status": updated.Status}
+	if status == "approved" && req.BypassPayment {
+		// Ahli ni approved TANPA baris 'succeeded' dalam
+		// registration_payments — nota+aktor di sini ialah SATU-SATUNYA
+		// tempat sebab tu direkod, jadi wajib ada nilai (bukan best-effort).
+		newAuditFields["payment_bypassed"] = true
+		newAuditFields["bypass_reason"] = req.BypassReason
+	}
 	if err := audit.Record(ctx, q, audit.Entry{
 		EntityType: audit.EntityProfile,
 		EntityID:   targetID,
 		Action:     audit.ActionUpdate,
 		Actor:      auditActor(c, q),
 		Old:        map[string]any{"status": target.Status},
-		New:        map[string]any{"status": updated.Status},
+		New:        newAuditFields,
 	}); err != nil {
 		log.Printf("audit status ahli: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
