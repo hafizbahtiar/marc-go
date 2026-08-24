@@ -270,6 +270,9 @@ func TestApproveBypassPaymentBerjayaUntukAdmin(t *testing.T) {
 	if newVals["bypass_reason"] != "ahli lama, dah bayar tunai sebelum sistem digital" {
 		t.Errorf("bypass_reason = %v, tak dirakam betul", newVals["bypass_reason"])
 	}
+	if newVals["actor_user_id"] != admin.String() {
+		t.Errorf("actor_user_id = %v, mahu %s", newVals["actor_user_id"], admin)
+	}
 }
 
 // Ahli yang DAH bayar (baris 'succeeded' wujud) tak patut direkod sebagai

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"marc/internal/audit"
 	"marc/internal/db/sqlc"
@@ -49,4 +50,29 @@ func auditActor(c *gin.Context, q *sqlc.Queries) audit.Actor {
 		actor.RoleKey = profile.RoleKey
 	}
 	return actor
+}
+
+// actorAuditFields — salin identiti pelaku ke dalam delta jsonb (new_values)
+// supaya bacaan timeline entiti (cth kelulusan/batal bil ahli pending)
+// nampak SIAPA admin tanpa silang-rujuk lajur actor_id jadual audit_logs.
+// UUID wajib bila UserID ada — bezakan admin A vs admin B walaupun role sama.
+func actorAuditFields(actor audit.Actor) map[string]any {
+	fields := map[string]any{}
+	if actor.UserID != uuid.Nil {
+		fields["actor_user_id"] = actor.UserID.String()
+	}
+	if actor.MemberID != "" {
+		fields["actor_member_id"] = actor.MemberID
+	}
+	if actor.RoleKey != "" {
+		fields["actor_role_key"] = actor.RoleKey
+	}
+	return fields
+}
+
+func mergeAuditFields(base map[string]any, extra map[string]any) map[string]any {
+	for k, v := range extra {
+		base[k] = v
+	}
+	return base
 }

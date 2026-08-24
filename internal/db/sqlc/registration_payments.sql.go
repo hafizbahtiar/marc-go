@@ -55,6 +55,57 @@ func (q *Queries) CreateRegistrationPayment(ctx context.Context, arg CreateRegis
 	return i, err
 }
 
+const expireRegistrationPayment = `-- name: ExpireRegistrationPayment :one
+update registration_payments
+set status = 'failed'
+where id = $1 and status = 'pending'
+returning id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at
+`
+
+// Tandakan percubaan bayaran 'pending' sebagai 'failed' (bil tamat tempoh
+// atau dibatalkan admin). Guard `status = 'pending'` — 'succeeded'
+// terminal; reconcile/webhook lewat boleh naik 'failed'->'succeeded'.
+func (q *Queries) ExpireRegistrationPayment(ctx context.Context, id uuid.UUID) (RegistrationPayment, error) {
+	row := q.db.QueryRow(ctx, expireRegistrationPayment, id)
+	var i RegistrationPayment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AmountCents,
+		&i.Currency,
+		&i.Gateway,
+		&i.GatewayRef,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getLatestPendingRegistrationPayment = `-- name: GetLatestPendingRegistrationPayment :one
+select id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at from registration_payments
+where user_id = $1 and status = 'pending'
+order by created_at desc
+limit 1
+`
+
+// Bil yuran pendaftaran 'pending' TERKINI untuk seorang ahli — admin
+// batalkan bil sebelum langkau bayaran, atau sapuan lapuk.
+func (q *Queries) GetLatestPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (RegistrationPayment, error) {
+	row := q.db.QueryRow(ctx, getLatestPendingRegistrationPayment, userID)
+	var i RegistrationPayment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AmountCents,
+		&i.Currency,
+		&i.Gateway,
+		&i.GatewayRef,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getLatestRegistrationPaymentStatus = `-- name: GetLatestRegistrationPaymentStatus :one
 select status from registration_payments
 where user_id = $1
@@ -255,6 +306,53 @@ type ListPendingRegistrationPaymentsOlderThanParams struct {
 // yang sudah lama menapis dgn cara sama atas sebab yang sama.
 func (q *Queries) ListPendingRegistrationPaymentsOlderThan(ctx context.Context, arg ListPendingRegistrationPaymentsOlderThanParams) ([]RegistrationPayment, error) {
 	rows, err := q.db.Query(ctx, listPendingRegistrationPaymentsOlderThan, arg.StaleBefore, arg.Oldest, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistrationPayment
+	for rows.Next() {
+		var i RegistrationPayment
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AmountCents,
+			&i.Currency,
+			&i.Gateway,
+			&i.GatewayRef,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStalePendingRegistrationPayments = `-- name: ListStalePendingRegistrationPayments :many
+select id, user_id, amount_cents, currency, gateway, gateway_ref, status, created_at from registration_payments
+where status = 'pending'
+  and created_at < $1
+order by created_at
+limit $2
+`
+
+type ListStalePendingRegistrationPaymentsParams struct {
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Limit     int32              `json:"limit"`
+}
+
+// Baris 'pending' lebih tua drpd cutoff — internal/registrationsweep.
+// TIADA tapisan gateway_ref: baris tanpa ref (createBill gagal sebelum
+// ref) turut perlu ditandakan 'failed' supaya gate bypass/admin tak
+// tersekat. Baris dengan ref disemak gateway DULU dalam Go sebelum
+// ExpireRegistrationPayment.
+func (q *Queries) ListStalePendingRegistrationPayments(ctx context.Context, arg ListStalePendingRegistrationPaymentsParams) ([]RegistrationPayment, error) {
+	rows, err := q.db.Query(ctx, listStalePendingRegistrationPayments, arg.CreatedAt, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

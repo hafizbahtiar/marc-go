@@ -165,6 +165,10 @@ type Querier interface {
 	// on conflict do nothing: padam post yang sama dua kali (atau retry) tak
 	// patut gagal, dan objek tu memang dah dalam gilir.
 	EnqueueDeletedUpload(ctx context.Context, arg EnqueueDeletedUploadParams) error
+	// Tandakan percubaan bayaran 'pending' sebagai 'failed' (bil tamat tempoh
+	// atau dibatalkan admin). Guard `status = 'pending'` — 'succeeded'
+	// terminal; reconcile/webhook lewat boleh naik 'failed'->'succeeded'.
+	ExpireRegistrationPayment(ctx context.Context, id uuid.UUID) (RegistrationPayment, error)
 	// Guna oleh CreateAccountDeletionRequest bila insert kena `on conflict do
 	// nothing` (tiada baris dipulangkan), dan utk pelaporan/staff semak status
 	// kemudian.
@@ -181,6 +185,9 @@ type Querier interface {
 	GetEmailVerificationTokenByHash(ctx context.Context, tokenHash string) (EmailVerificationToken, error)
 	GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
 	GetLatestEmailVerificationSendAt(ctx context.Context, userID uuid.UUID) (pgtype.Timestamptz, error)
+	// Bil yuran pendaftaran 'pending' TERKINI untuk seorang ahli — admin
+	// batalkan bil sebelum langkau bayaran, atau sapuan lapuk.
+	GetLatestPendingRegistrationPayment(ctx context.Context, userID uuid.UUID) (RegistrationPayment, error)
 	// Untuk `/me` — Flutter perlukan ni supaya ahli nampak bayaran mereka
 	// berjaya/gagal/menunggu, bukan senyap (gap ditemui 2026-08-15: bayaran
 	// gagal/berjaya dua-dua direkod betul dalam DB tapi client tak pernah
@@ -468,6 +475,12 @@ type Querier interface {
 	// pelayan apa yang sebelum ini sekadar konvensyen klien.
 	ListRegistrationsByActivity(ctx context.Context, activityID uuid.UUID) ([]ListRegistrationsByActivityRow, error)
 	ListRoles(ctx context.Context) ([]Role, error)
+	// Baris 'pending' lebih tua drpd cutoff — internal/registrationsweep.
+	// TIADA tapisan gateway_ref: baris tanpa ref (createBill gagal sebelum
+	// ref) turut perlu ditandakan 'failed' supaya gate bypass/admin tak
+	// tersekat. Baris dengan ref disemak gateway DULU dalam Go sebelum
+	// ExpireRegistrationPayment.
+	ListStalePendingRegistrationPayments(ctx context.Context, arg ListStalePendingRegistrationPaymentsParams) ([]RegistrationPayment, error)
 	// Pending upload yang tak pernah dilekatkan pada mana-mana post ATAU profil.
 	//
 	// Dua klausa `not exists` ni BUKAN pendua kepada laluan Go (Opus verify

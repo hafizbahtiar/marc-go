@@ -122,7 +122,7 @@ select exists(
 -- bayaran (tunai + bil online lama yang masih dibayar lepas approve),
 -- jadi bypass MESTI ditolak sehingga baris lama diselesaikan (webhook/
 -- pautan manual tandakan succeeded/failed) atau tamat tempoh
--- (paymentreconcile).
+-- (registrationsweep + billExpiryDate ToyyibPay).
 select exists(
   select 1 from registration_payments
   where user_id = $1 and status = 'pending'
@@ -148,3 +148,32 @@ select status from registration_payments
 where user_id = $1
 order by (status = 'succeeded') desc, created_at desc
 limit 1;
+
+-- name: GetLatestPendingRegistrationPayment :one
+-- Bil yuran pendaftaran 'pending' TERKINI untuk seorang ahli — admin
+-- batalkan bil sebelum langkau bayaran, atau sapuan lapuk.
+select * from registration_payments
+where user_id = $1 and status = 'pending'
+order by created_at desc
+limit 1;
+
+-- name: ListStalePendingRegistrationPayments :many
+-- Baris 'pending' lebih tua drpd cutoff — internal/registrationsweep.
+-- TIADA tapisan gateway_ref: baris tanpa ref (createBill gagal sebelum
+-- ref) turut perlu ditandakan 'failed' supaya gate bypass/admin tak
+-- tersekat. Baris dengan ref disemak gateway DULU dalam Go sebelum
+-- ExpireRegistrationPayment.
+select * from registration_payments
+where status = 'pending'
+  and created_at < $1
+order by created_at
+limit $2;
+
+-- name: ExpireRegistrationPayment :one
+-- Tandakan percubaan bayaran 'pending' sebagai 'failed' (bil tamat tempoh
+-- atau dibatalkan admin). Guard `status = 'pending'` — 'succeeded'
+-- terminal; reconcile/webhook lewat boleh naik 'failed'->'succeeded'.
+update registration_payments
+set status = 'failed'
+where id = $1 and status = 'pending'
+returning *;

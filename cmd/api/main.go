@@ -27,6 +27,7 @@ import (
 	"marc/internal/push"
 	"marc/internal/reaper"
 	"marc/internal/redisclient"
+	"marc/internal/registrationsweep"
 	"marc/internal/retention"
 	"marc/internal/storage"
 )
@@ -149,6 +150,15 @@ func main() {
 	// dalam package itu sendiri.
 	activitysweep.New(sqlc.New(pool), 15*time.Minute).Start(ctx)
 
+	// Sapuan yuran pendaftaran 'pending' lapuk — tandakan 'failed' supaya
+	// gate bypass admin tak tersekat (padan billExpiryDate 30 min default).
+	registrationsweep.New(
+		sqlc.New(pool),
+		paymentGateways,
+		15*time.Minute,
+		time.Duration(cfg.RegistrationBillExpiryMinutes)*time.Minute,
+	).Start(ctx)
+
 	// Peringatan H-1 + auto-complete aktiviti tamat (lihat
 	// internal/activitylifecycle). 1 jam — cukup halus utk tetingkap H-1
 	// (~24 jam) tanpa kerap macam sapuan kapasiti/storan.
@@ -194,7 +204,7 @@ func main() {
 		}
 	}
 
-	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, cfg.GatewayChargeCents, redisCli, paymentReconciler, cfg.CORSAllowedOrigins, cfg.RegistrationPaymentReturnURL, cfg.ActivityPaymentReturnURL, cfg.CertificateVerifyURL, cfg.PasswordResetURL, telegramHandler, tgBot)
+	router := httpapi.NewRouter(pool, jwtSvc, cfg.RefreshTokenTTL, emailClient, cfg.PublicBaseURL, cfg.EmailVerifyURL, logger, r2Client, pushSvc, paymentGateways, cfg.RegistrationFeeCents, cfg.GatewayChargeCents, cfg.RegistrationBillExpiryMinutes, redisCli, paymentReconciler, cfg.CORSAllowedOrigins, cfg.RegistrationPaymentReturnURL, cfg.ActivityPaymentReturnURL, cfg.CertificateVerifyURL, cfg.PasswordResetURL, telegramHandler, tgBot)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

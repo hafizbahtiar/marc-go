@@ -61,6 +61,12 @@ type Config struct {
 	// production.
 	RegistrationFeeCents int
 
+	// RegistrationBillExpiryMinutes — bil ToyyibPay yuran pendaftaran
+	// tamat tempoh selepas N minit (billExpiryDate). Default 30 — cukup
+	// untuk FPX biasa, elak bil hidup selama-lamanya blok bypass admin.
+	// Padanan umur lapuk internal/registrationsweep.
+	RegistrationBillExpiryMinutes int
+
 	// GatewayChargeCents — anggaran fi transaksi gateway pembayaran
 	// (ToyyibPay FPX B2C ~RM1.00/transaksi, lihat
 	// marc_flutter/PAYMENT-TOYYIB.md) — GENERIK untuk SEMUA checkout
@@ -158,8 +164,9 @@ func Load() (Config, error) {
 		ToyyibPayCategoryCode: os.Getenv("TOYYIBPAY_CATEGORY_CODE"),
 
 		// Default RM10 (1000 sen) — placeholder, lihat komen field.
-		RegistrationFeeCents: getEnvInt("REGISTRATION_FEE_CENTS", 1000),
-		GatewayChargeCents:   getEnvInt("GATEWAY_CHARGE_CENTS", 100),
+		RegistrationFeeCents:          getEnvInt("REGISTRATION_FEE_CENTS", 1000),
+		RegistrationBillExpiryMinutes: getEnvInt("REGISTRATION_BILL_EXPIRY_MINUTES", 30),
+		GatewayChargeCents:            getEnvInt("GATEWAY_CHARGE_CENTS", 100),
 
 		RedisURL: os.Getenv("REDIS_URL"),
 

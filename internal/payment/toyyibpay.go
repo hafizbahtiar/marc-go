@@ -16,6 +16,9 @@ import (
 	"time"
 )
 
+// malaysiaTZ — format billExpiryDate ikut waktu Malaysia (ToyyibPay).
+var malaysiaTZ = time.FixedZone("MYT", 8*60*60)
+
 // ToyyibPayGateway implements Gateway — dikhaskan untuk yuran ahli
 // (belum wired ke mana-mana handler; skema dues dan gate itu sendiri
 // bergantung 3 keputusan produk yang belum dibuat, lihat TODO.md bahagian
@@ -116,6 +119,16 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	}
 	if phone := params.Metadata["billPhone"]; phone != "" {
 		form.Set("billPhone", phone)
+	}
+	// billExpiryDate — bil jadi inactive selepas masa ni (ToyyibPay API
+	// rasmi). Format dd-mm-yyyy hh:mm:ss, zon MYT (sama receipt/bind).
+	// Metadata "billExpiryMinutes" optional — caller (yuran pendaftaran)
+	// hantar; modul lain (yuran aktiviti) boleh abaikan.
+	if minsRaw := strings.TrimSpace(params.Metadata["billExpiryMinutes"]); minsRaw != "" {
+		if mins, err := strconv.Atoi(minsRaw); err == nil && mins > 0 {
+			expiry := time.Now().In(malaysiaTZ).Add(time.Duration(mins) * time.Minute)
+			form.Set("billExpiryDate", expiry.Format("02-01-2006 15:04:05"))
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/index.php/api/createBill", strings.NewReader(form.Encode()))

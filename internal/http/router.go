@@ -67,6 +67,7 @@ func NewRouter(
 	paymentGateways map[string]payment.Gateway,
 	registrationFeeCents int,
 	gatewayChargeCents int,
+	registrationBillExpiryMinutes int,
 	redisCli *redisclient.Client,
 	paymentReconciler *paymentreconcile.Reconciler,
 	corsAllowedOrigins []string,
@@ -127,7 +128,7 @@ func NewRouter(
 	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
 
-	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client, registrationFeeCents)
+	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client, registrationFeeCents, paymentGateways["toyyibpay"])
 	deviceTokenHandler := handlers.NewDeviceTokenHandler(pool)
 
 	// profileUpdateRateLimiter (L25) — /me tak ada mekanisme dedup macam
@@ -171,6 +172,7 @@ func NewRouter(
 	approved.GET("/members", profileHandler.Members)
 	approved.POST("/members/:id/approve", profileHandler.ApproveMember)
 	approved.POST("/members/:id/reject", profileHandler.RejectMember)
+	approved.POST("/members/:id/cancel-registration-payment", profileHandler.CancelMemberRegistrationPayment)
 	approved.PATCH("/members/:id/role", profileHandler.UpdateMemberRole)
 
 	// Jejak audit (management sahaja, dikuatkuasakan dalam handler).
@@ -340,7 +342,7 @@ func NewRouter(
 	// diletak atas `approved` mereka takkan sampai ke sini langsung.
 	// Webhook AWAM, gateway dihardcode "toyyibpay" (satu-satunya gateway
 	// ciri ni guna) — lihat komen RegistrationPaymentHandler.Webhook.
-	registrationPaymentHandler := handlers.NewRegistrationPaymentHandler(pool, paymentGateways["toyyibpay"], registrationFeeCents, gatewayChargeCents, emailClient)
+	registrationPaymentHandler := handlers.NewRegistrationPaymentHandler(pool, paymentGateways["toyyibpay"], registrationFeeCents, gatewayChargeCents, registrationBillExpiryMinutes, emailClient)
 	// Had kadar (Opus verify 2026-08-15 tandakan MEDIUM tanpanya): checkout
 	// padan bucket `donation` (sama corak — tindakan pembayaran sengaja,
 	// jarang berulang secara sah). Webhook padan `verifyRateLimiter`
