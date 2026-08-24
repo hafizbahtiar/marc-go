@@ -31,7 +31,7 @@ type presignRequest struct {
 	ContentType string `json:"content_type" binding:"required"`
 }
 
-// Presign jana URL upload presigned R2 — client upload gambar TERUS ke R2
+// Presign jana URL upload presigned R2 - client upload gambar TERUS ke R2
 // guna URL ni (bukan melalui backend Go), lepas tu attach r2_key
 // dipulangkan ke POST /posts.
 func (h *UploadHandler) Presign(c *gin.Context) {
@@ -67,7 +67,7 @@ func (h *UploadHandler) Presign(c *gin.Context) {
 	}
 
 	// Peringkat seterusnya (PUT ke R2) berlaku TERUS dari peranti ke
-	// Cloudflare — ia tak melalui server ni langsung. Jadi baris ni ialah
+	// Cloudflare - ia tak melalui server ni langsung. Jadi baris ni ialah
 	// jejak sisi-server terakhir sebelum upload hilang dari pandangan kita:
 	// kalau ia ada tapi post tak pernah sampai, kegagalan itu antara
 	// peranti dan R2.

@@ -24,18 +24,18 @@ import (
 	"marc/internal/push"
 )
 
-// activityTestPool — sama corak dengan handler test sedia ada: di-skip
+// activityTestPool - sama corak dengan handler test sedia ada: di-skip
 // melainkan DB ujian ditetapkan. Guna DB BUANGAN.
 //
 // ACTIVITY_TEST_DB diutamakan, tapi HANDLER_TEST_DB diterima sebagai
 // sandaran: ujian pendaftaran (Task 7) perlukan KEDUA-DUA seedActivity dan
 // seedMember, dan memaksa dua pemboleh ubah persekitaran menunjuk ke DB
 // yang sama cuma menjemput mereka menyimpang. Migrate dipanggil di sini
-// atas sebab yang sama seperti statusTestPool — DB yang basi patut
+// atas sebab yang sama seperti statusTestPool - DB yang basi patut
 // dinaik taraf sendiri, bukan gagal dengan ralat scan yang mengelirukan.
 //
 // Dikongsi dengan ujian modul aktiviti yang lain (Task 7-9) dalam pakej
-// ini — jangan tukar tandatangan tanpa periksa pemanggil lain.
+// ini - jangan tukar tandatangan tanpa periksa pemanggil lain.
 func activityTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("ACTIVITY_TEST_DB")
@@ -67,7 +67,7 @@ func seedActivity(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	var categoryID uuid.UUID
 	if err := pool.QueryRow(ctx,
 		`select id from activity_categories where key = 'badminton'`).Scan(&categoryID); err != nil {
-		t.Fatalf("kategori seed tiada — jalankan migration atas DB ujian: %v", err)
+		t.Fatalf("kategori seed tiada - jalankan migration atas DB ujian: %v", err)
 	}
 
 	start := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
@@ -93,7 +93,7 @@ func seedActivity(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	return activityID
 }
 
-// TestReplaceSessionsMengekalkanInvarianTetingkap — harga yang kita bayar
+// TestReplaceSessionsMengekalkanInvarianTetingkap - harga yang kita bayar
 // untuk mendenormalisasi activities.starts_at/ends_at. Kalau ujian ini
 // tiada, invarian itu hanya niat baik.
 func TestReplaceSessionsMengekalkanInvarianTetingkap(t *testing.T) {
@@ -125,7 +125,7 @@ func TestReplaceSessionsMengekalkanInvarianTetingkap(t *testing.T) {
 		t.Errorf("ends_at = %v, mahu %v", got.EndsAt.Time, wantEnd)
 	}
 
-	// Buang sesi paling awal — tetingkap mesti mengecut, bukan kekal basi.
+	// Buang sesi paling awal - tetingkap mesti mengecut, bukan kekal basi.
 	if err := replaceSessionsTx(ctx, pool, activityID, sessions[:1]); err != nil {
 		t.Fatalf("replaceSessions kedua: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestReplaceSessionsMengekalkanInvarianTetingkap(t *testing.T) {
 	}
 }
 
-// TestReplaceSessionsMenolakSetKosong — RecomputeActivityWindow ada guard
+// TestReplaceSessionsMenolakSetKosong - RecomputeActivityWindow ada guard
 // `s.min_start is not null`, jadi set kosong akan meninggalkan tetingkap
 // lama tanpa sebarang ralat. Penolakan mesti berlaku sebelum itu.
 func TestReplaceSessionsMenolakSetKosong(t *testing.T) {
@@ -211,7 +211,7 @@ func activityCall(
 	return rec
 }
 
-// testPushService — push.Service dengan kelayakan OneSignal kosong, jadi
+// testPushService - push.Service dengan kelayakan OneSignal kosong, jadi
 // NotifyUser jadi no-op senyap (lihat onesignal.Client.Enabled). Sama corak
 // dengan storage.NewR2Client("", ...) di ujian lain: laluan notifikasi tetap
 // dijalankan, cuma tiada panggilan keluar.
@@ -271,7 +271,7 @@ func TestLaluanTulisMenolakAhliBiasa(t *testing.T) {
 	}
 }
 
-// Aktiviti draf bukan untuk mata ahli — dan 404, bukan 403, supaya
+// Aktiviti draf bukan untuk mata ahli - dan 404, bukan 403, supaya
 // kewujudannya pun tak bocor.
 func TestGetAktivitiDrafTersembunyiDaripadaAhli(t *testing.T) {
 	pool := activityTestPool(t)
@@ -402,7 +402,7 @@ func TestListStatusDrafPerluPengurusan(t *testing.T) {
 // Bukti bahawa gabungan PATCH berfungsi: badan yang membawa `title` sahaja
 // tak boleh menyentuh apa-apa lagi. Sebelum pembetulan ini, UpdateActivity
 // menulis kesebelas-belas lajur tanpa syarat dan medan yang ditinggalkan
-// dipadam senyap — dengan jejak audit merekodkannya sebagai disengajakan.
+// dipadam senyap - dengan jejak audit merekodkannya sebagai disengajakan.
 func TestUpdateSeparaTidakMemadamMedanLain(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -754,7 +754,7 @@ func TestBatalAktivitiMenulisNotifikasiDenganActivityID(t *testing.T) {
 
 // ---- fee_cents: aktiviti berbayar kini disokong ----
 
-// ToyyibPay dah wired (ActivityRegistrationPaymentHandler) — aktiviti
+// ToyyibPay dah wired (ActivityRegistrationPaymentHandler) - aktiviti
 // berbayar (fee_cents > 0) kini DIBENARKAN pada Create/Update. Cuma nilai
 // negatif yang tak masuk akal ditolak (validateFeeCents).
 func TestCreateBenarkanYuranBukanSifar(t *testing.T) {
@@ -799,7 +799,7 @@ func TestCreateBenarkanYuranBukanSifar(t *testing.T) {
 		t.Errorf("fee_cents = %d, mahu 1500", fee)
 	}
 
-	// Nilai negatif tetap ditolak — itu satu-satunya semakan yang kekal.
+	// Nilai negatif tetap ditolak - itu satu-satunya semakan yang kekal.
 	rec = activityCall(t, pool, manager, http.MethodPost, "/activities", body(-100),
 		nil, (*ActivityHandler).Create)
 	if rec.Code != http.StatusBadRequest {

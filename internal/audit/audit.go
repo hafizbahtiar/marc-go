@@ -3,7 +3,7 @@
 //
 // Reka bentuk:
 //
-//   - Satu jadual generik (audit_logs) untuk semua entiti — tambah entiti
+//   - Satu jadual generik (audit_logs) untuk semua entiti - tambah entiti
 //     baharu = tambah pemalar Entity, bukan migration baharu.
 //   - Delta sahaja. Untuk 'update' cuma field yang BERUBAH disimpan; snapshot
 //     penuh setiap suntingan akan menggandakan saiz jadual tanpa faedah.
@@ -38,12 +38,12 @@ const (
 	// Sijil diaudit pada penerbitan DAN penarikan balik: baris sijil kekal
 	// selepas ditarik balik, tetapi sebab dan pelakunya hanya ada di sini.
 	EntityCertificate = "activity_certificate"
-	// Kategori aktiviti — infrastruktur dikongsi semua aktiviti (bukan
+	// Kategori aktiviti - infrastruktur dikongsi semua aktiviti (bukan
 	// tindakan pengurusan harian), jadi diaudit sama macam role.
 	EntityActivityCategory = "activity_category"
-	// Permintaan pemadaman akaun (Google Play Console — keperluan "request
+	// Permintaan pemadaman akaun (Google Play Console - keperluan "request
 	// account deletion"). v1: rekod permintaan sahaja, staff tindak manual
-	// via DB terus — tiada auto-purge lagi.
+	// via DB terus - tiada auto-purge lagi.
 	EntityAccountDeletionRequest = "account_deletion_request"
 )
 
@@ -53,7 +53,7 @@ const (
 	ActionDelete = "delete"
 )
 
-// Actor — siapa buat perubahan. MemberID dan RoleKey disnapshot sebagai
+// Actor - siapa buat perubahan. MemberID dan RoleKey disnapshot sebagai
 // teks sebab role berubah dari masa ke masa: kita nak tahu kuasa yang dia
 // ADA masa tindakan itu, bukan kuasa dia sekarang.
 type Actor struct {
@@ -64,7 +64,7 @@ type Actor struct {
 	UserAgent string
 }
 
-// Entry — satu catatan audit.
+// Entry - satu catatan audit.
 type Entry struct {
 	EntityType string
 	EntityID   uuid.UUID
@@ -72,7 +72,7 @@ type Entry struct {
 	Actor      Actor
 
 	// Old/New ialah perwakilan entiti sebagai map field. Untuk Update,
-	// hantar kedua-duanya penuh — Record akan kira deltanya sendiri.
+	// hantar kedua-duanya penuh - Record akan kira deltanya sendiri.
 	// Create: Old nil. Delete: New nil.
 	Old map[string]any
 	New map[string]any
@@ -82,11 +82,11 @@ type Entry struct {
 //
 // `q` MESTI Queries yang terikat pada transaksi mutasi (`queries.WithTx(tx)`),
 // supaya catatan dan perubahan sebenar commit atau rollback bersama. Kalau
-// gagal, caller patut gagalkan keseluruhan permintaan — jangan telan ralat.
+// gagal, caller patut gagalkan keseluruhan permintaan - jangan telan ralat.
 func Record(ctx context.Context, q *sqlc.Queries, e Entry) error {
 	oldDelta, newDelta, changed := Diff(e.Old, e.New)
 
-	// Update yang tak ubah apa-apa (user tekan Simpan tanpa edit) — jangan
+	// Update yang tak ubah apa-apa (user tekan Simpan tanpa edit) - jangan
 	// kotorkan jejak dengan baris kosong.
 	if e.Action == ActionUpdate && len(changed) == 0 {
 		return nil
@@ -120,7 +120,7 @@ func Record(ctx context.Context, q *sqlc.Queries, e Entry) error {
 // berubah (diisih supaya output deterministik dan senang diuji).
 //
 // Bila salah satu sisi nil (create/delete), sisi yang ada dikekalkan
-// sepenuhnya — tiada apa nak dibanding.
+// sepenuhnya - tiada apa nak dibanding.
 func Diff(old, new map[string]any) (oldDelta, newDelta map[string]any, changed []string) {
 	switch {
 	case old == nil && new == nil:

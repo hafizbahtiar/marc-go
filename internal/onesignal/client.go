@@ -1,6 +1,6 @@
 // Package onesignal hantar push notification melalui OneSignal REST API.
 // Ini gantian server-side untuk apa yang device_tokens/OneSignal SDK
-// Flutter dah setup di client — app cuma daftar subscription id, sekarang
+// Flutter dah setup di client - app cuma daftar subscription id, sekarang
 // Go backend yang hantar notification kepada id tu.
 package onesignal
 
@@ -31,7 +31,7 @@ func NewClient(appID, apiKey string) *Client {
 	}
 }
 
-// SetBaseURLForTest override endpoint OneSignal — untuk test paket lain
+// SetBaseURLForTest override endpoint OneSignal - untuk test paket lain
 // (cth internal/push) yang perlu httptest.Server palsu tanpa akses field
 // unexported.
 func (c *Client) SetBaseURLForTest(url string) {

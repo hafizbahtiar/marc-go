@@ -5,7 +5,7 @@
 --
 -- Kenapa perlu: kedua-dua lajur itu data peribadi. Di bawah PDPA ia tak
 -- patut disimpan lebih lama daripada tujuannya (siasatan penyalahgunaan),
--- tetapi CATATAN audit itu sendiri — siapa ubah apa — bernilai jauh lebih
+-- tetapi CATATAN audit itu sendiri - siapa ubah apa - bernilai jauh lebih
 -- lama. Memadam keseluruhan baris hanya untuk membuang alamat IP akan
 -- memusnahkan jejak audit demi privasi, sedangkan kedua-duanya boleh
 -- dipenuhi serentak: kekalkan catatan, buang metadata rangkaian.
@@ -13,7 +13,7 @@
 -- Trigger ditukar daripada peringkat-PENYATA kepada peringkat-BARIS sebab
 -- ia kini perlu memeriksa nilai lama lawan baharu, bukan sekadar menolak
 -- semua UPDATE. Setiap lajur lain mesti tidak berubah, dan ip/user_agent
--- hanya boleh menjadi NULL — ia TAK boleh ditulis ganti dengan nilai lain.
+-- hanya boleh menjadi NULL - ia TAK boleh ditulis ganti dengan nilai lain.
 -- `is not distinct from` (bukan `=`) supaya perbandingan NULL berkelakuan
 -- betul.
 -- +goose StatementBegin

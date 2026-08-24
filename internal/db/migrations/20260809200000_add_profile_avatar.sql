@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Kunci objek R2 untuk gambar profil. Nullable — kebanyakan ahli takkan
+-- Kunci objek R2 untuk gambar profil. Nullable - kebanyakan ahli takkan
 -- ada satu, dan UI jatuh balik kepada huruf pertama nama.
 --
 -- Simpan KUNCI, bukan URL penuh: domain awam bucket boleh berubah (kita

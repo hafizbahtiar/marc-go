@@ -85,7 +85,7 @@ type ListAuditLogsParams struct {
 }
 
 // Feed audit global dengan tapisan pilihan. Pagination keyset guna
-// `before_id` (bukan OFFSET) — stabil walaupun baris baharu masuk
+// `before_id` (bukan OFFSET) - stabil walaupun baris baharu masuk
 // semasa pengguna membelek.
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
 	rows, err := q.db.Query(ctx, listAuditLogs,
@@ -184,7 +184,7 @@ where created_at < $1
 
 // Buang metadata permintaan daripada catatan lama TANPA memusnahkan
 // catatan itu sendiri. Dibenarkan oleh trigger append-only kerana ia
-// hanya menetapkan kedua-dua lajur ini kepada NULL — lihat migration
+// hanya menetapkan kedua-dua lajur ini kepada NULL - lihat migration
 // 20260809180000.
 func (q *Queries) RedactAuditLogPIIBefore(ctx context.Context, createdAt pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, redactAuditLogPIIBefore, createdAt)

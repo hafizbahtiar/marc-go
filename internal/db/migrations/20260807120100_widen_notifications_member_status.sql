@@ -7,7 +7,7 @@ alter table notifications add constraint notifications_type_check
 -- +goose Down
 -- NOTE: this down migration will fail if any member_* notifications
 -- exist by the time it runs (post_id null violates the restored NOT
--- NULL, and the old type check rejects member_* rows) — expected for a
+-- NULL, and the old type check rejects member_* rows) - expected for a
 -- dev rollback, not a concern for forward deploys.
 alter table notifications drop constraint notifications_type_check;
 alter table notifications add constraint notifications_type_check

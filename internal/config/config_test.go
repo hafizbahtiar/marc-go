@@ -6,7 +6,7 @@ import (
 )
 
 // Pakej ni TULEN (env → struct, tiada I/O), jadi ujiannya benar-benar
-// berjalan dalam CI — tak macam kebanyakan ujian repo ni yang SKIP tanpa
+// berjalan dalam CI - tak macam kebanyakan ujian repo ni yang SKIP tanpa
 // Postgres. Itu yang menjadikannya berbaloi diuji rapat: ia salah satu
 // daripada sedikit tempat di mana regresi benar-benar ditangkap sebelum
 // merge (lihat TODO.md L14/L36).
@@ -26,7 +26,7 @@ func TestLoadTolakEnvWajibYangHilang(t *testing.T) {
 			t.Setenv("JWT_SECRET", tc.secret)
 
 			if _, err := Load(); err == nil {
-				t.Fatal("Load() berjaya tanpa env wajib — app akan boot dengan " +
+				t.Fatal("Load() berjaya tanpa env wajib - app akan boot dengan " +
 					"auth rosak atau tanpa DB")
 			}
 		})
@@ -34,7 +34,7 @@ func TestLoadTolakEnvWajibYangHilang(t *testing.T) {
 }
 
 // Kontrak teras: SEMUA env lain optional. Satu pun tak boleh menggagalkan
-// boot — kalau ada yang mula wajib, ujian ni yang jerit.
+// boot - kalau ada yang mula wajib, ujian ni yang jerit.
 func TestLoadBootDenganDuaEnvWajibSahaja(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/marc")
 	t.Setenv("JWT_SECRET", "s3cret")
@@ -48,7 +48,7 @@ func TestLoadBootDenganDuaEnvWajibSahaja(t *testing.T) {
 		t.Errorf("Port = %q, mahu \"8080\"", cfg.Port)
 	}
 	if cfg.PublicBaseURL != "http://localhost:8080" {
-		t.Errorf("PublicBaseURL = %q — lalai patut dibina drpd PORT", cfg.PublicBaseURL)
+		t.Errorf("PublicBaseURL = %q - lalai patut dibina drpd PORT", cfg.PublicBaseURL)
 	}
 	if cfg.AccessTokenTTL != 15*time.Minute {
 		t.Errorf("AccessTokenTTL = %v, mahu 15m", cfg.AccessTokenTTL)
@@ -61,7 +61,7 @@ func TestLoadBootDenganDuaEnvWajibSahaja(t *testing.T) {
 	}
 }
 
-// PublicBaseURL lalai dibina drpd PORT — dua getEnv("PORT") berasingan
+// PublicBaseURL lalai dibina drpd PORT - dua getEnv("PORT") berasingan
 // dalam ekspresi yang sama, jadi ia senyap terpesong kalau salah satu
 // diubah tanpa yang lain.
 func TestPublicBaseURLLalaiIkutPort(t *testing.T) {
@@ -74,7 +74,7 @@ func TestPublicBaseURLLalaiIkutPort(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.PublicBaseURL != "http://localhost:9999" {
-		t.Errorf("PublicBaseURL = %q — tak ikut PORT yang ditetapkan", cfg.PublicBaseURL)
+		t.Errorf("PublicBaseURL = %q - tak ikut PORT yang ditetapkan", cfg.PublicBaseURL)
 	}
 }
 
@@ -182,7 +182,7 @@ func TestGetEnvListTidakPernahPulangEntriKosong(t *testing.T) {
 	t.Setenv("TEST_ORIGINS_MESSY", " , https://a.com ,, , ")
 	for i, o := range getEnvList("TEST_ORIGINS_MESSY") {
 		if o == "" {
-			t.Fatalf("entri %d ialah rentetan kosong — ia boleh jadi origin "+
+			t.Fatalf("entri %d ialah rentetan kosong - ia boleh jadi origin "+
 				"yang dibenarkan secara tak sengaja", i)
 		}
 	}

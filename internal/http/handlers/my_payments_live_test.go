@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// L33 — `GET /me/payments` kini memulangkan derma.
+// L33 - `GET /me/payments` kini memulangkan derma.
 //
 // Sebelum ni ia memulangkan dua senarai sahaja, dan
 // `GET /me/payments/donation/:id/receipt` mati secara praktikal: endpoint
@@ -63,7 +63,7 @@ func donationIDs(t *testing.T, body map[string]any) []string {
 	t.Helper()
 	raw, ok := body["donations"]
 	if !ok {
-		t.Fatal("respons TIADA kunci \"donations\" — endpoint resit derma " +
+		t.Fatal("respons TIADA kunci \"donations\" - endpoint resit derma " +
 			"kekal tak boleh dicapai (L33)")
 	}
 	list, ok := raw.([]any)
@@ -83,7 +83,7 @@ func TestMinePayementsMemulangkanDermaSendiri(t *testing.T) {
 
 	userID := seedMember(t, ctx, pool, "ahli", "approved")
 	berjaya := seedDonation(t, pool, &userID, "succeeded", 5000)
-	// Percubaan gagal MESTI turut muncul — sejarah patut menunjukkan
+	// Percubaan gagal MESTI turut muncul - sejarah patut menunjukkan
 	// percubaan, bukan senyap menghilangkannya (padanan
 	// ListMyRegistrationPayments).
 	gagal := seedDonation(t, pool, &userID, "failed", 2000)
@@ -95,16 +95,16 @@ func TestMinePayementsMemulangkanDermaSendiri(t *testing.T) {
 		found[id] = true
 	}
 	if !found[berjaya.String()] {
-		t.Error("derma 'succeeded' tiada dalam senarai — resitnya tak boleh dicapai")
+		t.Error("derma 'succeeded' tiada dalam senarai - resitnya tak boleh dicapai")
 	}
 	if !found[gagal.String()] {
-		t.Error("derma 'failed' tiada dalam senarai — sejarah menyembunyikan percubaan")
+		t.Error("derma 'failed' tiada dalam senarai - sejarah menyembunyikan percubaan")
 	}
 }
 
 // Pengasingan: senarai diskop `user_id`, jadi derma ahli LAIN tak boleh
 // bocor. Kalau ia bocor, ahli boleh memanggil endpoint resit dengan id
-// itu — dan resit membawa nama + emel penderma.
+// itu - dan resit membawa nama + emel penderma.
 func TestMinePaymentsTidakBocorkanDermaAhliLain(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -115,7 +115,7 @@ func TestMinePaymentsTidakBocorkanDermaAhliLain(t *testing.T) {
 
 	for _, id := range donationIDs(t, minePayments(t, pool, saya)) {
 		if id == dermaOrangLain.String() {
-			t.Fatal("derma ahli LAIN muncul dalam /me/payments — pemanggil boleh " +
+			t.Fatal("derma ahli LAIN muncul dalam /me/payments - pemanggil boleh " +
 				"muat turun resit yang membawa nama dan emel penderma itu")
 		}
 	}
@@ -138,7 +138,7 @@ func TestMinePaymentsTidakSertakanDermaTanpaNama(t *testing.T) {
 	}
 }
 
-// Ahli tanpa derma dapat array KOSONG, bukan `null` — klien memanggil
+// Ahli tanpa derma dapat array KOSONG, bukan `null` - klien memanggil
 // `.map` atasnya (corak sama yang `coalesce(..., '{}')` lindungi dalam
 // query kehadiran).
 func TestMinePaymentsDermaKosongIalahArrayBukanNull(t *testing.T) {
@@ -153,7 +153,7 @@ func TestMinePaymentsDermaKosongIalahArrayBukanNull(t *testing.T) {
 		t.Fatal("kunci \"donations\" tiada")
 	}
 	if raw == nil {
-		t.Fatal("\"donations\" ialah null, bukan [] — klien yang memanggil .map " +
+		t.Fatal("\"donations\" ialah null, bukan [] - klien yang memanggil .map " +
 			"atasnya akan terhempas")
 	}
 	if list := raw.([]any); len(list) != 0 {
@@ -161,7 +161,7 @@ func TestMinePaymentsDermaKosongIalahArrayBukanNull(t *testing.T) {
 	}
 }
 
-// Dua senarai sedia ada mesti kekal — L33 menambah, bukan mengganti.
+// Dua senarai sedia ada mesti kekal - L33 menambah, bukan mengganti.
 func TestMinePaymentsMengekalkanDuaSenaraiSediaAda(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()

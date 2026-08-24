@@ -1,8 +1,8 @@
 -- name: ListEligibleForCertificate :many
--- Server mengira sendiri siapa layak — management tidak menyenaraikan.
+-- Server mengira sendiri siapa layak - management tidak menyenaraikan.
 -- Klausa payment_status kekal walaupun payment belum diintegrasikan:
 -- fee_cents sentiasa 0 buat masa ini, jadi ia sentiasa benar.
--- display_name boleh null, tapi recipient_name pada sijil not null —
+-- display_name boleh null, tapi recipient_name pada sijil not null -
 -- jatuh balik ke member_id supaya ahli tanpa nama paparan tetap dapat
 -- nama yang boleh dicetak.
 select r.id as registration_id, r.user_id,

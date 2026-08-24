@@ -90,7 +90,7 @@ func TestReaperLive(t *testing.T) {
 	}
 }
 
-// Pending upload yang ditinggalkan kena disapu ikut umur — punca bocor
+// Pending upload yang ditinggalkan kena disapu ikut umur - punca bocor
 // kedua, berasingan daripada padam post.
 func TestReaperSweepsAbandonedUploads(t *testing.T) {
 	if os.Getenv("R2_LIVE_TEST") != "1" || os.Getenv("REAPER_TEST_DB") == "" {
@@ -136,7 +136,7 @@ func TestReaperSweepsAbandonedUploads(t *testing.T) {
 	}
 }
 
-// Upload BARU tak boleh disapu — pengguna mungkin masih mengarang.
+// Upload BARU tak boleh disapu - pengguna mungkin masih mengarang.
 func TestReaperTidakSapuUploadBaharu(t *testing.T) {
 	if os.Getenv("R2_LIVE_TEST") != "1" || os.Getenv("REAPER_TEST_DB") == "" {
 		t.Skip("perlukan R2_LIVE_TEST=1 + REAPER_TEST_DB")
@@ -171,12 +171,12 @@ func TestReaperTidakSapuUploadBaharu(t *testing.T) {
 	New(q, r2, time.Minute).RunOnce(ctx)
 
 	if err := r2.VerifyImageFormat(ctx, key); err != nil {
-		t.Fatalf("upload BAHARU disapu — pengguna yang masih mengarang akan hilang gambar: %v", err)
+		t.Fatalf("upload BAHARU disapu - pengguna yang masih mengarang akan hilang gambar: %v", err)
 	}
 }
 
 // Post yang dipadam SEBELUM gilir wujud (baris post_images ada, tiada
-// baris deleted_uploads) mesti masih dituntut semula — inilah yang
+// baris deleted_uploads) mesti masih dituntut semula - inilah yang
 // membersihkan sampah sedia ada dalam bucket.
 func TestReaperTuntutPostDipadamLama(t *testing.T) {
 	if os.Getenv("R2_LIVE_TEST") != "1" || os.Getenv("REAPER_TEST_DB") == "" {
@@ -204,7 +204,7 @@ func TestReaperTuntutPostDipadamLama(t *testing.T) {
 	t.Cleanup(func() { _ = r2.DeleteImage(ctx, key) })
 
 	// Post yang dah di-soft-delete, dengan gambar dilekatkan, tapi TIADA
-	// baris gilir — persis keadaan sebelum perubahan ni.
+	// baris gilir - persis keadaan sebelum perubahan ni.
 	var postID uuid.UUID
 	if err := pool.QueryRow(ctx,
 		`insert into posts (author_id, type, content, deleted_at)
@@ -232,7 +232,7 @@ func TestReaperTuntutPostDipadamLama(t *testing.T) {
 		t.Fatalf("count: %v", err)
 	}
 	if pending != 0 {
-		t.Fatalf("kunci digilir semula selepas berjaya dipadam — akan berulang selamanya")
+		t.Fatalf("kunci digilir semula selepas berjaya dipadam - akan berulang selamanya")
 	}
 }
 

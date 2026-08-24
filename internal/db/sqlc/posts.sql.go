@@ -244,7 +244,7 @@ type ListPostsRow struct {
 	AuthorAvatarR2Key pgtype.Text        `json:"author_avatar_r2_key"`
 }
 
-// Keyset pagination atas (created_at, id) — bukan created_at je, elak
+// Keyset pagination atas (created_at, id) - bukan created_at je, elak
 // row terlepas kalau ada tie timestamp betul-betul kat sempadan page
 // (null cursor = page pertama).
 func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPostsRow, error) {

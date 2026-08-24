@@ -16,19 +16,19 @@ import (
 	"time"
 )
 
-// malaysiaTZ — format billExpiryDate ikut waktu Malaysia (ToyyibPay).
+// malaysiaTZ - format billExpiryDate ikut waktu Malaysia (ToyyibPay).
 var malaysiaTZ = time.FixedZone("MYT", 8*60*60)
 
-// ToyyibPayGateway implements Gateway — dikhaskan untuk yuran ahli
+// ToyyibPayGateway implements Gateway - dikhaskan untuk yuran ahli
 // (belum wired ke mana-mana handler; skema dues dan gate itu sendiri
 // bergantung 3 keputusan produk yang belum dibuat, lihat TODO.md bahagian
 // Payment). Akaun BERASINGAN drpd Stripe (yang pegang donation).
 //
-// PENTING — sumber kajian, bukan dokumentasi rasmi terus:
+// PENTING - sumber kajian, bukan dokumentasi rasmi terus:
 // `toyyibpay.com/apireference/` sekat fetch langsung (403, kemungkinan
 // bot-blocking) semasa kajian dibuat 2026-08-15. Butiran API di bawah
 // disilang rujuk daripada dokumentasi komuniti + kod sumber terbuka pihak
-// ketiga — SAHKAN semula terhadap sandbox (dev.toyyibpay.com) sebelum
+// ketiga - SAHKAN semula terhadap sandbox (dev.toyyibpay.com) sebelum
 // guna dalam produksi. Nota penuh + checklist: `marc_flutter/PAYMENT-
 // TOYYIB.md`.
 type ToyyibPayGateway struct {
@@ -36,7 +36,7 @@ type ToyyibPayGateway struct {
 	baseURL      string // https://toyyibpay.com (produksi) atau https://dev.toyyibpay.com (sandbox)
 	secretKey    string
 	categoryCode string
-	// callbackURL/returnURL — route SEBENAR sejak 2026-08-15
+	// callbackURL/returnURL - route SEBENAR sejak 2026-08-15
 	// (`/registration-payments/webhook/toyyibpay` dan `/registration-
 	// payments/return/toyyibpay`, lihat `internal/http/router.go` dan
 	// `RegistrationPaymentHandler`), dibina drpd PublicBaseURL dalam
@@ -68,7 +68,7 @@ func (t *ToyyibPayGateway) Name() string { return "toyyibpay" }
 
 func (t *ToyyibPayGateway) Enabled() bool { return t.configured }
 
-// CreatePayment cipta bil (createBill) dan pulang URL hosted-redirect —
+// CreatePayment cipta bil (createBill) dan pulang URL hosted-redirect -
 // ToyyibPay BUKAN client-secret macam Stripe, pembayar navigasi KELUAR
 // app ke halaman ToyyibPay sendiri. `RedirectURL` (bukan `ClientSecret`)
 // yang diisi, padanan medan yang dah sedia di `CreateResult` khas untuk
@@ -78,7 +78,7 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 		return CreateResult{}, ErrNotConfigured
 	}
 
-	// billName ≤30 aksara, billDescription ≤100 — had dari dokumentasi
+	// billName ≤30 aksara, billDescription ≤100 - had dari dokumentasi
 	// komuniti (bukan disahkan rasmi), dipotong defensif di sini supaya
 	// caller tak perlu tahu had ni.
 	desc := params.Metadata["description"]
@@ -96,14 +96,14 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	form.Set("billDescription", desc)
 	form.Set("billPriceSetting", "1") // 1 = jumlah tetap (bukan pembayar isi sendiri)
 	form.Set("billPayorInfo", "1")
-	form.Set("billAmount", strconv.FormatInt(params.AmountCents, 10)) // dalam SEN, padanan terus amount_cents — tiada penukaran unit
+	form.Set("billAmount", strconv.FormatInt(params.AmountCents, 10)) // dalam SEN, padanan terus amount_cents - tiada penukaran unit
 	form.Set("billPaymentChannel", "2")                               // 0=FPX, 1=kad, 2=dua-dua
 	form.Set("billReturnUrl", t.returnURL)
 	form.Set("billCallbackUrl", t.callbackURL)
 	if ref := params.Metadata["reference"]; ref != "" {
 		form.Set("billExternalReferenceNo", ref)
 	}
-	// billTo WAJIB (disahkan terhadap sandbox 2026-08-15 — createBill
+	// billTo WAJIB (disahkan terhadap sandbox 2026-08-15 - createBill
 	// pulang `{"status":"error","msg":"billTo parameter is empty"}` bila
 	// tiada). Dokumentasi komuniti tak sebut ini wajib. billEmail/
 	// billPhone belum disahkan wajib/tidak, tapi hantar kalau ada supaya
@@ -120,9 +120,9 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	if phone := params.Metadata["billPhone"]; phone != "" {
 		form.Set("billPhone", phone)
 	}
-	// billExpiryDate — bil jadi inactive selepas masa ni (ToyyibPay API
+	// billExpiryDate - bil jadi inactive selepas masa ni (ToyyibPay API
 	// rasmi). Format dd-mm-yyyy hh:mm:ss, zon MYT (sama receipt/bind).
-	// Metadata "billExpiryMinutes" optional — caller (yuran pendaftaran)
+	// Metadata "billExpiryMinutes" optional - caller (yuran pendaftaran)
 	// hantar; modul lain (yuran aktiviti) boleh abaikan.
 	if minsRaw := strings.TrimSpace(params.Metadata["billExpiryMinutes"]); minsRaw != "" {
 		if mins, err := strconv.Atoi(minsRaw); err == nil && mins > 0 {
@@ -149,7 +149,7 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	}
 
 	// Respons createBill (dokumentasi komuniti): array JSON bawa satu
-	// objek, cth `[{"BillCode":"abc123"}]`. BELUM disahkan rasmi — kalau
+	// objek, cth `[{"BillCode":"abc123"}]`. BELUM disahkan rasmi - kalau
 	// bentuk sebenar berbeza, ralat di sini akan tunjuk raw body untuk
 	// mudah diagnos semasa uji sandbox.
 	var bills []struct {
@@ -158,7 +158,7 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	}
 	if err := json.Unmarshal(body, &bills); err != nil || len(bills) == 0 || bills[0].BillCode == "" {
 		snippet := string(body)
-		// 500, bukan 300 — padan `maxPaymentLogMessage`
+		// 500, bukan 300 - padan `maxPaymentLogMessage`
 		// (paymentlog_helpers.go) supaya snippet ni tak dipotong dua kali
 		// buat sia-sia (Opus verify 2026-08-15: 300 di sini + 500 di
 		// handler bermakna 300 yang sebenarnya berkuat kuasa, buang
@@ -177,19 +177,19 @@ func (t *ToyyibPayGateway) CreatePayment(ctx context.Context, params CreateParam
 	}, nil
 }
 
-// VerifyWebhook — ToyyibPay TIADA sah kriptografi callback yang boleh
+// VerifyWebhook - ToyyibPay TIADA sah kriptografi callback yang boleh
 // dipercayai sepenuhnya. Kajian 2026-08-15 jumpa medan `hash` disebut
 // dalam sesetengah sumber (nampak khusus DuitNow QR), tapi DUA sumber
 // sekunder bagi FORMULA BERCANGGAH untuk kira hash tu, dan tiada
 // pengesahan ia hadir pada SEMUA jenis callback (FPX/kad biasa). Body
 // callback jadi TAK BOLEH dipercayai untuk credit terus.
 //
-// Reka bentuk (penyimpangan sengaja drpd pola Stripe — lihat
+// Reka bentuk (penyimpangan sengaja drpd pola Stripe - lihat
 // PAYMENT-TOYYIB.md): callback body cuma diambil `billcode`, lepas tu
 // status SEBENAR disahkan dengan poll `getBillTransactions` guna
 // `userSecretKey` (kredential sisi pelayan sahaja, penghantar callback
 // tak boleh palsukan). Ini bermakna `VerifyWebhook` untuk ToyyibPay buat
-// panggilan rangkaian keluar sebelum pulang — TIDAK pure/local macam
+// panggilan rangkaian keluar sebelum pulang - TIDAK pure/local macam
 // `StripeGateway.VerifyWebhook` (sah HMAC tempatan sahaja).
 func (t *ToyyibPayGateway) VerifyWebhook(payload []byte, headers http.Header) (WebhookEvent, error) {
 	if !t.configured {
@@ -198,15 +198,15 @@ func (t *ToyyibPayGateway) VerifyWebhook(payload []byte, headers http.Header) (W
 
 	billCode := extractBillCode(payload, headers.Get("Content-Type"))
 	if billCode == "" {
-		// Payload MENTAH dalam ralat (bukan cuma "billcode kosong") —
+		// Payload MENTAH dalam ralat (bukan cuma "billcode kosong") -
 		// dokumentasi rasmi ToyyibPay tak boleh dibaca (403, lihat
 		// PAYMENT-TOYYIB.md), dan bentuk callback sebenar dah SILAP
 		// diandaikan dua kali berturut-turut semasa kajian (`;` mentah
 		// tolak url.ParseQuery keseluruhan; sebelum itu andaian medan
 		// wajib pun silap). Kali ni kegagalan bawa BUKTI PENUH terus
-		// dalam log — tak payah round-trip staging-fix-staging lagi
+		// dalam log - tak payah round-trip staging-fix-staging lagi
 		// untuk cari punca. Payload boleh bawa PII pembayar (nama/emel)
-		// — dipotong 1000 aksara dan cuma masuk LOG SERVER, tak pernah
+		// - dipotong 1000 aksara dan cuma masuk LOG SERVER, tak pernah
 		// sampai ke client.
 		snippet := string(payload)
 		if len(snippet) > 1000 {
@@ -218,31 +218,31 @@ func (t *ToyyibPayGateway) VerifyWebhook(payload []byte, headers http.Header) (W
 		)
 	}
 
-	// Interface VerifyWebhook tiada parameter context (lihat payment.go) —
+	// Interface VerifyWebhook tiada parameter context (lihat payment.go) -
 	// httpClient.Timeout (15s) yang mengawal had masa panggilan ni.
 	return t.confirmStatus(context.Background(), billCode)
 }
 
 // extractBillCode cuba BERURUTAN pelbagai bentuk body callback yang
-// munasabah — bukan andaikan SATU bentuk sahaja. Sebab: ToyyibPay tak
+// munasabah - bukan andaikan SATU bentuk sahaja. Sebab: ToyyibPay tak
 // dokumenkan bentuk callback tepat secara rasmi (apireference/ 403,
 // lihat PAYMENT-TOYYIB.md), dan setiap andaian tunggal sebelum ni
 // (medan wajib, bentuk "No data found!", `;` sebagai pemisah sah) dah
 // silap sekali bila diuji live. Susunan cubaan: form (url-encoded ATAU
-// multipart, `;` literal diselamatkan dulu), lepas tu JSON — dan
+// multipart, `;` literal diselamatkan dulu), lepas tu JSON - dan
 // PADANAN KUNCI CASE-INSENSITIVE pada dua-dua (respons createBill ToyyibPay
 // sendiri guna "BillCode" huruf besar, callback tak disahkan sama).
 func extractBillCode(payload []byte, contentType string) string {
 	// `;` mentah (disahkan wujud live di salah satu medan lain, cth
 	// msg/reason) buat url.ParseQuery tolak KESELURUHAN body sebelum
-	// sempat baca billcode — escape dulu, tak ubah struktur pasangan
+	// sempat baca billcode - escape dulu, tak ubah struktur pasangan
 	// key=value yang dipisah `&`.
 	sanitized := strings.ReplaceAll(string(payload), ";", "%3B")
-	// Nilai ABAIKAN ralat (bukan cuma `err == nil`) — Opus verify
+	// Nilai ABAIKAN ralat (bukan cuma `err == nil`) - Opus verify
 	// 2026-08-15 dedah `url.ParseQuery` JUGA tolak escape peratus tak
 	// sah (cth `reason=100% off`, `%` mentah bukan diikuti hex, sangat
 	// munasabah dalam medan teks bebas ToyyibPay). `url.ParseQuery`
-	// PULANG `values` SEBAHAGIAN sekali gus `err` bila ini berlaku —
+	// PULANG `values` SEBAHAGIAN sekali gus `err` bila ini berlaku -
 	// billcode selalunya dah berjaya dibaca walaupun medan LAIN
 	// (yang kita tak guna pun) gagal decode. Buang gate `err == nil`
 	// tu sama kelas bug dengan `;` yang bakar staging sebelum ni: satu
@@ -253,10 +253,10 @@ func extractBillCode(payload []byte, contentType string) string {
 		return code
 	}
 
-	// multipart/form-data — sesetengah backend PHP hantar callback
+	// multipart/form-data - sesetengah backend PHP hantar callback
 	// begini, bukan x-www-form-urlencoded. url.ParseQuery di atas tak
 	// akan error (ia baca teks bebas macam pasangan tak bermakna) tapi
-	// juga takkan jumpa billcode — cuba eksplisit kalau Content-Type
+	// juga takkan jumpa billcode - cuba eksplisit kalau Content-Type
 	// memang kata multipart.
 	if mediaType, params, err := mime.ParseMediaType(contentType); err == nil && strings.HasPrefix(mediaType, "multipart/") {
 		if boundary, ok := params["boundary"]; ok {
@@ -269,7 +269,7 @@ func extractBillCode(payload []byte, contentType string) string {
 		}
 	}
 
-	// JSON — kalau bukan dua-dua bentuk form di atas.
+	// JSON - kalau bukan dua-dua bentuk form di atas.
 	var jsonBody map[string]any
 	if err := json.Unmarshal(payload, &jsonBody); err == nil {
 		for key, val := range jsonBody {
@@ -295,15 +295,15 @@ func billCodeFromValues(values url.Values) string {
 	return ""
 }
 
-// CheckStatus — asas internal/paymentreconcile. Guna semula confirmStatus
+// CheckStatus - asas internal/paymentreconcile. Guna semula confirmStatus
 // (poll getBillTransactions yang sama dipakai VerifyWebhook), TIADA
-// logik baharu — reconcile dan webhook confirm MESTI baca dari laluan
+// logik baharu - reconcile dan webhook confirm MESTI baca dari laluan
 // sama supaya jawapan dua-dua konsisten.
 func (t *ToyyibPayGateway) CheckStatus(ctx context.Context, billCode string) (string, error) {
 	event, err := t.confirmStatus(ctx, billCode)
 	if errors.Is(err, ErrIgnoredEvent) {
 		// Tiada transaksi lagi = pembayar belum selesai/belum cuba bayar
-		// — pending, bukan ralat reconcile.
+		// - pending, bukan ralat reconcile.
 		return "pending", nil
 	}
 	if err != nil {
@@ -312,7 +312,7 @@ func (t *ToyyibPayGateway) CheckStatus(ctx context.Context, billCode string) (st
 	return event.Status, nil
 }
 
-// confirmStatus poll getBillTransactions — sumber kebenaran SEBENAR,
+// confirmStatus poll getBillTransactions - sumber kebenaran SEBENAR,
 // bukan body callback. Dipanggil oleh VerifyWebhook; nama berasingan
 // supaya niatnya jelas dibaca semula (bukan sekadar "verify", tapi
 // "sahkan dengan tanya semula server ToyyibPay").
@@ -339,7 +339,7 @@ func (t *ToyyibPayGateway) confirmStatus(ctx context.Context, billCode string) (
 	}
 
 	// Tiada transaksi lagi untuk bil ni: ToyyibPay pulang teks BIASA
-	// "No data found!" (BUKAN array JSON kosong `[]`) — disahkan terhadap
+	// "No data found!" (BUKAN array JSON kosong `[]`) - disahkan terhadap
 	// sandbox 2026-08-15. Perlu semakan eksplisit sebelum json.Unmarshal,
 	// atau ia gagal parse dan disalah anggap sebagai ralat sebenar.
 	if strings.TrimSpace(string(body)) == `No data found!` {
@@ -349,14 +349,14 @@ func (t *ToyyibPayGateway) confirmStatus(ctx context.Context, billCode string) (
 	// Bentuk respons bila ADA transaksi (disahkan produksi 2026-08-22,
 	// bil fmo34a9m): array JSON, medan `billpaymentStatus` (1=berjaya,
 	// 2=pending, 3=gagal, 4=pending-alt). Satu bil boleh ada BEBERAPA
-	// baris — jangan andaikan indeks terakhir = keputusan akhir.
+	// baris - jangan andaikan indeks terakhir = keputusan akhir.
 	var txns []struct {
 		BillpaymentStatus    string `json:"billpaymentStatus"`
 		BillpaymentInvoiceNo string `json:"billpaymentInvoiceNo"`
 	}
 	if err := json.Unmarshal(body, &txns); err != nil {
 		snippet := string(body)
-		// 500, bukan 300 — padan `maxPaymentLogMessage`
+		// 500, bukan 300 - padan `maxPaymentLogMessage`
 		// (paymentlog_helpers.go) supaya snippet ni tak dipotong dua kali
 		// buat sia-sia (Opus verify 2026-08-15: 300 di sini + 500 di
 		// handler bermakna 300 yang sebenarnya berkuat kuasa, buang
@@ -368,7 +368,7 @@ func (t *ToyyibPayGateway) confirmStatus(ctx context.Context, billCode string) (
 	}
 	if len(txns) == 0 {
 		// Tiada transaksi lagi untuk bil ni (pending, atau callback tiba
-		// sebelum ToyyibPay sendiri catat transaksi) — bukan ralat,
+		// sebelum ToyyibPay sendiri catat transaksi) - bukan ralat,
 		// caller patut abaikan macam event tak relevan.
 		return WebhookEvent{}, ErrIgnoredEvent
 	}

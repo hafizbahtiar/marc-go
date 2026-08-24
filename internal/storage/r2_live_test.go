@@ -21,7 +21,7 @@ import (
 //
 // Kenapa wujud: 403 AccessDenied daripada R2 nampak SERUPA sama ada
 // puncanya presign yang salah bentuk atau token yang tiada kebenaran
-// tulis. Ujian ni pisahkan dua-duanya dalam beberapa saat — pada
+// tulis. Ujian ni pisahkan dua-duanya dalam beberapa saat - pada
 // 2026-08-09 ia buktikan token boleh List tapi tak boleh Put, iaitu
 // masalah skop token Cloudflare dan bukan bug kod.
 func TestR2LivePermissions(t *testing.T) {
@@ -63,7 +63,7 @@ func TestR2LivePermissions(t *testing.T) {
 			Body: bytes.NewReader(jpeg), ContentType: aws.String("image/jpeg"),
 		})
 		if err != nil {
-			t.Fatalf("PutObject gagal — token R2 kemungkinan besar baca-sahaja.\n"+
+			t.Fatalf("PutObject gagal - token R2 kemungkinan besar baca-sahaja.\n"+
 				"Betulkan di Cloudflare: R2 > Manage API Tokens > kebenaran\n"+
 				"\"Object Read & Write\" pada bucket %q.\nRalat: %v", r.bucket, err)
 		}
@@ -76,11 +76,11 @@ func TestR2LivePermissions(t *testing.T) {
 	})
 
 	// Upload boleh berjaya sepenuhnya sementara gambar tetap TAK dapat
-	// dipapar — itulah keadaan pada 2026-08-09. Subtest ni menutup jurang
+	// dipapar - itulah keadaan pada 2026-08-09. Subtest ni menutup jurang
 	// tu: ia ambil objek melalui URL awam yang sama yang app guna.
 	t.Run("gambar boleh dibaca melalui R2_PUBLIC_URL", func(t *testing.T) {
 		if !r.HasPublicURL() {
-			t.Skip("R2_PUBLIC_URL kosong — set dulu (r2.dev dev URL atau custom domain)")
+			t.Skip("R2_PUBLIC_URL kosong - set dulu (r2.dev dev URL atau custom domain)")
 		}
 
 		url := r.PublicURL(key)

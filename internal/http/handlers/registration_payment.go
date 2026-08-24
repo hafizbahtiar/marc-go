@@ -23,20 +23,20 @@ import (
 	"marc/internal/receiptmail"
 )
 
-// RegistrationPaymentHandler — yuran pendaftaran ahli SEKALI BAYAR
+// RegistrationPaymentHandler - yuran pendaftaran ahli SEKALI BAYAR
 // (ToyyibPay), BUKAN dues berulang dan BUKAN yuran aktiviti
-// (`activities.fee_cents`, cangkuk berasingan yang belum wired — lihat
+// (`activities.fee_cents`, cangkuk berasingan yang belum wired - lihat
 // TODO.md). Bergantung interface `payment.Gateway` sahaja (padanan
 // DonationHandler), walaupun buat masa ni cuma SATU gateway berdaftar
-// ("toyyibpay") — swap/tambah gateway lain kelak tak sentuh handler ni.
+// ("toyyibpay") - swap/tambah gateway lain kelak tak sentuh handler ni.
 type RegistrationPaymentHandler struct {
-	gw                    payment.Gateway
-	queries               *sqlc.Queries
-	pool                  *pgxpool.Pool
-	feeCents              int64
-	gatewayChargeCents    int64
-	billExpiryMinutes     int
-	emailClient           *email.Client
+	gw                 payment.Gateway
+	queries            *sqlc.Queries
+	pool               *pgxpool.Pool
+	feeCents           int64
+	gatewayChargeCents int64
+	billExpiryMinutes  int
+	emailClient        *email.Client
 }
 
 func NewRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, feeCents, gatewayChargeCents, billExpiryMinutes int, emailClient *email.Client) *RegistrationPaymentHandler {
@@ -52,17 +52,17 @@ func NewRegistrationPaymentHandler(pool *pgxpool.Pool, gw payment.Gateway, feeCe
 }
 
 // Checkout mulakan bayaran yuran pendaftaran untuk ahli LOG MASUK
-// sendiri (RequireAuth SAHAJA — bukan RequireApprovedStatus, sebab ahli
+// sendiri (RequireAuth SAHAJA - bukan RequireApprovedStatus, sebab ahli
 // `pending` yang menunggu kelulusan MESTI boleh bayar bila-bila masa
 // semasa menunggu, sebelum ATAU selepas management tengok permohonan
 // dia; lihat TODO.md keputusan produk 2026-08-15). Rekod
 // `registration_payments` status 'pending', gate sebenar (`pending` ->
 // `approved`) disemak dalam `ProfileHandler.setMemberStatus`.
-// checkoutRequest — Phone PILIHAN: cuma perlu bila `profiles.phone`
+// checkoutRequest - Phone PILIHAN: cuma perlu bila `profiles.phone`
 // masih kosong (ahli `pending` yang daftar SEBELUM phone jadi wajib di
 // `/auth/register`, lihat auth.go). Checkout panggilan pertama (tanpa
 // Phone) untuk ahli begini akan ditolak dengan `code: "phone_required"`
-// — Flutter papar dialog minta nombor, panggil semula Checkout DENGAN
+// - Flutter papar dialog minta nombor, panggil semula Checkout DENGAN
 // Phone diisi.
 type checkoutRequest struct {
 	Phone string `json:"phone"`
@@ -75,8 +75,8 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	}
 
 	var req checkoutRequest
-	// Body kosong sah (kes biasa — ahli yang dah ada phone tak perlu
-	// hantar apa-apa) — cuma tolak kalau JSON yang DIHANTAR cacat.
+	// Body kosong sah (kes biasa - ahli yang dah ada phone tak perlu
+	// hantar apa-apa) - cuma tolak kalau JSON yang DIHANTAR cacat.
 	if c.Request.ContentLength > 0 {
 		if !bindJSON(c, &req) {
 			return
@@ -92,7 +92,7 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 		return
 	}
 
-	// Dah approved — tak perlu bayar (grandfathered ATAU dah lepas gate
+	// Dah approved - tak perlu bayar (grandfathered ATAU dah lepas gate
 	// ni sebelum ni). Elak bil ToyyibPay berulang untuk sesuatu yang dah
 	// tak relevan.
 	if profile.Status == "approved" {
@@ -120,8 +120,8 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 		return
 	}
 
-	// billTo WAJIB oleh ToyyibPay (disahkan sandbox — lihat
-	// toyyibpay.go) — fallback ke member_id kalau display_name kosong,
+	// billTo WAJIB oleh ToyyibPay (disahkan sandbox - lihat
+	// toyyibpay.go) - fallback ke member_id kalau display_name kosong,
 	// tak pernah kosong dua-dua sebab member_id sentiasa diisi semasa
 	// daftar.
 	billTo := ""
@@ -136,15 +136,15 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	// 2026-08-15). Ahli baharu sentiasa ada phone (wajib di
 	// /auth/register), tapi ahli `pending` yang daftar SEBELUM syarat tu
 	// mungkin belum ada. TIADA placeholder rekaan lagi (keputusan
-	// 2026-08-15, sesi susulan) — minta terus dari ahli semasa proses
+	// 2026-08-15, sesi susulan) - minta terus dari ahli semasa proses
 	// bayar, dan SIMPAN ke profil supaya tak perlu tanya lagi kali
 	// seterusnya.
 	//
 	// Phone yang TERSIMPAN turut disahkan semula (Opus verify 2026-08-15
 	// dedah: baris lama yang ditulis SEBELUM `UpdateMe` disahkan hari ni
-	// mungkin bawa nilai cacat cth "abc" — tanpa semakan ni, createBill
+	// mungkin bawa nilai cacat cth "abc" - tanpa semakan ni, createBill
 	// akan tolak dgn 500 generik dan ahli tersekat kekal, tiada laluan
-	// untuk cuba lagi). Phone cacat dilayan SAMA macam phone kosong —
+	// untuk cuba lagi). Phone cacat dilayan SAMA macam phone kosong -
 	// jatuh ke laluan minta-semula di bawah.
 	billPhone := ""
 	if profile.Phone.Valid && profile.Phone.String != "" {
@@ -183,18 +183,18 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	}
 
 	metadata := map[string]string{
-		"description":         "Yuran pendaftaran ahli MARC",
-		"reference":           profile.MemberID,
-		"billTo":              billTo,
-		"billEmail":           profile.Email,
-		"billPhone":           billPhone,
-		"billExpiryMinutes":   strconv.Itoa(h.billExpiryMinutes),
+		"description":       "Yuran pendaftaran ahli MARC",
+		"reference":         profile.MemberID,
+		"billTo":            billTo,
+		"billEmail":         profile.Email,
+		"billPhone":         billPhone,
+		"billExpiryMinutes": strconv.Itoa(h.billExpiryMinutes),
 	}
 
 	// ---- L29: BARIS DB DAHULU, BIL GATEWAY KEMUDIAN ----
 	//
 	// Susunan ni ialah keseluruhan pembaikan. Sebelum ni createBill
-	// berjalan dahulu dan INSERT kemudian — jadi INSERT yang gagal
+	// berjalan dahulu dan INSERT kemudian - jadi INSERT yang gagal
 	// meninggalkan bil ToyyibPay yang SAH dan boleh dibayar tanpa
 	// sebarang baris merujuknya. Kalau ahli bayar bil itu: webhook
 	// mengena 0 baris dan menyenyapkannya sebagai "replay biasa", dan
@@ -202,7 +202,7 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	// kepada apa yang tak pernah wujud. Duit masuk, sifar rekod.
 	//
 	// Dibalikkan, kegagalan yang setara jadi tak berbahaya: yang tinggal
-	// ialah baris 'pending' TANPA ref — kelihatan dalam sejarah bayaran
+	// ialah baris 'pending' TANPA ref - kelihatan dalam sejarah bayaran
 	// ahli, boleh diaudit, dan TIADA bil untuk sesiapa bayar.
 	regPayment, err := h.queries.CreateRegistrationPayment(ctx, sqlc.CreateRegistrationPaymentParams{
 		UserID:      userID,
@@ -233,7 +233,7 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	if err != nil {
 		// Tiada bil wujud, jadi baris 'pending' tu takkan pernah
 		// diselesaikan. Tandakan 'failed' supaya ia tak duduk selamanya
-		// dalam sejarah ahli sebagai "sedang diproses" — dan supaya
+		// dalam sejarah ahli sebagai "sedang diproses" - dan supaya
 		// `GetLatestRegistrationPaymentStatus` (yang mengisi skrin /me)
 		// melaporkan sesuatu yang jujur.
 		log.Printf("%s create payment (registration fee): %v", h.gw.Name(), err)
@@ -258,7 +258,7 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 		ID:         regPayment.ID,
 		GatewayRef: pgtype.Text{String: result.GatewayRef, Valid: true},
 	}); err != nil {
-		// TETINGKAP BAKI — jauh lebih sempit drpd sebelum ni, tapi bukan
+		// TETINGKAP BAKI - jauh lebih sempit drpd sebelum ni, tapi bukan
 		// sifar. Bil wujud dan baris wujud; cuma pautan antara keduanya
 		// yang hilang, jadi webhook (yang mencari ikut ref) takkan
 		// menemuinya.
@@ -267,7 +267,7 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 		// amaun + timestamp, jadi mendamaikannya secara manual ialah satu
 		// UPDATE dan bukan siasatan forensik. Log ERROR + paymentlog
 		// membawa kedua-dua belah pautan yang perlu disambung.
-		log.Printf("ERROR registration_payment: bil %s DICIPTA di %s tapi gagal dipautkan ke baris %s (user=%s) — perlukan pautan manual: %v",
+		log.Printf("ERROR registration_payment: bil %s DICIPTA di %s tapi gagal dipautkan ke baris %s (user=%s) - perlukan pautan manual: %v",
 			result.GatewayRef, h.gw.Name(), regPayment.ID, userID, err)
 		paymentlog.Record(ctx, h.queries, paymentlog.Entry{
 			Module:      paymentlog.ModuleRegistrationFee,
@@ -301,11 +301,11 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 }
 
 // Webhook terima callback ToyyibPay dan update status row
-// `registration_payments` berpadanan. Route AWAM, tiada auth —
+// `registration_payments` berpadanan. Route AWAM, tiada auth -
 // keselamatan bergantung SEPENUHNYA pada `gw.VerifyWebhook` (padanan
 // pola DonationHandler.Webhook). Gateway dihardcode "toyyibpay" (bukan
 // `:gateway` path param macam donations) sebab ciri ni cuma ada SATU
-// gateway — diff lagi kecil drpd generalize untuk kes yang tak wujud.
+// gateway - diff lagi kecil drpd generalize untuk kes yang tak wujud.
 func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 	if h.gw == nil || !h.gw.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "pembayaran yuran pendaftaran belum tersedia"})
@@ -318,7 +318,7 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 		return
 	}
 
-	// Rekod payload MENTAH dahulu, sebelum apa-apa parsing/pengesahan —
+	// Rekod payload MENTAH dahulu, sebelum apa-apa parsing/pengesahan -
 	// lihat komen padanan di DonationHandler.Webhook.
 	paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
 		Module:     paymentlog.ModuleRegistrationFee,
@@ -334,7 +334,7 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 			return
 		}
-		// Kredential belum diisi — endpoint TAK boleh sahkan apa-apa,
+		// Kredential belum diisi - endpoint TAK boleh sahkan apa-apa,
 		// jadi fail-closed (503), bukan terima event tak disahkan.
 		if errors.Is(err, payment.ErrNotConfigured) {
 			log.Printf("webhook %s (registration fee): kredential belum dikonfigurasi", h.gw.Name())
@@ -354,14 +354,14 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 	}
 
 	// Race dengan kelulusan manual serentak: SELAMAT tanpa lock tambahan
-	// — UPDATE ni tulis baris `registration_payments`, gate kelulusan
+	// - UPDATE ni tulis baris `registration_payments`, gate kelulusan
 	// (`setMemberStatus`) BACA baris tu (`HasSucceededRegistrationPayment`)
 	// SEBELUM buka transaksi sendiri. Dua laluan sentuh baris BERBEZA
 	// (registration_payments vs profiles), jadi tiada write-write
 	// conflict yang perlukan kunci pesanan pola
 	// `LockActivityForRegistration`. Kes paling teruk (webhook confirm
 	// tiba SEPERSIS management approve): salah satu menang mengikut
-	// turutan baca/tulis biasa Postgres (read committed) — either ahli
+	// turutan baca/tulis biasa Postgres (read committed) - either ahli
 	// diluluskan (gate baca status 'succeeded' yang baru sahaja commit)
 	// atau ditolak (gate baca sebelum commit, management cuba lagi
 	// lepas bayaran disahkan). Tiada senario ahli diluluskan TANPA
@@ -379,14 +379,14 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 		// pgx.ErrNoRows = tiada row layak dikemas kini: replay webhook
 		// atas bayaran yang dah 'succeeded' (terminal), atau ref yang
 		// bukan milik kita. Normal, bukan kegagalan. Ralat lain pun
-		// sengaja tak digagalkan — ToyyibPay retry berterusan kalau
+		// sengaja tak digagalkan - ToyyibPay retry berterusan kalau
 		// bukan 200.
 		if !errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("update registration payment status (gateway=%s, ref=%s): %v", h.gw.Name(), event.GatewayRef, err)
 		}
 	} else {
 		// `err == nil` = row BENAR-BENAR beralih (WHERE `status <>
-		// 'succeeded'` terkena), bukan replay — padanan komen di
+		// 'succeeded'` terkena), bukan replay - padanan komen di
 		// DonationHandler.Webhook.
 		amountCents := int64(updated.AmountCents)
 		paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
@@ -399,11 +399,11 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 			RelatedID:   &updated.ID,
 		})
 
-		// Resit emel — HANYA bila peralihan ni betul-betul "succeeded"
+		// Resit emel - HANYA bila peralihan ni betul-betul "succeeded"
 		// (bukan "failed", yang turut lalui cabang ni sebab guard SQL
 		// cuma `status <> 'succeeded'`, bukan `status = 'succeeded'`).
 		// Kegagalan cari profil/hantar emel TAK menjejaskan respons 200
-		// ke ToyyibPay — `receiptmail.Send` log sahaja, tak pulang
+		// ke ToyyibPay - `receiptmail.Send` log sahaja, tak pulang
 		// ralat (lihat komen package tu).
 		if event.Status == "succeeded" {
 			if profile, perr := h.queries.GetProfileByUserID(c.Request.Context(), updated.UserID); perr != nil {
@@ -416,7 +416,7 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 				const purpose = "Yuran Pendaftaran Ahli"
 				paidAt := time.Now()
 
-				// PDF dijana DI SINI (caller), bukan dalam receiptmail —
+				// PDF dijana DI SINI (caller), bukan dalam receiptmail -
 				// package tu sengaja tak tahu bentuk `receipt.FeePayment`
 				// (loose coupling, lihat komen package). `nil` pada
 				// kegagalan: `receiptmail.Send` tetap hantar emel versi
@@ -455,16 +455,16 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// ReturnPage — halaman landing selepas pembayar selesai di ToyyibPay
+// ReturnPage - halaman landing selepas pembayar selesai di ToyyibPay
 // (browser dibawa balik ke `returnURL` yang dihantar semasa `createBill`,
 // BUKAN sumber kebenaran status). Sekadar makluman, padanan pola
-// `AuthHandler.verificationHTMLPage` — pengesahan SEBENAR jalan async
+// `AuthHandler.verificationHTMLPage` - pengesahan SEBENAR jalan async
 // via Webhook (poll `getBillTransactions`), bukan di sini.
 func (h *RegistrationPaymentHandler) ReturnPage(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!doctype html>
 <html lang="ms"><head><meta charset="utf-8"><title>Yuran Pendaftaran MARC</title></head>
 <body style="font-family: sans-serif; padding: 40px; text-align: center;">
 <h2>MARC</h2>
-<p>Terima kasih. Pembayaran anda sedang diproses. Boleh kembali ke app MARC — status akan dikemas kini automatik sebaik pembayaran disahkan.</p>
+<p>Terima kasih. Pembayaran anda sedang diproses. Boleh kembali ke app MARC - status akan dikemas kini automatik sebaik pembayaran disahkan.</p>
 </body></html>`))
 }

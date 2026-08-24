@@ -1,7 +1,7 @@
-// Package handlers — BlockedEmailDomainsHandler ialah CRUD ringkas utk
+// Package handlers - BlockedEmailDomainsHandler ialah CRUD ringkas utk
 // `blocked_email_domains` (pelengkap kpd senarai statik terbenam
-// internal/disposableemail — lihat komen package tu untuk rasional
-// penuh). Superadmin SAHAJA (bukan management umum) — keputusan produk
+// internal/disposableemail - lihat komen package tu untuk rasional
+// penuh). Superadmin SAHAJA (bukan management umum) - keputusan produk
 // 2026-08-15: jadual ni kawal SIAPA BOLEH DAFTAR langsung (root-level
 // config, kesan seluruh sistem), beza drpd kategori aktiviti (skop
 // modul tunggal) yang cukup dgn "manager ke atas".
@@ -42,7 +42,7 @@ func (h *BlockedEmailDomainsHandler) requireSuperAdmin(c *gin.Context) bool {
 	return true
 }
 
-// List — GET /admin/blocked-email-domains.
+// List - GET /admin/blocked-email-domains.
 func (h *BlockedEmailDomainsHandler) List(c *gin.Context) {
 	if !h.requireSuperAdmin(c) {
 		return
@@ -62,8 +62,8 @@ type addBlockedEmailDomainRequest struct {
 	Domain string `json:"domain" binding:"required,max=253"`
 }
 
-// Create — POST /admin/blocked-email-domains. Tambahan MANUAL kpd
-// senarai statik terbenam — utk domain baharu yang senarai tu terlepas.
+// Create - POST /admin/blocked-email-domains. Tambahan MANUAL kpd
+// senarai statik terbenam - utk domain baharu yang senarai tu terlepas.
 func (h *BlockedEmailDomainsHandler) Create(c *gin.Context) {
 	if !h.requireSuperAdmin(c) {
 		return
@@ -87,11 +87,11 @@ func (h *BlockedEmailDomainsHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tambah domain"})
 			return
 		}
-		// `on conflict do nothing` — kalau domain dah wujud, `:one` +
+		// `on conflict do nothing` - kalau domain dah wujud, `:one` +
 		// RETURNING kosong pulang `pgx.ErrNoRows` (BUKAN struct sifar
-		// nilai + nil error — Opus verify 2026-08-15 tangkap salah anggap
+		// nilai + nil error - Opus verify 2026-08-15 tangkap salah anggap
 		// ni). Layan sebagai berjaya (idempoten, padanan pola
-		// ApproveProfile, profile.go:748-759) — domain tu MEMANG disekat
+		// ApproveProfile, profile.go:748-759) - domain tu MEMANG disekat
 		// selepas panggilan ni, tak kira sama ada baris ni yang cipta
 		// atau baris sedia ada.
 		row.Domain = domain
@@ -99,7 +99,7 @@ func (h *BlockedEmailDomainsHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, row)
 }
 
-// Delete — DELETE /admin/blocked-email-domains/:domain.
+// Delete - DELETE /admin/blocked-email-domains/:domain.
 func (h *BlockedEmailDomainsHandler) Delete(c *gin.Context) {
 	if !h.requireSuperAdmin(c) {
 		return

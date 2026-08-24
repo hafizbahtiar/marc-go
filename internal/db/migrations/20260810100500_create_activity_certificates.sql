@@ -9,7 +9,7 @@ create table activity_certificates (
 
   serial text not null unique,
 
-  -- Berasingan daripada serial. Serial berjujukan — kalau ia juga kunci
+  -- Berasingan daripada serial. Serial berjujukan - kalau ia juga kunci
   -- pengesahan awam, sesiapa boleh tambah satu dan menuai nama semua ahli.
   verify_token text not null unique,
 

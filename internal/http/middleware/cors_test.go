@@ -52,7 +52,7 @@ func TestCORSDisallowedOriginGetsNoHeaders(t *testing.T) {
 		t.Fatalf("Access-Control-Allow-Origin = %q, mahu kosong bagi origin tak dibenarkan", got)
 	}
 	// Laluan tetap jalan (bukan CORS ni yang blok permintaan same-origin/
-	// non-browser — browser sendiri yang tolak baca respons tanpa header).
+	// non-browser - browser sendiri yang tolak baca respons tanpa header).
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, mahu %d", rec.Code, http.StatusOK)
 	}

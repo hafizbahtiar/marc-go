@@ -23,12 +23,12 @@ func TestGeneratePDF(t *testing.T) {
 		t.Fatalf("output bukan PDF, 8 bait pertama: %q", out[:min(8, len(out))])
 	}
 	if len(out) < 1000 {
-		t.Fatalf("PDF terlalu kecil (%d bait) — kemungkinan halaman kosong", len(out))
+		t.Fatalf("PDF terlalu kecil (%d bait) - kemungkinan halaman kosong", len(out))
 	}
 }
 
 // Sumbangan awanama tanpa nama/emel/member id tak boleh panic atau
-// tinggalkan sel kosong — semua ada fallback.
+// tinggalkan sel kosong - semua ada fallback.
 func TestGeneratePDFAnonymous(t *testing.T) {
 	out, err := GeneratePDF(Donation{AmountCents: 1000, Currency: "myr", GatewayRef: "pi_x"})
 	if err != nil {
@@ -49,7 +49,7 @@ func TestGenerateFeePDF(t *testing.T) {
 		GatewayRef:  "billcode123",
 		PaidAt:      time.Date(2026, 8, 9, 14, 30, 0, 0, time.UTC),
 		Purpose:     "Yuran Pendaftaran Ahli",
-		// AmountCents (1000) > GatewayChargeCents (100) — breakdown
+		// AmountCents (1000) > GatewayChargeCents (100) - breakdown
 		// "Yuran"/"Caj Pemprosesan Pembayaran" patut terpapar.
 		GatewayChargeCents: 100,
 	})
@@ -60,13 +60,13 @@ func TestGenerateFeePDF(t *testing.T) {
 		t.Fatalf("output bukan PDF, 8 bait pertama: %q", out[:min(8, len(out))])
 	}
 	if len(out) < 1000 {
-		t.Fatalf("PDF terlalu kecil (%d bait) — kemungkinan halaman kosong", len(out))
+		t.Fatalf("PDF terlalu kecil (%d bait) - kemungkinan halaman kosong", len(out))
 	}
 }
 
 // Kes tepi (padanan CheckoutPage `_InvoiceCard`): AmountCents <=
 // GatewayChargeCents (atau GatewayChargeCents=0/tak diisi) TAK boleh
-// panic/hasilkan baris "Yuran RM0.00"/negatif — cuma jadual butiran
+// panic/hasilkan baris "Yuran RM0.00"/negatif - cuma jadual butiran
 // biasa tanpa breakdown.
 func TestGenerateFeePDFTanpaBreakdown(t *testing.T) {
 	cases := []struct {
@@ -139,7 +139,7 @@ func TestAmountInWords(t *testing.T) {
 		}
 	}
 
-	// Ejaan Melayu tak sesuai untuk mata wang lain — panel eja dilangkau.
+	// Ejaan Melayu tak sesuai untuk mata wang lain - panel eja dilangkau.
 	if got := amountInWords(2500, "usd"); got != "" {
 		t.Errorf("amountInWords bukan MYR = %q, mahu kosong", got)
 	}

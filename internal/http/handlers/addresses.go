@@ -13,12 +13,12 @@ import (
 	"marc/internal/http/middleware"
 )
 
-// maxAddressesPerUser — had produk (boleh berubah), disemak app-layer
+// maxAddressesPerUser - had produk (boleh berubah), disemak app-layer
 // dalam transaksi sebelum INSERT, bukan constraint DB. Padanan cara
 // sequences/nombor ahli dikira.
 const maxAddressesPerUser = 3
 
-// malaysianStates — 16 negeri/wilayah Malaysia. Senarai tertutup: state
+// malaysianStates - 16 negeri/wilayah Malaysia. Senarai tertutup: state
 // yang tak ada dalam senarai ni ditolak 400.
 var malaysianStates = []string{
 	"Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang",
@@ -73,7 +73,7 @@ func toAddressResponse(a sqlc.MemberAddress) addressResponse {
 	}
 }
 
-// ListMyAddresses — GET /me/addresses. Self-service: ahli sendiri sahaja.
+// ListMyAddresses - GET /me/addresses. Self-service: ahli sendiri sahaja.
 func (h *ProfileHandler) ListMyAddresses(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
@@ -105,7 +105,7 @@ type createAddressRequest struct {
 	IsDefault   bool    `json:"is_default"`
 }
 
-// validateAddressType/Postcode/State — dikongsi Create dan Update.
+// validateAddressType/Postcode/State - dikongsi Create dan Update.
 func validAddressType(t string) bool {
 	return t == "landed" || t == "highrise"
 }
@@ -122,7 +122,7 @@ func validPostcode(p string) bool {
 	return true
 }
 
-// CreateAddress — POST /me/addresses. Alamat PERTAMA ahli paksa
+// CreateAddress - POST /me/addresses. Alamat PERTAMA ahli paksa
 // is_default=true tanpa kira body (elak keadaan "0 default"). Tolak 400
 // kalau dah ada 3 (had disemak dalam transaksi yang sama, padanan
 // corak sequences).
@@ -174,7 +174,7 @@ func (h *ProfileHandler) CreateAddress(c *gin.Context) {
 		return
 	}
 
-	// Alamat PERTAMA — paksa default tanpa kira body, elak "0 default".
+	// Alamat PERTAMA - paksa default tanpa kira body, elak "0 default".
 	isDefault := req.IsDefault
 	if count == 0 {
 		isDefault = true
@@ -226,7 +226,7 @@ type updateAddressRequest struct {
 	IsDefault   *bool   `json:"is_default"`
 }
 
-// UpdateAddress — PATCH /me/addresses/:id. Semua medan pilihan (partial
+// UpdateAddress - PATCH /me/addresses/:id. Semua medan pilihan (partial
 // update, padanan PATCH /me). is_default=true nyahtetapkan default lama
 // dalam transaksi yang sama. 404 kalau :id bukan milik caller.
 func (h *ProfileHandler) UpdateAddress(c *gin.Context) {
@@ -302,7 +302,7 @@ func (h *ProfileHandler) UpdateAddress(c *gin.Context) {
 
 	// is_default=true nyahtetapkan default LAMA dalam transaksi yang sama
 	// (partial unique index tolak dua default serentak). is_default=false
-	// sengaja diabaikan — spec tak sediakan cara "buang default tanpa
+	// sengaja diabaikan - spec tak sediakan cara "buang default tanpa
 	// gantikan", dan invariant "wajib SATU default" mesti kekal.
 	if req.IsDefault != nil && *req.IsDefault {
 		if err := q.UnsetDefaultForUser(ctx, userID); err != nil {
@@ -324,7 +324,7 @@ func (h *ProfileHandler) UpdateAddress(c *gin.Context) {
 	c.JSON(http.StatusOK, toAddressResponse(updated))
 }
 
-// DeleteAddress — DELETE /me/addresses/:id. Kalau baris dipadam ialah
+// DeleteAddress - DELETE /me/addresses/:id. Kalau baris dipadam ialah
 // default DAN ada baris lain tinggal, auto-promote baris paling lama
 // (created_at) jadi default baharu dalam transaksi yang sama.
 func (h *ProfileHandler) DeleteAddress(c *gin.Context) {
@@ -380,7 +380,7 @@ func (h *ProfileHandler) DeleteAddress(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ptrToPgText — *string -> pgtype.Text. nil = NULL (narg "tak dihantar",
+// ptrToPgText - *string -> pgtype.Text. nil = NULL (narg "tak dihantar",
 // biar nilai asal). Berbeza drpd ptrToText(handlers/profile.go) yang
 // terima `string` (bukan pointer) dan sentiasa Valid.
 func ptrToPgText(s *string) pgtype.Text {

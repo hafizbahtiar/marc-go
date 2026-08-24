@@ -67,7 +67,7 @@ func parseUUIDParam(c *gin.Context, name string) (uuid.UUID, bool) {
 }
 
 // Penukar jenis pgtype. Nilai kosong (zero time / string kosong / uuid.Nil)
-// jadi NULL — itu yang dimaksudkan oleh medan pilihan yang tak dihantar.
+// jadi NULL - itu yang dimaksudkan oleh medan pilihan yang tak dihantar.
 func pgTimestamptz(t time.Time) pgtype.Timestamptz {
 	if t.IsZero() {
 		return pgtype.Timestamptz{}
@@ -75,16 +75,16 @@ func pgTimestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
 }
 
-// malaysiaTZ — sama seperti internal/receipt: FixedZone dan bukan
+// malaysiaTZ - sama seperti internal/receipt: FixedZone dan bukan
 // LoadLocation, supaya ia tak bergantung pada tzdata dalam imej container
 // yang nipis.
 var malaysiaTZ = time.FixedZone("MYT", 8*60*60)
 
-// pgDate — hanya bahagian tarikh, dipotong mengikut waktu MALAYSIA.
+// pgDate - hanya bahagian tarikh, dipotong mengikut waktu MALAYSIA.
 //
 // Sijil menyimpan `date` dan bukan `timestamptz`: "1 Sep 2026" yang
 // tercetak tak boleh beralih hari ikut zon waktu pembaca. Pemotongan itu
-// mesti berlaku dalam zon waktu ACARA, bukan UTC — aktiviti yang bermula
+// mesti berlaku dalam zon waktu ACARA, bukan UTC - aktiviti yang bermula
 // 00:30 MYT pada 1 September ialah 16:30 UTC pada 31 Ogos, dan sijil yang
 // mencetak "31 Ogos" salah pada dokumen yang tak boleh dibetulkan selepas
 // diterbitkan.

@@ -32,7 +32,7 @@ func TestVerificationEmailHTMLEscapeEmel(t *testing.T) {
 		"https://marc.hafizbahtiar.com/sahkan-emel?token=safe",
 	)
 	if strings.Contains(html, "<script>") {
-		t.Fatal("emel pengguna tak di-escape — injection dalam HTML emel")
+		t.Fatal("emel pengguna tak di-escape - injection dalam HTML emel")
 	}
 	if !strings.Contains(html, "&lt;script&gt;") {
 		t.Fatal("emel pengguna patut muncul sebagai entiti HTML")

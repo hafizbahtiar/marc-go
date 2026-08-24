@@ -85,7 +85,7 @@ func TestRedaksiBuangPIITapiKekalkanCatatan(t *testing.T) {
 	}
 }
 
-// Trigger mesti kekal menolak SEGALA update selain redaksi — kelonggaran
+// Trigger mesti kekal menolak SEGALA update selain redaksi - kelonggaran
 // untuk PDPA tak boleh sekali gus membuka pintu menulis semula sejarah.
 func TestTriggerMasihTolakPengubahanSejarah(t *testing.T) {
 	pool, _, ctx := setup(t)
@@ -199,7 +199,7 @@ func TestPruneBatuNisanUpload(t *testing.T) {
 	for key, want := range map[string]int{
 		"posts/_tomb-old.jpg":     0,
 		"posts/_tomb-new.jpg":     1,
-		"posts/_tomb-pending.jpg": 1, // belum dipadam dari R2 — mesti kekal
+		"posts/_tomb-pending.jpg": 1, // belum dipadam dari R2 - mesti kekal
 	} {
 		var n int
 		if err := pool.QueryRow(ctx,

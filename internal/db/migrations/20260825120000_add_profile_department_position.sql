@@ -1,8 +1,8 @@
 -- +goose Up
 
--- Bahagian/jawatan ahli — management (manager ke atas) sahaja boleh
+-- Bahagian/jawatan ahli - management (manager ke atas) sahaja boleh
 -- tetapkan, bukan self-service (beza drpd emergency_contact/health_notes).
--- `on delete set null` (bukan restrict) — buang satu bahagian dari
+-- `on delete set null` (bukan restrict) - buang satu bahagian dari
 -- `departments` TAK sepatutnya block, ahli yang terjejas jadi "tiada
 -- bahagian" dan boleh ditetapkan semula.
 alter table profiles

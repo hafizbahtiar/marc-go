@@ -25,7 +25,7 @@ var (
 	mutedColor = [3]int{110, 116, 122}
 )
 
-// Data — segala yang perlu untuk mencetak satu sijil. Semuanya sudah
+// Data - segala yang perlu untuk mencetak satu sijil. Semuanya sudah
 // disnapshot oleh pemanggil; fungsi ini tidak membaca DB.
 type Data struct {
 	Serial        string
@@ -41,7 +41,7 @@ type Data struct {
 // Ia penterjemah yang SAMA jenisnya dengan yang dipakai semasa mencetak,
 // jadi semakan tidak boleh menyimpang daripada pengekod sebenar. Closure
 // fpdf berkongsi satu bytes.Buffer dalaman (lihat repClosure dalam
-// fpdf/util.go), jadi ia BUKAN selamat-goroutine — itu sebab mutex.
+// fpdf/util.go), jadi ia BUKAN selamat-goroutine - itu sebab mutex.
 // Membinanya memakan ~260µs, jadi ia dibina sekali sahaja dan bukan pada
 // setiap panggilan EncodableName.
 var (
@@ -58,12 +58,12 @@ func translate(s string) string {
 	return cp1252(s)
 }
 
-// unencodable — cari aksara pertama yang akan hilang bila dicetak.
+// unencodable - cari aksara pertama yang akan hilang bila dicetak.
 //
 // fpdf dengan fon terbina mengekod ke cp1252 dan menggantikan setiap rune
 // yang tiada dalam peta itu dengan '.' secara SENYAP (repClosure,
 // fpdf/util.go). Aktiviti bertajuk "锦标赛" akan diterbitkan sebagai "..."
-// — sijil rosak yang tiada siapa perasan sehingga penerima membukanya.
+// - sijil rosak yang tiada siapa perasan sehingga penerima membukanya.
 //
 // Kita menyemak dengan menterjemah dan membandingkan, bukan dengan
 // meneka julat rune: cp1252 sebenarnya meliputi beberapa rune di atas
@@ -72,7 +72,7 @@ func translate(s string) string {
 func unencodable(s string) (rune, bool) {
 	out := translate(s)
 	// repClosure menulis tepat satu bait bagi setiap rune. Kalau tidak,
-	// penterjemah gagal dimuatkan dan mengembalikan teks asal — cetakan
+	// penterjemah gagal dimuatkan dan mengembalikan teks asal - cetakan
 	// pasti rosak, jadi tolak dan bukan luluskan secara senyap.
 	if len(out) != len([]rune(s)) {
 		return 0, true
@@ -87,7 +87,7 @@ func unencodable(s string) (rune, bool) {
 	return 0, false
 }
 
-// EncodableName — bolehkah nama ini dicetak tanpa kehilangan aksara?
+// EncodableName - bolehkah nama ini dicetak tanpa kehilangan aksara?
 func EncodableName(name string) bool {
 	_, bad := unencodable(name)
 	return !bad
@@ -95,7 +95,7 @@ func EncodableName(name string) bool {
 
 func GeneratePDF(d Data) ([]byte, error) {
 	// Setiap medan yang sampai kepada penterjemah disemak, bukan nama
-	// sahaja — tajuk atau kategori yang rosak sama teruknya. VerifyURL
+	// sahaja - tajuk atau kategori yang rosak sama teruknya. VerifyURL
 	// dikecualikan: ia masuk ke QR, tidak pernah dicetak sebagai teks.
 	for _, f := range []struct{ nama, nilai string }{
 		{"Serial", d.Serial},
@@ -184,7 +184,7 @@ func drawFooter(pdf *fpdf.Fpdf, tr func(string) string, d Data) error {
 	if err != nil {
 		return fmt.Errorf("jana QR: %w", err)
 	}
-	// RegisterImageReader membaca dari memori — tiada fail sementara.
+	// RegisterImageReader membaca dari memori - tiada fail sementara.
 	pdf.RegisterImageOptionsReader("qr", fpdf.ImageOptions{ImageType: "PNG"}, bytes.NewReader(png))
 	pdf.ImageOptions("qr", pageW-marginX-28, pageH-58, 28, 28, false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 
@@ -196,7 +196,7 @@ func drawFooter(pdf *fpdf.Fpdf, tr func(string) string, d Data) error {
 	return nil
 }
 
-// clip potong teks yang lebih lebar drpd sel (fpdf tak clip sendiri —
+// clip potong teks yang lebih lebar drpd sel (fpdf tak clip sendiri -
 // teks panjang akan melimpah melepasi bingkai sijil). Sama seperti
 // internal/receipt.clip; mesti dipanggil SELEPAS SetFont kerana
 // GetStringWidth bergantung pada fon semasa.

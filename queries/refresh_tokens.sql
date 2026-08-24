@@ -7,7 +7,7 @@ returning *;
 -- Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 -- "consumed_at is null" jamin cuma SATU concurrent request menang kalau
 -- hash sama dihantar serentak (row-level lock Postgres). Row TAK
--- dipadam (beza dari sebelum ni) — kekal untuk reuse detection: kalau
+-- dipadam (beza dari sebelum ni) - kekal untuk reuse detection: kalau
 -- hash yang SAMA cuba consume LAGI selepas ni, row dah wujud tapi
 -- consumed_at dah bukan null, so 0 rows returned di sini -> caller
 -- boleh GetRefreshTokenByHash untuk detect reuse & revoke family.

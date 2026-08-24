@@ -12,14 +12,14 @@ jobs:
     # Postgres + Redis SEBENAR (L14, 2026-08-22).
     #
     # Sebelum ni job ni jalankan `go test ./...` tanpa perkhidmatan
-    # apa-apa, jadi setiap `*_live_test.go` lapor SKIP pada setiap PR —
+    # apa-apa, jadi setiap `*_live_test.go` lapor SKIP pada setiap PR -
     # 122 SKIP berbanding 89 PASS, iaitu 58% suite tak pernah berjalan.
     # Antara yang langkau itu ialah penegasan 403-untuk-bukan-management
     # pada SETIAP endpoint pengurusan, jadi PR yang membuang satu semakan
     # `authz.IsManagement` lulus hijau.
     #
     # Kedua-dua perkhidmatan ni percuma pada runner GitHub-hosted dan tak
-    # perlukan rahsia. Ujian R2 KEKAL langkau — ia perlukan kredential
+    # perlukan rahsia. Ujian R2 KEKAL langkau - ia perlukan kredential
     # Cloudflare sebenar, yang keputusan berasingan (lihat langkah
     # "Tripwire" di bawah: ia sengaja tak menuntut R2).
     services:
@@ -72,7 +72,7 @@ jobs:
 
       # SATU DB setiap pakej, bukan satu dikongsi. `go test ./...`
       # menjalankan pakej secara SELARI, dan sapuan latar memproses
-      # SETIAP baris yang layak — jadi dua pakej yang berkongsi satu DB
+      # SETIAP baris yang layak - jadi dua pakej yang berkongsi satu DB
       # boleh saling memakan baris benih masing-masing dan menghasilkan
       # kegagalan yang bergantung pada masa.
       #
@@ -107,25 +107,25 @@ jobs:
           RECONCILE_TEST_DB: postgres://postgres:postgres@localhost:5432/marc_reconcile?sslmode=disable
           REDIS_TEST_URL: redis://localhost:6379/15
 
-      # TRIPWIRE — menghalang kembali senyap kepada keadaan lama.
+      # TRIPWIRE - menghalang kembali senyap kepada keadaan lama.
       #
       # Kegagalan yang perlu ditangkap: seseorang menamakan semula satu
       # env var, atau menambah pakej bersandar-DB baharu dan terlupa
       # menyambungkannya di atas. Ujian itu lalu SKIP, `go test` tetap
       # keluar 0, dan CI kekal hijau sambil menguji kurang daripada yang
-      # dijangka — persis mod kegagalan yang L14 wujud untuk hapuskan.
+      # dijangka - persis mod kegagalan yang L14 wujud untuk hapuskan.
       #
       # Corak `_TEST_DB`/`REDIS_TEST_URL` dipadankan pada mesej SKIP,
       # jadi konvensyen penamaan sedia ada menjadikan pakej BAHARU
       # dilindungi secara automatik.
       #
-      # Skip R2 (`R2_LIVE_TEST`) SENGAJA dikecualikan — ia perlukan
+      # Skip R2 (`R2_LIVE_TEST`) SENGAJA dikecualikan - ia perlukan
       # kredential Cloudflare sebenar dan kekal langkau atas keputusan.
       # Pengecualian itu MESTI dibuat dengan membuang baris yang menyebut
       # `R2_LIVE_TEST`, bukan dengan menyempitkan corak utama: beberapa
       # ujian R2 menyebut `REAPER_TEST_DB` dalam mesej skipnya ("perlukan
       # R2_LIVE_TEST=1 + REAPER_TEST_DB") dan akan salah ditangkap.
-      - name: Tripwire — ujian bersandar-DB mesti benar-benar berjalan
+      - name: Tripwire - ujian bersandar-DB mesti benar-benar berjalan
         run: |
           if grep -E '(_TEST_DB|REDIS_TEST_URL)' test-output.txt | grep -v 'R2_LIVE_TEST' | grep -q .; then
             echo "::error::Ujian bersandar-DB/Redis melapor SKIP walaupun perkhidmatan tersedia."

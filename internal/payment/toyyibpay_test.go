@@ -35,7 +35,7 @@ func TestExtractBillCodeSemicolonMentahDalamMedanLain(t *testing.T) {
 
 // Opus verify 2026-08-15 jumpa kelas bug SAMA lepas fix ';' di atas:
 // url.ParseQuery JUGA tolak escape peratus tak sah (`%` mentah bukan
-// diikuti dua heksadesimal) — sangat munasabah dalam medan teks bebas
+// diikuti dua heksadesimal) - sangat munasabah dalam medan teks bebas
 // macam "100% off". ParseQuery pulang `values` SEBAHAGIAN + `err`
 // serentak bila ini berlaku; billcode (medan lain, tak terjejas) mesti
 // tetap dibaca daripada `values` walau `err != nil`.
@@ -115,7 +115,7 @@ func TestExtractBillCodeTiadaBillcodeLangsung(t *testing.T) {
 }
 
 // Disahkan LIVE 2026-08-22 pada bil produksi fmo34a9m: getBillTransactions
-// pulang ARRAY — transaksi FPX berjaya (status "1") di HADAPAN, diikuti
+// pulang ARRAY - transaksi FPX berjaya (status "1") di HADAPAN, diikuti
 // beberapa baris pending-alt ("4"). Ambil elemen terakhir semata-mata
 // buat webhook/reconcile abaikan bayaran yang dah lepas.
 func TestConfirmStatusUtamakanTransaksiBerjayaWalauBukanTerakhir(t *testing.T) {

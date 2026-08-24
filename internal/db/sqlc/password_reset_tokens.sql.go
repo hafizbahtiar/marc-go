@@ -21,7 +21,7 @@ returning id, user_id, token_hash, expires_at, created_at
 // Tuntut token secara ATOMIK: satu pernyataan, `delete ... returning`.
 //
 // Padanan `ConsumeRefreshToken` (queries/refresh_tokens.sql) dan atas
-// sebab yang SAMA: baca-dahulu-kemudian-tulis ada jurang TOCTOU — dua
+// sebab yang SAMA: baca-dahulu-kemudian-tulis ada jurang TOCTOU - dua
 // permintaan serentak dgn hash yang sama kedua-duanya lulus bacaan lalu
 // kedua-duanya menulis. Dengan `delete ... returning`, kunci baris
 // Postgres menjamin hanya SATU dapat baris; yang lain dapat 0 baris.
@@ -69,8 +69,8 @@ delete from password_reset_tokens where user_id = $1
 
 // Dipanggil DUA tempat, atas sebab berbeza:
 //
-//	request — permintaan baharu membunuh pautan lama
-//	confirm — sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
+//	request - permintaan baharu membunuh pautan lama
+//	confirm - sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
 func (q *Queries) DeletePasswordResetTokensByUser(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deletePasswordResetTokensByUser, userID)
 	return err
@@ -80,7 +80,7 @@ const getPasswordResetTokenByHash = `-- name: GetPasswordResetTokenByHash :one
 select id, user_id, token_hash, expires_at, created_at from password_reset_tokens where token_hash = $1
 `
 
-// UJIAN SAHAJA — tiada pemanggil produksi, dan jangan tambah satu. Kod
+// UJIAN SAHAJA - tiada pemanggil produksi, dan jangan tambah satu. Kod
 // produksi MESTI guna ConsumePasswordResetToken: membaca token
 // dgn SELECT lalu memadamnya kemudian ialah tepat jurang TOCTOU yang
 // Consume wujud untuk menutup.

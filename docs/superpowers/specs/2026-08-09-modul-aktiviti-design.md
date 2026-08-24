@@ -1,4 +1,4 @@
-# Modul Aktiviti — Reka Bentuk
+# Modul Aktiviti - Reka Bentuk
 
 Tarikh: 2026-08-09
 Repo terlibat: `marc_go` (backend), `marc_flutter` (klien)
@@ -28,7 +28,7 @@ pengesahan awam.
 - **Check-in self-scan dan kod ditaip.** Schema menyokong keempat-empat
   kaedah dari hari pertama; hanya `manual` dan `scan` dibina sekarang.
   Self-scan memerlukan token berputar untuk menghalang QR di-*screenshot*
-  dan dikongsi — kerja yang tidak berbaloi sehingga management benar-benar
+  dan dikongsi - kerja yang tidak berbaloi sehingga management benar-benar
   terbeban.
 - **Sijil pencapaian** (johan/naib johan) dan sijil peranan (jurulatih,
   pengadil). Penyertaan sahaja.
@@ -60,7 +60,7 @@ laluan kod yang boleh melanggarnya.
 
 ### Nombor siri sijil guna jadual `sequences`, bukan `create sequence`
 
-Sequence Postgres tidak berundur bila transaksi gagal — ia akan meninggalkan
+Sequence Postgres tidak berundur bila transaksi gagal - ia akan meninggalkan
 lompang dalam penomboran sijil. Jadual `sequences` sedia ada (`key` →
 `current_value`) dikemas kini dengan `update ... returning` dalam transaksi
 yang sama, jadi ia berundur dengan betul.
@@ -73,7 +73,7 @@ masalah, dan `rollback` tidak memadam objek R2.
 
 1. **Transaksi**: kira yang layak, ambil nombor siri, masukkan baris sijil
    dengan `r2_key` **null**, tulis catatan audit, komit.
-2. **Selepas komit**: untuk setiap baris `r2_key is null` — jana PDF, naik
+2. **Selepas komit**: untuk setiap baris `r2_key is null` - jana PDF, naik
    ke R2, kemas kini `r2_key`.
 
 Fasa 2 boleh diulang. Kalau proses mati separuh jalan, panggil endpoint
@@ -167,7 +167,7 @@ unique (activity_id, seq)
 ```
 
 Indeks: `(activity_id, starts_at)`. Aktiviti sehari mempunyai satu sesi
-automatik — tiada dua laluan kod.
+automatik - tiada dua laluan kod.
 
 ### `activity_registrations`
 
@@ -185,7 +185,7 @@ registered_at   timestamptz not null default now()
 cancelled_at    timestamptz
 ```
 
-Unik separa: `(activity_id, user_id) where status <> 'cancelled'` — halang
+Unik separa: `(activity_id, user_id) where status <> 'cancelled'` - halang
 pendaftaran berganda, benarkan pendaftaran semula selepas batal.
 
 Indeks: `(activity_id, status)`, `(user_id)`.
@@ -222,7 +222,7 @@ unique (activity_id, user_id)
 
 ### Migration sokongan
 
-Luaskan `check` jenis pada `notifications` untuk jenis baharu aktiviti —
+Luaskan `check` jenis pada `notifications` untuk jenis baharu aktiviti -
 ikut corak `20260807120100_widen_notifications_member_status`.
 
 ---
@@ -231,10 +231,10 @@ ikut corak `20260807120100_widen_notifications_member_status`.
 
 Router sedia ada mempunyai tiga kumpulan: `protected` (auth), `approved`
 (+ status diluluskan), `verified` (+ emel disahkan). Semakan management
-dibuat dalam handler melalui `authz.IsManagement` — **tiada middleware
+dibuat dalam handler melalui `authz.IsManagement` - **tiada middleware
 `RequireManagement` dalam kod ini**, jangan cipta corak baharu.
 
-### Baca — kumpulan `approved`
+### Baca - kumpulan `approved`
 
 ```
 GET /activities                  senarai, cursor pagination
@@ -246,7 +246,7 @@ GET /me/certificates
 GET /me/certificates/{id}/file   → presigned URL R2
 ```
 
-### Tulis oleh ahli — kumpulan `verified`
+### Tulis oleh ahli - kumpulan `verified`
 
 ```
 POST   /activities/{id}/registration
@@ -254,10 +254,10 @@ DELETE /activities/{id}/registration
 ```
 
 Diletakkan pada `verified` kerana pendaftaran ialah komitmen yang membawa
-nama sebenar ahli ke atas sijil — emel yang tidak disahkan bermakna tiada
+nama sebenar ahli ke atas sijil - emel yang tidak disahkan bermakna tiada
 cara menghubungi orang yang menuntut slot.
 
-### Management — `verified` + `authz.IsManagement`
+### Management - `verified` + `authz.IsManagement`
 
 ```
 POST   /activities
@@ -272,7 +272,7 @@ POST   /activities/{id}/certificates
 POST   /certificates/{id}/revoke
 ```
 
-### Awam — tiada auth
+### Awam - tiada auth
 
 ```
 GET /verify/certificates/{token}
@@ -282,7 +282,7 @@ GET /verify/certificates/{token}
 
 **`PUT` sesi menggantikan keseluruhan set** dalam satu transaksi, kemudian
 mengira semula `activities.starts_at`/`ends_at`. Sesi yang sudah mempunyai
-kehadiran tidak boleh dibuang — `409`.
+kehadiran tidak boleh dibuang - `409`.
 
 **Tanda kehadiran menerima `registration_id` ATAU `checkin_token`.** Skrin
 senarai menghantar `registration_id` (`method='manual'`); scanner menghantar
@@ -291,7 +291,7 @@ senarai menghantar `registration_id` (`method='manual'`); scanner menghantar
 **Tetingkap masa check-in**: dari 2 jam sebelum `session.starts_at` hingga 2
 jam selepas `session.ends_at`. Di luar tetingkap memerlukan tindakan pindaan
 berasingan yang dicatat audit sebagai pindaan, bukan check-in biasa. Tanpa
-had ini, kehadiran boleh ditanda seminggu kemudian tanpa jejak — dan sijil
+had ini, kehadiran boleh ditanda seminggu kemudian tanpa jejak - dan sijil
 bergantung padanya.
 
 **Perebutan kapasiti**: `select ... for update` atas baris `activities`,
@@ -299,14 +299,14 @@ kemudian kira pendaftaran aktif dalam transaksi yang sama. Pada skala
 ratusan ahli ini percuma dan betul tanpa memerlukan Redis.
 
 **Had kadar**: baldi bernama `verify` untuk endpoint pengesahan awam. Baldi
-mesti dinamakan — baldi tanpa nama berkongsi kunci Redis dengan `auth` dan
+mesti dinamakan - baldi tanpa nama berkongsi kunci Redis dengan `auth` dan
 saling menghabiskan kuota.
 
 **Jejak audit** (`audit_logs` sedia ada): cipta/kemas kini/terbit/batal
 aktiviti, tanda & buang tanda kehadiran, pindaan kehadiran di luar
 tetingkap, terbit & tarik sijil.
 
-**Tiada audit untuk pendaftaran ahli** — volum tinggi, dan baris pendaftaran
+**Tiada audit untuk pendaftaran ahli** - volum tinggi, dan baris pendaftaran
 sendiri menyimpan `registered_at`/`cancelled_at`. Keputusan sama seperti
 `create` post.
 
@@ -319,7 +319,7 @@ sedia, aktiviti dibatalkan.
 
 ### Kelayakan
 
-Server mengira sendiri siapa layak — management tidak menyenaraikan:
+Server mengira sendiri siapa layak - management tidak menyenaraikan:
 
 ```
 registration.status = 'registered'
@@ -329,12 +329,12 @@ registration.status = 'registered'
 
 Endpoint hanya menerima aktiviti yang sesi terakhirnya sudah tamat.
 Menerbitkan sijil untuk aktiviti yang belum berlaku tidak boleh diperbetulkan
-dengan bersih — sijil sudah berada di telefon orang.
+dengan bersih - sijil sudah berada di telefon orang.
 
 ### PDF
 
 Modul baharu `internal/certificate`, fungsi tulen
-`GeneratePDF(Certificate) ([]byte, error)` — tiada DB, tiada R2, tiada
+`GeneratePDF(Certificate) ([]byte, error)` - tiada DB, tiada R2, tiada
 rangkaian di dalamnya. Sama seperti `internal/receipt`, itulah yang
 menjadikannya boleh diuji tanpa infra.
 
@@ -354,7 +354,7 @@ Nombor siri: `MARC-<tahun>-<6 digit>`, kunci `sequences` =
 
 ### Halaman pengesahan awam
 
-`GET /verify/certificates/{verify_token}` — tiada auth.
+`GET /verify/certificates/{verify_token}` - tiada auth.
 
 Pulang **hanya**: nama penerima, tajuk aktiviti, tarikh aktiviti, tarikh
 terbit, nombor siri, status (`sah` / `ditarik balik`).
@@ -362,7 +362,7 @@ terbit, nombor siri, status (`sah` / `ditarik balik`).
 Tiada emel, tiada `user_id`, tiada status keahlian, tiada senarai aktiviti
 lain.
 
-Token tidak sah pulang `404` yang **sama** dengan sijil yang tidak wujud —
+Token tidak sah pulang `404` yang **sama** dengan sijil yang tidak wujud -
 tiada oracle yang membezakan "token salah" daripada "sijil ditarik".
 
 ### Tarik balik
@@ -371,7 +371,7 @@ tiada oracle yang membezakan "token salah" daripada "sijil ditarik".
 `deleted_uploads` dengan `reason = 'certificate_revoked'` untuk reaper sedia
 ada.
 
-Halaman pengesahan terus menunjukkan sijil itu **ditarik balik** — baris
+Halaman pengesahan terus menunjukkan sijil itu **ditarik balik** - baris
 kekal, hanya failnya hilang. Memadam baris akan menjadikan sijil yang
 ditarik nampak seperti tidak pernah wujud, yang lebih teruk.
 
@@ -399,28 +399,28 @@ lib/features/activities/
 ```
 
 **Navigasi**: tab baharu "Aktiviti" dalam `nav_shell`. "Sijil Saya" dan
-"Aktiviti Saya" di bawah Profil — jarang dilawati, tidak berbaloi satu tab.
+"Aktiviti Saya" di bawah Profil - jarang dilawati, tidak berbaloi satu tab.
 
 ### Kebergantungan baharu
 
-- `qr_flutter` — papar QR pendaftaran, rendering tempatan sahaja.
-- `mobile_scanner` — scanner management.
+- `qr_flutter` - papar QR pendaftaran, rendering tempatan sahaja.
+- `mobile_scanner` - scanner management.
 - **Tiada pakej PDF.** Endpoint pulang presigned URL, `url_launcher` (sudah
   ada) membukanya dalam pelihat PDF peranti. `gal` hanya untuk imej;
   menyimpan PDF akan menarik `path_provider` + `open_filex` + kebenaran
   storan Android untuk faedah hampir sifar.
 
-**Risiko Android — `mobile_scanner`.** `pubspec.yaml` mempunyai komen
+**Risiko Android - `mobile_scanner`.** `pubspec.yaml` mempunyai komen
 panjang tentang `permission_handler` dipin ke 12.0.3 kerana 13.x menarik
 masuk `compileSdk 37`. `mobile_scanner` boleh melanggar siling yang sama.
 Pin versi yang membina pada compileSdk 35, sahkan `flutter build apk` lulus
 **sebelum** menulis skrin scanner, dan catat sebabnya dalam komen `pubspec`
 mengikut corak sedia ada. Kalau ia menolak untuk dipin, manual check-in
-tetap berfungsi sepenuhnya — ini melambatkan satu skrin, bukan modul.
+tetap berfungsi sepenuhnya - ini melambatkan satu skrin, bukan modul.
 
 ### Tingkah laku UI
 
-**QR ahli ialah `checkin_token` daripada data yang sudah dimuatkan** — tiada
+**QR ahli ialah `checkin_token` daripada data yang sudah dimuatkan** - tiada
 panggilan rangkaian untuk menjananya. Liputan di gelanggang sukan selalunya
 teruk; ahli boleh buka QR sebelum sampai dan ia kekal berfungsi tanpa
 isyarat.
@@ -430,17 +430,17 @@ untuk orang seterusnya. Jangan tolak pengguna keluar skrin setiap scan.
 Nyahlantun token yang sama selama 3 saat.
 
 **Empat keadaan kegagalan scan mesti berbeza**: sudah ditanda hadir (bukan
-ralat — tunjuk hijau), tidak berdaftar, di luar tetingkap masa, tiada
+ralat - tunjuk hijau), tidak berdaftar, di luar tetingkap masa, tiada
 rangkaian. Logik pemetaan diasingkan daripada skrin supaya boleh diuji tanpa
 kamera.
 
-**Check-in memerlukan rangkaian — sengaja.** Tiada baris gilir luar talian:
+**Check-in memerlukan rangkaian - sengaja.** Tiada baris gilir luar talian:
 check-in yang disimpan di peranti boleh dimanipulasi dengan menukar jam
 telefon, dan sijil bergantung padanya. Kalau liputan menjadi masalah
 sebenar, manual tick + tulis kemudian ialah jalan keluar yang jujur.
 
 **Pendaftaran guna optimistic update** untuk kiraan slot, tetapi mesti
-menerima `409 penuh` daripada server dengan bersih — server yang jadi hakim.
+menerima `409 penuh` daripada server dengan bersih - server yang jadi hakim.
 
 ---
 
@@ -448,41 +448,41 @@ menerima `409 penuh` daripada server dengan bersih — server yang jadi hakim.
 
 ### Tulen, tiada infra
 
-- `internal/certificate` — `GeneratePDF` pulang bait bermula `%PDF`, muat
+- `internal/certificate` - `GeneratePDF` pulang bait bermula `%PDF`, muat
   QR, dan **menolak** nama yang tidak boleh dikodkan.
 - Kelayakan sijil sebagai fungsi tulen `(hadir, jumlah_sesi, ambang) →
   layak?`. Kes sempadan: 2/3 pada ambang 66 (lulus) vs 67 (gagal), sifar
   sesi, ambang 100.
 - Pengiraan tetingkap masa check-in.
 
-### Lawan Postgres sebenar — `ACTIVITY_TEST_DB`
+### Lawan Postgres sebenar - `ACTIVITY_TEST_DB`
 
 Ikut corak `HANDLER_TEST_DB`, di-skip secara lalai, guna DB buangan.
 
-- **Perlumbaan kapasiti** — N goroutine mendaftar serentak untuk 1 slot
+- **Perlumbaan kapasiti** - N goroutine mendaftar serentak untuk 1 slot
   terakhir; tepat satu berjaya. Tanpa ujian ini, `select ... for update`
   hanya niat baik.
-- **Invarian `starts_at`/`ends_at`** — `PUT` sesi, sahkan ringkasan sepadan
+- **Invarian `starts_at`/`ends_at`** - `PUT` sesi, sahkan ringkasan sepadan
   min/maks. Termasuk membuang sesi paling awal dan menambah sesi lebih awal.
-- **Unik separa** — daftar → batal → daftar semula berjaya; daftar dua kali
+- **Unik separa** - daftar → batal → daftar semula berjaya; daftar dua kali
   gagal.
-- **Idempoten penerbitan** — panggil endpoint dua kali, bilangan sijil tidak
+- **Idempoten penerbitan** - panggil endpoint dua kali, bilangan sijil tidak
   berubah, tiada nombor siri terbazir.
-- **Sambungan semula fasa 2** — sijil dengan `r2_key` null, panggil endpoint,
+- **Sambungan semula fasa 2** - sijil dengan `r2_key` null, panggil endpoint,
   hanya baris itu diisi.
-- **Nombor siri berundur** — paksa transaksi gagal, `sequences.current_value`
+- **Nombor siri berundur** - paksa transaksi gagal, `sequences.current_value`
   tidak melompat.
-- **Kebocoran halaman pengesahan** — penegasan atas medan respons bahawa
+- **Kebocoran halaman pengesahan** - penegasan atas medan respons bahawa
   emel, `user_id`, dan status keahlian TIDAK hadir. Ditulis sebagai
   penegasan medan supaya menambah medan pada masa depan memecahkan ujian.
   Ini satu-satunya cara semakan privasi bertahan lebih lama daripada niat.
-- **Sijil ditarik** — pengesahan masih pulang baris berstatus ditarik; token
+- **Sijil ditarik** - pengesahan masih pulang baris berstatus ditarik; token
   tidak wujud dan token salah dua-dua `404` yang sama.
-- **Kebenaran** — ahli biasa ditolak pada **setiap** endpoint management.
-- **Tetingkap masa** — check-in ditolak di luar tetingkap; pindaan yang
+- **Kebenaran** - ahli biasa ditolak pada **setiap** endpoint management.
+- **Tetingkap masa** - check-in ditolak di luar tetingkap; pindaan yang
   dibenarkan meninggalkan catatan audit.
 
-### Lawan R2 sebenar — `R2_LIVE_TEST=1`
+### Lawan R2 sebenar - `R2_LIVE_TEST=1`
 
 - PDF sijil naik dan boleh diambil semula melalui presigned URL.
 - Sijil ditarik → kunci masuk `deleted_uploads`; reaper memadam objek.

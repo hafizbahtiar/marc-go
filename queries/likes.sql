@@ -19,14 +19,14 @@ where post_id = any(sqlc.arg('post_ids')::uuid[])
 group by post_id;
 
 -- name: PostsLikedByUser :many
--- Untuk tandakan "liked_by_me" bila list post — pulang subset post_ids
+-- Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
 -- yang user ni dah like.
 select post_id from post_likes
 where user_id = $1 and post_id = any(sqlc.arg('post_ids')::uuid[]);
 
 -- name: LikeComment :execrows
 -- `:execrows`, bukan `:exec` (L35, 2026-08-22). Handler perlu tahu sama
--- ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen —
+-- ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen -
 -- `on conflict do nothing` bermakna like berulang ialah no-op, dan
 -- memberitahu tanpa syarat menjadikan endpoint ni gelung spam push
 -- bersasar. Corak SAMA yang L18 tegakkan pada `LikePost`; ia dibawa ke

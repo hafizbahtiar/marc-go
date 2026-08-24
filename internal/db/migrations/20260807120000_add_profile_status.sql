@@ -6,7 +6,7 @@ alter table profiles
   add column approved_at timestamptz;
 
 -- Backfill: everyone who registered BEFORE this migration is already a
--- known/active member — only rows created AFTER this point get the new
+-- known/active member - only rows created AFTER this point get the new
 -- 'pending' default. approved_by/approved_at stay null for these (no
 -- real approver to attribute retroactively).
 update profiles set status = 'approved';

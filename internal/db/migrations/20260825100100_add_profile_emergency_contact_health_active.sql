@@ -1,11 +1,11 @@
 -- +goose Up
 
--- Waris (kontak kecemasan) + nota kesihatan — atribut profil TUNGGAL,
+-- Waris (kontak kecemasan) + nota kesihatan - atribut profil TUNGGAL,
 -- sama pola telegram_chat_id (bukan senarai bersejarah). `health_notes`
--- sengaja freeform text (bukan enum) — keadaan kesihatan terlalu pelbagai
+-- sengaja freeform text (bukan enum) - keadaan kesihatan terlalu pelbagai
 -- utk disenaraikan tertutup, padanan corak `bypass_reason`.
 --
--- `is_active` — flag KEAHLIAN, BUKAN status kelulusan (`status` sedia ada
+-- `is_active` - flag KEAHLIAN, BUKAN status kelulusan (`status` sedia ada
 -- pending/approved/rejected kekal tak berubah). Default `true` supaya
 -- ahli sedia ada semua kekal aktif lepas migrate, tiada kesan retroaktif.
 alter table profiles

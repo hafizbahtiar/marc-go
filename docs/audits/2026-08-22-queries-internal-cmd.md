@@ -1,4 +1,4 @@
-# Audit — `queries/` + `internal/` + `cmd/` (2026-08-22)
+# Audit - `queries/` + `internal/` + `cmd/` (2026-08-22)
 
 Pusingan ketiga. Dua pusingan sebelumnya (2026-08-14 modul aktiviti,
 2026-08-15 `internal/` menyeluruh) direkod terus dalam `TODO.md` sebagai
@@ -11,7 +11,7 @@ ialah buktinya; `TODO.md` ialah senarai kerjanya.
 
 ## Skop dan kaedah
 
-Ketiga-tiga direktori dibaca sepenuhnya — 24 fail dalam `queries/`, 41
+Ketiga-tiga direktori dibaca sepenuhnya - 24 fail dalam `queries/`, 41
 migration, semua handler/middleware/subpackage `internal/`, dan
 `cmd/api/main.go`. Termasuk kod yang tiada dalam audit 2026-08-15: yuran
 aktiviti, `paymentreconcile`, `activitysweep`, `activitylifecycle`,
@@ -23,7 +23,7 @@ Semasa audit:
 go build ./...   bersih
 go vet ./...     bersih
 gofmt -l .       kosong
-go test ./...    semua lulus (ujian live SKIP — tiada env)
+go test ./...    semua lulus (ujian live SKIP - tiada env)
 ```
 
 Maknanya setiap penemuan di bawah **lulus compiler DAN lulus ujian sedia
@@ -39,18 +39,18 @@ penuh.
 
 **Tiada penemuan capai bar itu.** Tiada apa-apa dibaiki terus. L28 dan L29
 dinilai HIGH kerana kedua-duanya kehilangan data atau duit **secara
-senyap, tanpa jejak** — bukan kerana ia boleh dicetuskan oleh penyerang.
+senyap, tanpa jejak** - bukan kerana ia boleh dicetuskan oleh penyerang.
 
 | ID | Keterukan | Ringkasan | Status |
 |---|---|---|---|
 | L28 | HIGH | reaper boleh padam gambar post yang masih hidup | ✅ dibaiki 2026-08-22 |
-| L29 | HIGH | bil ToyyibPay wujud sebelum baris DB — bayaran boleh hilang | ✅ dibaiki penuh 2026-08-22 (migration + susunan dibalikkan) |
+| L29 | HIGH | bil ToyyibPay wujud sebelum baris DB - bayaran boleh hilang | ✅ dibaiki penuh 2026-08-22 (migration + susunan dibalikkan) |
 | L30 | MEDIUM | backlog `paymentreconcile` membesar selama-lamanya | ✅ dibaiki 2026-08-22 (tingkap 7 hari + limit 200) |
 | L31 | MEDIUM | `WriteTimeout` 15s < operasi 30s yang ia hoskan | 🟡 ditampung (90s); pembaikan penuh terbuka |
-| L32 | MEDIUM | tiada laluan tukar/reset kata laluan langsung | ⬜ terbuka — perlu reka bentuk |
-| L33 | LOW | `/me/payments` tak pulangkan derma; resit derma tak dicapai | ⬜ terbuka — perlu perubahan Flutter |
+| L32 | MEDIUM | tiada laluan tukar/reset kata laluan langsung | ⬜ terbuka - perlu reka bentuk |
+| L33 | LOW | `/me/payments` tak pulangkan derma; resit derma tak dicapai | ⬜ terbuka - perlu perubahan Flutter |
 | L34 | LOW | respons `PATCH /comments/:id` hilang `author` | ✅ dibaiki 2026-08-22 |
-| L35 | LOW | like comment tak hantar notifikasi | ⬜ terbuka — perlu keputusan produk |
+| L35 | LOW | like comment tak hantar notifikasi | ⬜ terbuka - perlu keputusan produk |
 | L36 | MEDIUM | enam pakej tiada ujian, termasuk modul duit | ✅ dibaiki 2026-08-22 (keenam-enam) |
 
 Status terkini dijejaki dalam `TODO.md`; jadual ni snapshot pada akhir
@@ -61,29 +61,29 @@ pusingan pembaikan pertama (2026-08-22).
 Dipilih atas kriteria "boleh proceed tanpa migration laluan-duit, tanpa
 keputusan produk, tanpa perubahan Flutter serentak":
 
-- **L28** — pembaikan penuh, dua lapisan, + migration indeks +
+- **L28** - pembaikan penuh, dua lapisan, + migration indeks +
   tiga ujian (dua daripadanya disahkan GAGAL terhadap query lama).
-- **L34** — pembaikan penuh; `LikeCount`/`LikedByMe` didapati mempunyai
+- **L34** - pembaikan penuh; `LikeCount`/`LikedByMe` didapati mempunyai
   kecacatan yang sama pada laluan yang sama dan dibaiki sekali.
-- **L31** — tampung (`WriteTimeout` 15s → 90s).
-- **L29** — tampung (bil yatim kini direkod dengan `GatewayRef` supaya
+- **L31** - tampung (`WriteTimeout` 15s → 90s).
+- **L29** - tampung (bil yatim kini direkod dengan `GatewayRef` supaya
   boleh dicari; kejadiannya tidak dihalang).
 
 ### Pusingan kedua (2026-08-22, kemudian hari)
 
-- **L30** — pembaikan penuh: tingkap atas 7 hari + `batchSize` 200 +
+- **L30** - pembaikan penuh: tingkap atas 7 hari + `batchSize` 200 +
   guard `status <> 'cancelled'` pada query aktiviti.
-- **L12, L13** — dua item lama daripada audit 2026-08-15 yang masih
+- **L12, L13** - dua item lama daripada audit 2026-08-15 yang masih
   terbuka, ditutup dalam batch yang sama (lihat `TODO.md`).
 
-### Pusingan ketiga (2026-08-22) — L36, liputan ujian
+### Pusingan ketiga (2026-08-22) - L36, liputan ujian
 
 Keenam-enam pakej yang `no test files` ditutup. Tiada lagi pakej dalam
 `internal/` tanpa ujian.
 
 Pengajaran yang berbaloi direkod: **ujian mutasi dijalankan pada tiga
 guard paling kritikal, dan DUA daripada tiga penegasan asal ternyata
-vacuous** — ia lulus sama ada logiknya betul atau rosak.
+vacuous** - ia lulus sama ada logiknya betul atau rosak.
 
 | Guard | Mutasi | Keputusan awal |
 |---|---|---|
@@ -94,7 +94,7 @@ vacuous** — ia lulus sama ada logiknya betul atau rosak.
 Puncanya berbeza dan kedua-duanya bernilai diingat:
 
 1. **Penegasan yang merujuk dirinya sendiri.** Ujian menyemai baris pada
-   `maxAge + 24h` — umur benih diterbitkan daripada pemalar yang diuji,
+   `maxAge + 24h` - umur benih diterbitkan daripada pemalar yang diuji,
    jadi menaikkan pemalar turut menaikkan umur benih dan baris itu kekal
    di luar tingkap tak kira apa. Pembaikan: umur MUTLAK, plus semakan
    awal yang gagal kalau pemalar menghampirinya.
@@ -102,17 +102,17 @@ Puncanya berbeza dan kedua-duanya bernilai diingat:
 2. **Menguji lapisan yang salah.** Dedup peringatan berlaku pada DUA
    lapisan: tapisan `ListActivitiesNeedingReminder` dan guard `where
    reminder_sent_at is null` pada UPDATE. Menjalankan `RunOnce` dua kali
-   hanya menguji yang pertama — pusingan kedua tak pernah melihat baris
+   hanya menguji yang pertama - pusingan kedua tak pernah melihat baris
    itu langsung. Guard race sebenar hanya penting apabila DUA replika
    menyenaraikan sebelum salah satu menanda, yang ujian satu-proses tak
    boleh hasilkan. Pembaikan: panggil `MarkActivityReminderSent` dua kali
    TERUS dan tegaskan panggilan kedua mengena sifar baris.
 
 Selepas dibetulkan, ketiga-tiga mutasi menggagalkan ujian yang
-sepatutnya. **Ujian yang tak pernah dilihat gagal bukan ujian** —
+sepatutnya. **Ujian yang tak pernah dilihat gagal bukan ujian** -
 menjalankan mutasi ke atasnya ialah sebahagian kerja, bukan tambahan.
 
-### Pusingan keempat (2026-08-22) — L29 penuh, dan L14
+### Pusingan keempat (2026-08-22) - L29 penuh, dan L14
 
 **L29** dibaiki sepenuhnya: migration menjadikan `gateway_ref` nullable
 dengan indeks unik separa, dan susunan `Checkout` dibalikkan supaya baris
@@ -120,7 +120,7 @@ DB sentiasa mendahului bil gateway. Urutan berbahaya (bil hidup, baris
 tiada) kini mustahil; tetingkap baki yang lebih sempit dinyatakan dalam
 `TODO.md` dan bukan dilaporkan sebagai selesai.
 
-**L14** — CI kini menjalankan Postgres 18 + Redis 8 sebenar. Ini menutup
+**L14** - CI kini menjalankan Postgres 18 + Redis 8 sebenar. Ini menutup
 gandingan yang berjalan sepanjang keseluruhan audit: setiap pusingan
 sebelum ini menulis ujian yang tidak pernah berjalan pada PR.
 
@@ -132,12 +132,12 @@ sebelum ini menulis ujian yang tidak pernah berjalan pada PR.
 Ditambah bersama satu langkah **tripwire** yang menggagalkan job kalau
 mana-mana ujian melapor SKIP atas sebab env var DB hilang. Tanpanya,
 menamakan semula satu env var akan mengembalikan CI kepada 89/122 sambil
-kekal hijau — persis mod kegagalan yang L14 wujud untuk hapuskan.
+kekal hijau - persis mod kegagalan yang L14 wujud untuk hapuskan.
 Disahkan dua arah: senyap bila perkhidmatan hadir, menyala bila satu env
 var dibuang.
 
 Turut dilakukan: **empat item lama ditutup selepas disahkan sudah siap
-tetapi tak pernah ditanda** — L24 (had panjang medan), L25 (rate limit
+tetapi tak pernah ditanda** - L24 (had panjang medan), L25 (rate limit
 comment/post/me), L26 (baldi auth berasingan), L27b (zon waktu resit).
 L27a ditanda semula sebagai *risiko diterima* dan bukan kerja tertunggak.
 Item basi menyebabkan orang menyiasat semula perkara yang sama, jadi
@@ -145,13 +145,13 @@ menutupnya ialah kerja, bukan kemasan.
 
 ---
 
-## L28 — reaper boleh padam gambar post yang MASIH hidup
+## L28 - reaper boleh padam gambar post yang MASIH hidup
 
 **Keterukan:** HIGH (kehilangan data senyap, tidak boleh dipulihkan)
 
 ### Laluan kegagalan
 
-`queries/uploads.sql` — komen dan query tidak sepadan:
+`queries/uploads.sql` - komen dan query tidak sepadan:
 
 ```sql
 -- name: ListStalePendingUploads :many
@@ -168,7 +168,7 @@ menyemaknya. Ia bergantung **sepenuhnya** pada baris dikeluarkan daripada
 ralatnya:
 
 ```go
-// Best-effort — kegagalan padam row ni tak patut gagalkan post
+// Best-effort - kegagalan padam row ni tak patut gagalkan post
 // yang dah berjaya dicipta (row lingering harmless, cuma
 // tracking stale untuk key yang dah attached).
 _ = q.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
@@ -185,11 +185,11 @@ Baris yang tinggal itu **bukan** harmless. Enam jam kemudian
 Hasilnya: objek R2 bagi gambar post yang **sedang dipaparkan** dipadam.
 Baris `post_images` kekal (tiada apa yang menyentuhnya), jadi
 `buildPostResponses` terus menandatangani URL untuk objek yang sudah tiada
-— feed memaparkan imej rosak, kekal, tanpa ralat di mana-mana.
+- feed memaparkan imej rosak, kekal, tanpa ralat di mana-mana.
 
 ### Kenapa ia boleh berlaku
 
-`DeletePendingUpload` dipanggil pada `q` — `Queries` yang terikat pada
+`DeletePendingUpload` dipanggil pada `q` - `Queries` yang terikat pada
 transaksi cipta post yang sama. Kegagalannya bukan hipotesis kosong:
 deadlock, pemutusan sambungan, atau pembatalan statement semuanya
 menghasilkan ralat di sini sambil membiarkan `CreatePost` /
@@ -229,12 +229,12 @@ Kedua-duanya, bukan salah satu:
    Ini juga melindungi daripada mana-mana laluan tulis MASA HADAPAN yang
    terlupa mengeluarkan barisnya.
 2. Tukar `_ =` kepada semakan ralat yang menggagalkan transaksi. Rollback
-   mengekalkan baris `pending_uploads` — tepat seperti niat asal komen itu
+   mengekalkan baris `pending_uploads` - tepat seperti niat asal komen itu
    ("client boleh retry POST /posts dengan r2_keys yang sama").
 
 ---
 
-## L29 — bil ToyyibPay dicipta SEBELUM baris DB; bayaran boleh hilang tanpa jejak
+## L29 - bil ToyyibPay dicipta SEBELUM baris DB; bayaran boleh hilang tanpa jejak
 
 **Keterukan:** HIGH (kerugian kewangan senyap)
 
@@ -257,7 +257,7 @@ if err != nil {
 
 Antara dua panggilan itu terdapat tetingkap di mana bil boleh dibayar
 sedangkan tiada apa-apa dalam DB merujuknya. Kalau INSERT gagal, ahli
-melihat 500 — tetapi klien sudah menerima, atau boleh menerima,
+melihat 500 - tetapi klien sudah menerima, atau boleh menerima,
 `RedirectURL`nya pada percubaan sebelumnya, dan bil itu kekal boleh
 dibayar sehingga ia luput di pihak ToyyibPay.
 
@@ -279,7 +279,7 @@ Kedua-dua mekanisme pemulihan bergantung pada baris DB yang tidak wujud:
 
 ### Jejak yang tinggal tidak mencukupi
 
-`payment_logs` menerima satu baris `EventCheckoutFailed` — tetapi
+`payment_logs` menerima satu baris `EventCheckoutFailed` - tetapi
 binaannya pada laluan ralat itu **tidak** membawa `GatewayRef`, kerana
 `result` tidak digunakan di sana. Jadi bil yatim itu tidak boleh dicari
 walaupun daripada log yang sengaja dibina untuk diagnosis insiden
@@ -290,7 +290,7 @@ bayaran.
 `activity_registration_payment.go` mempunyai bentuk yang serupa:
 `CreatePayment` berjaya, kemudian `SetRegistrationPaymentRef` gagal.
 Kesannya sedikit kurang teruk kerana baris pendaftaran sudah wujud dan
-`activitysweep` akhirnya akan membatalkannya — tetapi `payment_ref` tidak
+`activitysweep` akhirnya akan membatalkannya - tetapi `payment_ref` tidak
 pernah ditulis, jadi webhook bayaran tetap tidak akan menemui apa-apa.
 
 ### Cadangan
@@ -312,7 +312,7 @@ yatim boleh dikesan.
 
 ---
 
-## L30 — backlog `paymentreconcile` membesar selama-lamanya
+## L30 - backlog `paymentreconcile` membesar selama-lamanya
 
 **Keterukan:** MEDIUM (kos berulang + kadar API gateway, bukan ketepatan)
 
@@ -330,7 +330,7 @@ keadaan `pending` apabila pembayar sekadar berhenti:
 
 - **ToyyibPay.** Bil yang tidak dibayar mengembalikan `No data found!`.
   `CheckStatus` memetakannya kepada `"pending"` dengan sengaja ("pembayar
-  belum selesai/belum cuba bayar — pending, bukan ralat"). Selamanya.
+  belum selesai/belum cuba bayar - pending, bukan ralat"). Selamanya.
 - **Stripe.** PaymentIntent yang ditinggalkan kekal
   `requires_payment_method`, yang `CheckStatus` petakan kepada
   `"pending"`. Selamanya.
@@ -349,7 +349,7 @@ ribuan panggilan setiap pusingan, terhadap dua API pihak ketiga, untuk
 bayaran yang tiada siapa akan selesaikan.
 
 Pencetus manual (`POST /admin/payments/reconcile`) mewarisi masalah yang
-sama dan berjalan secara segerak dalam permintaan HTTP — jadi ia turut
+sama dan berjalan secara segerak dalam permintaan HTTP - jadi ia turut
 akan melanggar `WriteTimeout` (lihat L31) sebaik backlog cukup besar.
 
 ### Cadangan
@@ -363,7 +363,7 @@ akan melanggar `WriteTimeout` (lihat L31) sebaik backlog cukup besar.
 
 ---
 
-## L31 — `WriteTimeout` (15s) lebih pendek daripada operasi yang ia hoskan (30s)
+## L31 - `WriteTimeout` (15s) lebih pendek daripada operasi yang ia hoskan (30s)
 
 **Keterukan:** MEDIUM (kekeliruan operasi; data kekal betul)
 
@@ -388,14 +388,14 @@ Terhadap:
 
 ### Kesan terburuk: penerbitan sijil
 
-`fillPendingCertificateFiles` melelar penerima secara **berjujukan** —
+`fillPendingCertificateFiles` melelar penerima secara **berjujukan** -
 dengan sengaja, kerana `PutObject` menyimpan keseluruhan PDF dalam memori
 dan goroutine tanpa had bermakna ratusan PDF dipegang serentak. Untuk
 aktiviti 50–200 orang, keseluruhannya jauh melebihi 15 saat walaupun
 setiap muat naik pantas.
 
 Go **tidak** membatalkan `Request.Context()` apabila write deadline
-berlalu — ia menetapkan deadline pada `ResponseWriter`. Jadi handler terus
+berlalu - ia menetapkan deadline pada `ResponseWriter`. Jadi handler terus
 berjalan hingga habis dan datanya betul: sijil dicipta, fail dimuat naik,
 `r2_key` ditulis, dan panggilan berikutnya menyambung dengan betul. Yang
 gagal hanyalah **respons**.
@@ -403,17 +403,17 @@ gagal hanyalah **respons**.
 Kesannya operasi, bukan korupsi: pengurus melihat sambungan putus setiap
 kali, tiada cara membezakan "gagal" daripada "berjaya tetapi terlalu lama
 untuk dilaporkan", dan akibatnya berkemungkinan menekan Terbitkan berulang
-kali — yang selamat (endpoint idempoten mengikut reka bentuk) tetapi tidak
+kali - yang selamat (endpoint idempoten mengikut reka bentuk) tetapi tidak
 memberitahunya apa-apa.
 
 ### Kesan kedua: webhook ToyyibPay
 
 `VerifyWebhook` ToyyibPay membuat panggilan rangkaian keluar dengan had
 15s sebelum sebarang kerja DB. Jumlahnya melebihi `WriteTimeout` sebaik
-ToyyibPay perlahan — ToyyibPay menerima sambungan putus dan mencuba semula.
+ToyyibPay perlahan - ToyyibPay menerima sambungan putus dan mencuba semula.
 
 Ini kes konkrit bagi amaran generik yang sudah direkod dalam `TODO.md`
-("Nota reka bentuk keselamatan — yuran pendaftaran ToyyibPay"): *"pastikan
+("Nota reka bentuk keselamatan - yuran pendaftaran ToyyibPay"): *"pastikan
 endpoint webhook tetap pulang cepat kepada ToyyibPay … supaya ToyyibPay
 tak retry berulang atas timeout"*. Amaran itu ditulis sebelum ciri dibina;
 ini pengesahan bahawa ia berlaku.
@@ -421,22 +421,22 @@ ini pengesahan bahawa ia berlaku.
 ### Cadangan
 
 Jangka pendek: naikkan `WriteTimeout` kepada 60–90s. Ia timeout global,
-jadi ini melonggarkan perlindungan pada setiap route — boleh diterima
+jadi ini melonggarkan perlindungan pada setiap route - boleh diterima
 memandangkan `MaxBodySize` dan had kadar menangani vektor yang berbeza.
 
 Lebih baik: jadikan fasa 2 penerbitan sijil kerja latar dan pulangkan 202
 serta-merta dengan kiraan kemajuan. Endpoint itu sudah pun boleh disambung
-semula dan idempoten — separuh reka bentuknya sudah wujud.
+semula dan idempoten - separuh reka bentuknya sudah wujud.
 
 ---
 
-## L32 — tiada laluan tukar/reset kata laluan langsung
+## L32 - tiada laluan tukar/reset kata laluan langsung
 
 **Keterukan:** MEDIUM (gap fungsi)
 
 Grep seluruh `internal/`, `cmd/`, `queries/` untuk
 `password.?reset|forgot|lupa.kata`: sifar padanan. Tiada
-`PATCH /me/password` juga — satu-satunya penggunaan kata laluan dalam
+`PATCH /me/password` juga - satu-satunya penggunaan kata laluan dalam
 pangkalan kod ialah `registerRequest.Password`, `loginRequest.Password`,
 dan `dummyPasswordHash`.
 
@@ -459,7 +459,7 @@ corak token legap + hash SHA-256, TTL, dan jadual
 
 ---
 
-## L33 — `/me/payments` tak pulangkan derma; endpoint resit derma tak boleh dicapai
+## L33 - `/me/payments` tak pulangkan derma; endpoint resit derma tak boleh dicapai
 
 **Keterukan:** LOW (gap fungsi)
 
@@ -473,7 +473,7 @@ c.JSON(http.StatusOK, gin.H{
 ```
 
 `queries/donations.sql` tidak mempunyai query senarai berskop pengguna
-langsung — hanya `GetMyDonationByID`.
+langsung - hanya `GetMyDonationByID`.
 
 Tetapi route `GET /me/payments/donation/:id/receipt` wujud dan memerlukan
 `donations.id`. Tiada permukaan API yang mendedahkan id itu kepada
@@ -481,17 +481,17 @@ pemiliknya, jadi endpoint tersebut mati secara praktikal: satu-satunya
 cara ahli boleh mencapainya ialah dengan meneka UUID.
 
 Ahli yang **log masuk** semasa menderma mendapat `user_id` dikaitkan
-(`OptionalAuth`), jadi datanya ada — cuma tiada jalan keluar.
+(`OptionalAuth`), jadi datanya ada - cuma tiada jalan keluar.
 
 Pembaikan: tambah `ListMyDonations` berskop `user_id` (padanan
 `ListMyRegistrationPayments`) dan seksyen ketiga dalam `Mine`. Derma
-tanpa nama (`user_id` null) betul untuk dikecualikan — mereka tiada akaun
+tanpa nama (`user_id` null) betul untuk dikecualikan - mereka tiada akaun
 untuk menuntut baris itu, dan emel resit yang dihantar semasa webhook
 ialah satu-satunya jejak mereka mengikut reka bentuk.
 
 ---
 
-## L34 — respons `PATCH /comments/:id` hilang `author`
+## L34 - respons `PATCH /comments/:id` hilang `author`
 
 **Keterukan:** LOW
 
@@ -509,7 +509,7 @@ c.JSON(http.StatusOK, commentResponse{
 
 `Create` dan `List` kedua-duanya mengisinya. `authorResponse` ialah struct
 nilai, jadi ia bersiri sebagai `{"member_id":"", "display_name":null,
-"avatar_url":null}` dan bukan tiada — klien yang menulis ganti komen dalam
+"avatar_url":null}` dan bukan tiada - klien yang menulis ganti komen dalam
 senarai daripada respons ini akan melihat nama dan avatar penulis lenyap
 sehingga muat semula.
 
@@ -519,28 +519,28 @@ dalam skop, jadi profil boleh dibaca dengan corak yang sama seperti
 
 ---
 
-## L35 — like comment tak hantar notifikasi
+## L35 - like comment tak hantar notifikasi
 
-**Keterukan:** LOW (mungkin disengajakan — perlu pengesahan)
+**Keterukan:** LOW (mungkin disengajakan - perlu pengesahan)
 
 `posts.go` `Like` memanggil `notifyOwner` selepas insert yang berjaya.
 `comments.go` `CommentHandler.Like` tidak memanggil apa-apa, dan tiada
 komen yang menyatakan ia disengajakan.
 
 **Perhatian penting sebelum "membaiki" ini:** L18 (2026-08-15) merekod
-"`CommentHandler.Like` betul (tak notify)" — tetapi ayat itu dalam konteks
+"`CommentHandler.Like` betul (tak notify)" - tetapi ayat itu dalam konteks
 *spam like berulang*, di mana ketiadaan notifikasi ialah yang menjadikan
 laluan comment selamat. Ia bukan pernyataan bahawa komen tidak layak
 menerima notifikasi.
 
 Jadi ini perlu keputusan produk, bukan pembaikan langsung. Kalau
 notifikasi ditambah, ia mesti mengambil guard `:execrows` yang sama yang
-L18 minta untuk `LikePost` — kalau tidak ia membuka semula gelung spam
+L18 minta untuk `LikePost` - kalau tidak ia membuka semula gelung spam
 yang sama pada permukaan baharu.
 
 ---
 
-## L36 — modul duit paling berisiko tiada ujian langsung
+## L36 - modul duit paling berisiko tiada ujian langsung
 
 **Keterukan:** MEDIUM (liputan)
 
@@ -557,7 +557,7 @@ marc/internal/config
 
 Tiga yang pertama ialah kerja latar yang menulis state perniagaan tanpa
 manusia dalam gelung. `paymentreconcile` khususnya **menulis ganti status
-bayaran secara automatik** berdasarkan jawapan gateway — ia diberi kuasa
+bayaran secara automatik** berdasarkan jawapan gateway - ia diberi kuasa
 untuk menukar `pending → succeeded` dan `pending → paid` tanpa pengesahan
 sesiapa.
 
@@ -566,7 +566,7 @@ eksplisit menyatakan ia untuk membolehkan ujian ("Diekspos supaya boleh
 dipanggil terus dalam ujian dan bukan menunggu ticker"). Cangkuknya ada;
 ujiannya tidak pernah ditulis.
 
-`internal/authz` ialah keseluruhan lapisan kebenaran — gantian app-level
+`internal/authz` ialah keseluruhan lapisan kebenaran - gantian app-level
 bagi Postgres RLS yang belum wujud (Stage 9). Ketiadaan ujian di sini
 bertindih dengan L14: ujian live yang **memang** menegaskan
 403-untuk-bukan-management semuanya SKIP dalam CI, jadi tiada apa-apa
@@ -581,10 +581,10 @@ dalam saluran automatik yang menangkap penyingkiran semakan
 
 ---
 
-## Minor — direkod, bukan kerja tertunggak
+## Minor - direkod, bukan kerja tertunggak
 
 - **`posts.go` `List` menyenyapkan `limit` tak sah** kepada default,
-  sedangkan `activities.go` `List` mengembalikan 400 untuk kes yang sama —
+  sedangkan `activities.go` `List` mengembalikan 400 untuk kes yang sama -
   dan komennya menerangkan dengan tepat mengapa senyap itu salah
   (*"limit=500 diamkan jadi 20 ialah jenis perbezaan yang klien tak dapat
   lihat"*). Hujah itu terpakai sama pada kedua-dua laluan.
@@ -596,41 +596,41 @@ dalam saluran automatik yang menangkap penyingkiran semakan
   `cancelled+paid` yang secara eksplisit **memerlukan campur tangan
   manual**. Ringkasan yang dikembalikan kepada pencetus manual jadi
   terlebih optimistik tepat pada kes yang paling perlukan perhatian.
-- **`profile.go` `UpdateMe` tidak atomik** — ia menulis nama/telefon
+- **`profile.go` `UpdateMe` tidak atomik** - ia menulis nama/telefon
   dalam satu operasi, kemudian avatar dalam transaksi berasingan. Kalau
   avatar ditolak, ahli menerima 400 sedangkan nama sudah tersimpan.
 - **6–10 query DB setiap permintaan tulis** (2 gate middleware +
   `requireManagement` + `auditActor` + muat semula respons). Belum
   masalah pada skala kelab. `auditActor` memanggil `GetProfileByUserID`
-  yang `requireManagement` baru sahaja baca — mudah digabungkan bila
+  yang `requireManagement` baru sahaja baca - mudah digabungkan bila
   ia mula penting.
 
 ---
 
 ## Disahkan bersih
 
-Diperiksa dalam pusingan ini tanpa penemuan baharu — direkod supaya tidak
+Diperiksa dalam pusingan ini tanpa penemuan baharu - direkod supaya tidak
 diburu semula:
 
 - **Rotasi refresh token.** `UPDATE … RETURNING` atom dengan guard
   `consumed_at is null`; pengesanan reuse melalui baris yang dikekalkan;
   grace window 5s yang membezakan retry rangkaian daripada kecurian.
 - **Corak kunci pesanan.** `LockActivityForRegistration` diambil pada
-  setiap laluan tulis aktiviti — daftar, PATCH, ganti sesi, check-in,
+  setiap laluan tulis aktiviti - daftar, PATCH, ganti sesi, check-in,
   unmark, terbit sijil. Tiada laluan yang tertinggal.
 - **`audit.Record` dalam transaksi mutasi** pada setiap tapak panggilan
   tanpa kecuali; tiada satu pun best-effort.
 - **Keyset pagination** pada setiap senarai (posts, activities,
-  notifications, audit_logs, payment_logs) — tiada OFFSET di mana-mana.
+  notifications, audit_logs, payment_logs) - tiada OFFSET di mana-mana.
 - **`ListVisibleProfiles`** menapis keterlihatan dalam SQL, jadi baris
   yang tidak layak tidak pernah meninggalkan DB.
 - **`verifyResponse`** sebagai sempadan eksplisit halaman pengesahan awam,
   dengan ujian tripwire tanpa DB yang benar-benar berjalan dalam CI.
 - **`middleware.BlockTesterWrites`** gagal-tertutup pada ralat DB.
-- **`extractBillCode`** ToyyibPay — pengendalian berbilang bentuk dan
+- **`extractBillCode`** ToyyibPay - pengendalian berbilang bentuk dan
   pengabaian ralat separa `ParseQuery` kedua-duanya betul dan
   didokumentasikan dengan sebabnya.
-- **Pengasingan baldi had kadar bernama** — setiap baldi mempunyai nama
+- **Pengasingan baldi had kadar bernama** - setiap baldi mempunyai nama
   unik, jadi tiada dua ciri berkongsi kuota Redis.
 - **Tiada penggabungan rentetan SQL**, tiada mass-assignment melalui
   `bind.go`.

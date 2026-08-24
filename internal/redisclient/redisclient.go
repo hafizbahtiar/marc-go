@@ -6,7 +6,7 @@
 // padanya jatuh balik kepada tingkah laku setempat, bukan crash.
 //
 // Kenapa itu penting di sini: Redis dalam app ni ialah pengganda skala,
-// bukan simpanan kebenaran. Tiada data yang HANYA wujud dalam Redis —
+// bukan simpanan kebenaran. Tiada data yang HANYA wujud dalam Redis -
 // kalau ia hilang, kita hilang penyelarasan antara instance, bukan data.
 // Reka bentuk yang menjadikan Redis wajib akan menukar kebergantungan
 // pilihan menjadi titik kegagalan tunggal tanpa sebab.
@@ -26,7 +26,7 @@ type Client struct {
 
 // New sambung ke Redis. URL kosong = client dimatikan (bukan ralat).
 //
-// Tak membuat I/O — sambungan sebenar berlaku malas pada arahan pertama.
+// Tak membuat I/O - sambungan sebenar berlaku malas pada arahan pertama.
 // Guna Ping untuk mengesahkan kebolehcapaian semasa boot.
 func New(url string) (*Client, error) {
 	if url == "" {
@@ -65,7 +65,7 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 // Redis dedahkan client mentah untuk kegunaan lanjut. Pulang nil bila
-// dimatikan — caller MESTI semak Enabled() dahulu.
+// dimatikan - caller MESTI semak Enabled() dahulu.
 func (c *Client) Redis() *redis.Client {
 	if !c.Enabled() {
 		return nil
@@ -80,14 +80,14 @@ func (c *Client) Close() error {
 	return c.rdb.Close()
 }
 
-// URLCache — cache rentetan berumur pendek yang dikongsi semua instance.
+// URLCache - cache rentetan berumur pendek yang dikongsi semua instance.
 //
 // Digunakan untuk URL R2 yang ditandatangani. Tanpa cache KONGSI, setiap
 // replika menandatangani URL sendiri; klien yang mencapai instance
 // berlainan dapat URL berlainan untuk gambar yang SAMA, dan cache imej
 // pada peranti (dikunci ikut URL) terlepas setiap kali.
 //
-// Pulang nil bila Redis dimatikan — caller patut jatuh balik kepada cache
+// Pulang nil bila Redis dimatikan - caller patut jatuh balik kepada cache
 // dalam-memori.
 func (c *Client) URLCache(prefix string) *URLCache {
 	if !c.Enabled() {
@@ -107,7 +107,7 @@ func (u *URLCache) Get(ctx context.Context, key string) (string, bool) {
 
 	val, err := u.rdb.Get(ctx, u.prefix+key).Result()
 	if err != nil {
-		// Terlepas cache ATAU Redis bermasalah — dua-dua bermakna
+		// Terlepas cache ATAU Redis bermasalah - dua-dua bermakna
 		// "tandatangan baharu". Jangan gagalkan permintaan sebab cache
 		// tak dapat dibaca.
 		return "", false

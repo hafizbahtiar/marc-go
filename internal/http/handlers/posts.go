@@ -77,7 +77,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 	}
 
 	// R2 tak support content-length-range di presign PUT (verified: 501
-	// "Presigned post requests are not yet implemented") — jadi had saiz
+	// "Presigned post requests are not yet implemented") - jadi had saiz
 	// dikuatkuasakan DI SINI, lepas upload siap, sebelum r2_key diterima
 	// masuk post. Gambar yang lebih besar dibuang dari R2 terus (elak
 	// orphan storage).
@@ -112,7 +112,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 			_ = h.queries.DeletePendingUpload(ctx, sqlc.DeletePendingUploadParams{R2Key: key, UserID: userID})
 
 			// Dimensi berlebihan ialah kegagalan yang BOLEH ditindak
-			// pengguna — beritahu had sebenar, jangan campur dengan
+			// pengguna - beritahu had sebenar, jangan campur dengan
 			// "fail rosak" yang tak beri petunjuk apa-apa.
 			if errors.Is(err, storage.ErrImageTooManyPixels) {
 				c.JSON(http.StatusBadRequest, gin.H{
@@ -154,7 +154,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 			return
 		}
 
-		// Padam tracking row DALAM transaksi yang sama — kalau
+		// Padam tracking row DALAM transaksi yang sama - kalau
 		// CreatePost/CreatePostImage/Commit gagal selepas ni dan tx
 		// rollback, row pending_uploads ni SELAMAT (delete tak commit),
 		// jadi client boleh retry POST /posts dengan r2_keys yang sama
@@ -162,7 +162,7 @@ func (h *PostHandler) Create(c *gin.Context) {
 		// dan sah kepunyaan dia (lihat Fix H2 follow-up, audit 2026-08-07).
 		//
 		// Ralat DISEMAK, bukan diabaikan (Opus verify 2026-08-22, L28).
-		// Komen lama kata baris yang tertinggal "harmless" — ia TIDAK:
+		// Komen lama kata baris yang tertinggal "harmless" - ia TIDAK:
 		// `pending_uploads` ialah senarai PADAM, dan `reaper` menggilir
 		// apa sahaja yang masih di situ selepas 6 jam lalu membuang
 		// objeknya dari R2. Satu DELETE yang gagal di sini bermakna
@@ -385,7 +385,7 @@ func (h *PostHandler) Delete(c *gin.Context) {
 
 	// Gilirkan gambar post untuk dipadam dari R2. Baris post_images
 	// sengaja DIKEKALKAN (rekod apa yang pernah dilekatkan, sepadan dengan
-	// soft delete post itu sendiri) — cuma bait dalam bucket yang dibuang,
+	// soft delete post itu sendiri) - cuma bait dalam bucket yang dibuang,
 	// sebab itu yang makan storan. Dilakukan dalam transaksi yang sama:
 	// kalau padam post di-rollback, gilir pembersihan pun ikut.
 	imageKeys, err := q.ListPostImageKeys(ctx, id)
@@ -403,7 +403,7 @@ func (h *PostHandler) Delete(c *gin.Context) {
 		}
 	}
 
-	// Snapshot penuh — management boleh padam post orang lain, jadi ini
+	// Snapshot penuh - management boleh padam post orang lain, jadi ini
 	// satu-satunya rekod kekal tentang apa yang dibuang.
 	if err := audit.Record(ctx, q, audit.Entry{
 		EntityType: audit.EntityPost,

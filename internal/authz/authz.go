@@ -1,14 +1,14 @@
 // Package authz gantikan Postgres RLS + is_management() Supabase dengan
 // app-level check. Dua corak:
 //
-//  1. Role check (management vs ahli) — guna IsManagement dipanggil inline
+//  1. Role check (management vs ahli) - guna IsManagement dipanggil inline
 //     dalam handler (tiada middleware generic kerana setiap check perlu
 //     konteks yang unik).
-//  2. Ownership check ("hanya resource sendiri") — TIADA fungsi generic
+//  2. Ownership check ("hanya resource sendiri") - TIADA fungsi generic
 //     untuk ni. Handler mesti sentiasa scope query guna user id daripada
 //     middleware.UserID(c) (hasil verify JWT), bukan daripada URL/body
 //     yang client hantar. Ini setara RLS qual `auth.uid() = id` di
-//     Supabase — kalau query tak filter guna id dari token, ownership
+//     Supabase - kalau query tak filter guna id dari token, ownership
 //     tak dikuatkuasakan.
 package authz
 
@@ -34,7 +34,7 @@ func IsManagement(ctx context.Context, q *sqlc.Queries, userID uuid.UUID) (bool,
 
 // IsAtLeastRole semak sama ada rank role caller >= rank role `roleKey`.
 // Lebih halus drpd IsManagement (cth "manager ke atas sahaja", exclude
-// supervisor) — guna bila tindakan dikawal lebih ketat drpd management
+// supervisor) - guna bila tindakan dikawal lebih ketat drpd management
 // umum, cth kategori aktiviti (infrastruktur dikongsi semua aktiviti,
 // bukan tindakan pengurusan harian biasa).
 func IsAtLeastRole(ctx context.Context, q *sqlc.Queries, userID uuid.UUID, roleKey string) (bool, error) {

@@ -24,7 +24,7 @@ import (
 )
 
 // DonationHandler bergantung interface `payment.Gateway` sahaja, BUKAN
-// struct konkrit macam Stripe — tambah ToyyibPay/SociaBuzz (Stage 12)
+// struct konkrit macam Stripe - tambah ToyyibPay/SociaBuzz (Stage 12)
 // tak perlu ubah handler ni, cuma daftar entry baru dalam `gateways`
 // (lihat `cmd/api/main.go`).
 type DonationHandler struct {
@@ -37,16 +37,16 @@ func NewDonationHandler(pool *pgxpool.Pool, gateways map[string]payment.Gateway,
 	return &DonationHandler{gateways: gateways, queries: sqlc.New(pool), emailClient: emailClient}
 }
 
-// minDonationCents/maxDonationCents — pagar munasabah (elak fat-finger
+// minDonationCents/maxDonationCents - pagar munasabah (elak fat-finger
 // RM0.01 atau RM999999) sementara threshold RM500 Stripe-vs-SociaBuzz
-// (Stage 12, belum implement — SociaBuzz belum wired) tak dikuatkuasakan
+// (Stage 12, belum implement - SociaBuzz belum wired) tak dikuatkuasakan
 // di sini lagi.
 const (
 	minDonationCents = 100     // RM1
 	maxDonationCents = 5000000 // RM50,000
 )
 
-// max=200/max=254 — had panjang munasabah. Bukan sekadar kebersihan:
+// max=200/max=254 - had panjang munasabah. Bukan sekadar kebersihan:
 // nilai metadata Stripe dihadkan 500 aksara, jadi nama 100KB (body limit
 // global 1MB) akan buat `CreatePayment` gagal dengan 500 daripada API
 // Stripe, bukan 400 yang betul, dan sampah tu turut masuk column `text`
@@ -58,17 +58,17 @@ type donationCheckoutRequest struct {
 }
 
 // selectGateway pilih gateway ikut amount. Buat masa ni Stripe SAHAJA
-// (SociaBuzz belum wired) — bila siap, threshold RM500 masuk sini SATU
+// (SociaBuzz belum wired) - bila siap, threshold RM500 masuk sini SATU
 // tempat, tak sentuh Checkout() langsung.
 func (h *DonationHandler) selectGateway(amountCents int64) payment.Gateway {
 	return h.gateways["stripe"]
 }
 
 // Checkout mulakan donation (gateway ditentukan `selectGateway`) +
-// rekod `donations` status `pending`. Route AWAM (tiada RequireAuth) —
+// rekod `donations` status `pending`. Route AWAM (tiada RequireAuth) -
 // tapi guna OptionalAuth: ahli MARC yang log masuk dikaitkan `user_id`
 // automatik (jejak dalaman lengkap, boleh terus rujuk emel akaun);
-// anonymous WAJIB isi `donor_email` (keputusan produk 2026-08-09 —
+// anonymous WAJIB isi `donor_email` (keputusan produk 2026-08-09 -
 // semua donation kena ada jejak, walau bukan ahli app).
 func (h *DonationHandler) Checkout(c *gin.Context) {
 	var req donationCheckoutRequest
@@ -152,7 +152,7 @@ func (h *DonationHandler) Checkout(c *gin.Context) {
 	})
 
 	// Client tengok field mana terisi (client_secret vs redirect_url)
-	// untuk tentukan flow — tak perlu tahu gateway spesifik apa (lihat
+	// untuk tentukan flow - tak perlu tahu gateway spesifik apa (lihat
 	// payment.CreateResult).
 	c.JSON(http.StatusOK, gin.H{
 		"gateway":       gw.Name(),
@@ -163,7 +163,7 @@ func (h *DonationHandler) Checkout(c *gin.Context) {
 
 // Webhook terima callback mana-mana gateway berdaftar (`:gateway` path
 // param, cth "stripe") dan update status row `donations` berpadanan.
-// Route AWAM, tiada auth — keselamatan bergantung SEPENUHNYA pada
+// Route AWAM, tiada auth - keselamatan bergantung SEPENUHNYA pada
 // `gw.VerifyWebhook` (signature/format spesifik setiap gateway), BUKAN
 // body request yang boleh dipalsukan sesiapa.
 func (h *DonationHandler) Webhook(c *gin.Context) {
@@ -179,7 +179,7 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 		return
 	}
 
-	// Rekod payload MENTAH dahulu, sebelum apa-apa parsing/pengesahan —
+	// Rekod payload MENTAH dahulu, sebelum apa-apa parsing/pengesahan -
 	// inilah baris log paling bernilai untuk diagnosis masa hadapan (lihat
 	// komen paymentlog.go), mesti tertulis walau langkah selepas ni gagal.
 	paymentlog.Record(c.Request.Context(), h.queries, paymentlog.Entry{
@@ -196,14 +196,14 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 			return
 		}
-		// Signing secret belum diisi — endpoint TAK boleh sahkan apa-apa,
+		// Signing secret belum diisi - endpoint TAK boleh sahkan apa-apa,
 		// jadi ia fail-closed (503), bukan terima event tak disahkan.
 		if errors.Is(err, payment.ErrNotConfigured) {
 			log.Printf("webhook %s: signing secret belum dikonfigurasi", gw.Name())
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook belum dikonfigurasi"})
 			return
 		}
-		// Log sebab SEBENAR — ralat VerifyWebhook bukan semestinya
+		// Log sebab SEBENAR - ralat VerifyWebhook bukan semestinya
 		// signature salah (cth mismatch API version), dan tanpa log ni
 		// 400 nampak macam masalah signing secret sedangkan bukan.
 		log.Printf("webhook %s: verify gagal: %v", gw.Name(), err)
@@ -227,7 +227,7 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 		// pgx.ErrNoRows = tiada row yang layak dikemas kini: replay
 		// webhook atas donation yang dah 'succeeded' (terminal), atau ref
 		// yang bukan milik kita. Kedua-duanya normal, bukan kegagalan.
-		// Ralat lain pun sengaja tak digagalkan — gateway retry
+		// Ralat lain pun sengaja tak digagalkan - gateway retry
 		// berterusan kalau bukan 200, jadi log je.
 		if !errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("update donation status (gateway=%s, ref=%s): %v", gw.Name(), event.GatewayRef, err)
@@ -237,7 +237,7 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 	}
 
 	// `err == nil` di sini bermakna row BENAR-BENAR beralih (WHERE
-	// `status <> 'succeeded'` di query terkena) — bukan replay. Jadi
+	// `status <> 'succeeded'` di query terkena) - bukan replay. Jadi
 	// resit hantar TEPAT SEKALI setiap donation berjaya, retry Stripe
 	// selepas ni akan kena `pgx.ErrNoRows` (row dah 'succeeded', tak
 	// match WHERE lagi) dan skip terus cabang ni.
@@ -259,10 +259,10 @@ func (h *DonationHandler) Webhook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// sendReceiptEmail best-effort — kegagalan hantar emel TAK gagalkan
+// sendReceiptEmail best-effort - kegagalan hantar emel TAK gagalkan
 // webhook (Stripe retry kalau bukan 200, dan donation dah pun berjaya
 // direkod, resit hilang bukan sebab kritikal untuk retry). Jana PDF DI
-// SINI (caller) lalu hantar bait ke `receiptmail.Send` — package tu
+// SINI (caller) lalu hantar bait ke `receiptmail.Send` - package tu
 // sengaja tak tahu bentuk `receipt.Donation` (loose coupling, lihat
 // komen `internal/receiptmail`); templat HTML/subjek/label fail dikongsi
 // dgn dua laluan resit fee (registration_payment.go/
@@ -272,7 +272,7 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation,
 	to := textToPtr(d.DonorEmail)
 	memberID := ""
 
-	// Ahli log masuk — satu query `GetProfileByUserID` bagi DUA-DUA emel
+	// Ahli log masuk - satu query `GetProfileByUserID` bagi DUA-DUA emel
 	// akaun (fallback kalau donor_email kosong) DAN member_id (untuk
 	// papar kat resit, konteks tambahan berguna utk ahli).
 	if d.UserID.Valid {
@@ -287,8 +287,8 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation,
 		}
 	}
 	if to == nil {
-		// Sepatutnya tak berlaku — constraint DB `donations_traceable`
-		// jamin user_id ATAU donor_email wujud — tapi jangan panic kalau
+		// Sepatutnya tak berlaku - constraint DB `donations_traceable`
+		// jamin user_id ATAU donor_email wujud - tapi jangan panic kalau
 		// data lama/tak dijangka, log je.
 		log.Printf("resit donation: tiada emel untuk donation gateway_ref=%s", d.GatewayRef)
 		return
@@ -314,7 +314,7 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation,
 		PaidAt:      paidAt,
 	})
 	if err != nil {
-		// PDF gagal jana — hantar resit tetap (versi HTML je) drpd
+		// PDF gagal jana - hantar resit tetap (versi HTML je) drpd
 		// langsung tak hantar apa-apa. Log untuk siasat kenapa gagal.
 		log.Printf("resit donation: gagal jana PDF (gateway_ref=%s): %v", d.GatewayRef, err)
 		pdfBytes = nil
@@ -327,7 +327,7 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation,
 		AmountCents: int64(d.AmountCents),
 		Currency:    d.Currency,
 		GatewayRef:  d.GatewayRef,
-		// FallbackID — padanan tingkah laku ASAL (id baris donation),
+		// FallbackID - padanan tingkah laku ASAL (id baris donation),
 		// dua kind fee tinggalkan ni kosong (lihat komen `Receipt.
 		// FallbackID`).
 		FallbackID: d.ID.String(),

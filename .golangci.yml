@@ -8,7 +8,7 @@ linters:
     - unused
   exclusions:
     rules:
-      # defer x.Close() / defer tx.Rollback() lepas Commit berjaya — error
+      # defer x.Close() / defer tx.Rollback() lepas Commit berjaya - error
       # dia tak actionable pada titik ni (resource dah nak exit function
       # lagipun). Pattern standard, bukan tertinggal check error dengan
       # sengaja untuk logic yang penting.

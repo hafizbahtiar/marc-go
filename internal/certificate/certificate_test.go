@@ -29,7 +29,7 @@ func TestGeneratePDFPulangkanPDFSah(t *testing.T) {
 		t.Errorf("output bukan PDF, 8 bait pertama: %q", out[:min(8, len(out))])
 	}
 	// Sijil dengan QR terbenam sepatutnya jauh melebihi seribu bait.
-	// Ambang longgar sengaja — ini semakan kewarasan, bukan ujian saiz.
+	// Ambang longgar sengaja - ini semakan kewarasan, bukan ujian saiz.
 	if len(out) < 2000 {
 		t.Errorf("PDF terlalu kecil (%d bait), QR mungkin tak terbenam", len(out))
 	}
@@ -38,7 +38,7 @@ func TestGeneratePDFPulangkanPDFSah(t *testing.T) {
 func TestGeneratePDFTolakNamaTakBolehDikodkan(t *testing.T) {
 	d := testData()
 	// Fon Helvetica terbina fpdf hanya meliputi cp1252. Tanpa semakan ini,
-	// nama begini akan DITERBITKAN dengan aksara hilang senyap-senyap —
+	// nama begini akan DITERBITKAN dengan aksara hilang senyap-senyap -
 	// sijil rosak yang tiada siapa perasan sehingga penerima membukanya.
 	d.RecipientName = "李小龍"
 
@@ -49,7 +49,7 @@ func TestGeneratePDFTolakNamaTakBolehDikodkan(t *testing.T) {
 
 // Nama bukan satu-satunya medan yang dicetak. Tajuk, kategori dan siri
 // juga melalui penterjemah cp1252, jadi aksara tak boleh dikodkan di mana-
-// mana antaranya mesti ditolak — bukan diterbitkan sebagai "...".
+// mana antaranya mesti ditolak - bukan diterbitkan sebagai "...".
 func TestGeneratePDFTolakMedanLainTakBolehDikodkan(t *testing.T) {
 	tests := []struct {
 		medan string
@@ -68,7 +68,7 @@ func TestGeneratePDFTolakMedanLainTakBolehDikodkan(t *testing.T) {
 			if err == nil {
 				t.Fatalf("mahu ralat untuk %s tak boleh dikodkan, dapat nil", tt.medan)
 			}
-			// Ralat mesti menamakan medan yang salah — Task 9 memaparkannya
+			// Ralat mesti menamakan medan yang salah - Task 9 memaparkannya
 			// kepada pengurusan, yang perlu tahu apa hendak dibetulkan.
 			if !strings.Contains(err.Error(), tt.medan) {
 				t.Errorf("ralat tidak menamakan medan %s: %v", tt.medan, err)
@@ -78,7 +78,7 @@ func TestGeneratePDFTolakMedanLainTakBolehDikodkan(t *testing.T) {
 }
 
 // Medan yang sah sepenuhnya mesti masih menjana PDF selepas semakan
-// diperluas — semakan yang menolak segalanya juga lulus ujian di atas.
+// diperluas - semakan yang menolak segalanya juga lulus ujian di atas.
 func TestGeneratePDFTerimaSemuaMedanSah(t *testing.T) {
 	d := testData()
 	d.ActivityTitle = "Kejohanan Böla Sepak Piala José 2026"
@@ -89,7 +89,7 @@ func TestGeneratePDFTerimaSemuaMedanSah(t *testing.T) {
 	}
 }
 
-// fpdf tidak memotong teks yang melebihi sel — ia melimpah melepasi
+// fpdf tidak memotong teks yang melebihi sel - ia melimpah melepasi
 // bingkai sijil. Tanpa clip, tajuk aktiviti yang panjang merosakkan
 // susun atur secara senyap.
 func TestClipPotongTeksTerlaluLebar(t *testing.T) {

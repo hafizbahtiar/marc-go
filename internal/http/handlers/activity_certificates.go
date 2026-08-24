@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	// certificateSerialSequence — kunci dalam jadual `sequences`.
+	// certificateSerialSequence - kunci dalam jadual `sequences`.
 	//
 	// Jadual, bukan `create sequence` Postgres: nextval() TIDAK berundur
 	// dengan transaksi, jadi satu penerbitan yang gagal separuh jalan akan
@@ -32,11 +32,11 @@ const (
 	// `update ... returning` biasa dan berundur bersama transaksinya.
 	certificateSerialSequence = "certificate_serial"
 
-	// reasonCertificateRevoked — sebab yang direkod dalam `deleted_uploads`
+	// reasonCertificateRevoked - sebab yang direkod dalam `deleted_uploads`
 	// supaya reaper sedia ada memadam PDF sijil yang ditarik balik.
 	reasonCertificateRevoked = "certificate_revoked"
 
-	// certificateUploadTimeout — had bagi SATU muat naik R2.
+	// certificateUploadTimeout - had bagi SATU muat naik R2.
 	//
 	// R2Client.PutObject tidak menetapkan tempoh tamat sendiri. Tanpa had
 	// ini, satu sambungan yang tersekat menahan keseluruhan pusingan fasa 2
@@ -50,7 +50,7 @@ var (
 	errCertificateNotFound       = errors.New("sijil tidak dijumpai")
 	errCertificateAlreadyRevoked = errors.New("sijil sudah ditarik balik")
 
-	// errUnprintableCertificateField — nama/tajuk yang akan hilang aksara
+	// errUnprintableCertificateField - nama/tajuk yang akan hilang aksara
 	// bila dicetak. Dibungkus (bukan dipulangkan terus) supaya mesejnya
 	// membawa medan dan nilai yang menyinggung sampai ke pengurusan.
 	errUnprintableCertificateField = errors.New("medan sijil tidak boleh dicetak")
@@ -65,7 +65,7 @@ type CertificateHandler struct {
 	verifyURL string
 }
 
-// NewCertificateHandler — verifyURL optional, padanan pola EmailVerifyURL
+// NewCertificateHandler - verifyURL optional, padanan pola EmailVerifyURL
 // (URL PENUH halaman Astro, bukan pangkalan + laluan tetap). Kosong =
 // fallback ke baseURL + "/verify/certificates/:token" (laluan JSON awam
 // Go sendiri, tingkah laku sedia ada).
@@ -82,7 +82,7 @@ func NewCertificateHandler(
 	}
 }
 
-// certificateR2Key — kunci objek bagi satu sijil.
+// certificateR2Key - kunci objek bagi satu sijil.
 //
 // Berasaskan id sijil dan bukan nombor rawak: fasa 2 boleh diulang, dan
 // pusingan kedua mesti menulis ganti objek yang SAMA. Kunci rawak akan
@@ -107,7 +107,7 @@ func issueCertificatesTx(
 	if err != nil {
 		return nil, err
 	}
-	// Setiap `return` ralat di bawah berlaku SEBELUM Commit — termasuk
+	// Setiap `return` ralat di bawah berlaku SEBELUM Commit - termasuk
 	// selepas NextSequence dipanggil. Itu yang menjadikan kaunter siri
 	// berundur bersama baris yang gagal.
 	defer tx.Rollback(ctx)
@@ -116,13 +116,13 @@ func issueCertificatesTx(
 	// Kunci baris aktiviti DAHULU, sebelum satu bacaan pun.
 	//
 	// Dahulu keempat-empat bacaan di bawah (aktiviti, bilangan sesi, calon
-	// layak, siapa sudah bersijil) berjalan di luar transaksi — empat
-	// snapshot pada empat masa berlainan — dan pool.Begin hanya dicapai
+	// layak, siapa sudah bersijil) berjalan di luar transaksi - empat
+	// snapshot pada empat masa berlainan - dan pool.Begin hanya dicapai
 	// selepasnya. Dua akibatnya:
 	//
 	//  1. Pengurus yang membuang tanda kehadiran antara bacaan kelayakan
 	//     dan insert menyebabkan sijil diterbitkan kepada orang yang sudah
-	//     TIDAK layak — dan `unique (activity_id, user_id)` bukan partial,
+	//     TIDAK layak - dan `unique (activity_id, user_id)` bukan partial,
 	//     jadi ia tak boleh diterbitkan semula selepas ditarik balik.
 	//  2. Dua pengurus menekan Terbitkan serentak: kedua-duanya
 	//     mensnapshot `sudahBersijil` kosong, kedua-duanya melukis
@@ -148,7 +148,7 @@ func issueCertificatesTx(
 		}
 		return nil, err
 	}
-	// activities.ends_at ialah max(sesi.ends_at) — RecomputeActivityWindow
+	// activities.ends_at ialah max(sesi.ends_at) - RecomputeActivityWindow
 	// satu-satunya penulisnya. Jadi semakan ini betul-betul bermaksud "sesi
 	// terakhir sudah tamat", bukan sekadar tarikh yang ditaip pengurusan.
 	if time.Now().Before(activity.EndsAt.Time) {
@@ -164,7 +164,7 @@ func issueCertificatesTx(
 	// mana-mana baris dicipta.
 	//
 	// Bukan sekadar penjimatan: fasa 1 MENSNAPSHOT activity.Title ke dalam
-	// baris sijil, dan fasa 2 membaca snapshot itu — bukan aktiviti semasa.
+	// baris sijil, dan fasa 2 membaca snapshot itu - bukan aktiviti semasa.
 	// Tajuk yang tidak boleh dicetak dan sempat masuk ke baris akan
 	// menggagalkan setiap pusingan fasa 2 selama-lamanya, dan membetulkan
 	// tajuk aktiviti melalui API TIDAK menyentuh snapshot itu. Satu-satunya
@@ -188,7 +188,7 @@ func issueCertificatesTx(
 	// Tanpa senarai ini, penerbitan ulangan (iaitu laluan menyambung fasa 2
 	// yang direka bentuk endpoint ini) melukis satu nombor siri bagi setiap
 	// calon, memasukkan sifar baris kerana `on conflict do nothing`, dan
-	// tetap KOMIT — kaunter bergerak 200 setiap percubaan semula. Lompang
+	// tetap KOMIT - kaunter bergerak 200 setiap percubaan semula. Lompang
 	// itulah yang jadual `sequences` wujud untuk dielakkan.
 	certified, err := qtx.ListCertificatesByActivity(ctx, activityID)
 	if err != nil {
@@ -210,7 +210,7 @@ func issueCertificatesTx(
 			continue
 		}
 		// Semakan pra-terbang. Nama yang tidak boleh dicetak akan menjadi
-		// deretan titik dalam PDF, dan fasa 2 tidak boleh membetulkannya —
+		// deretan titik dalam PDF, dan fasa 2 tidak boleh membetulkannya -
 		// lebih baik gagal sebelum apa-apa baris wujud.
 		if !certificate.EncodableName(cand.DisplayName) {
 			return nil, fmt.Errorf("%w: RecipientName %q", errUnprintableCertificateField, cand.DisplayName)
@@ -226,7 +226,7 @@ func issueCertificatesTx(
 			return nil, err
 		}
 		// Tahun dalam waktu Malaysia. Aktiviti 1 Januari 00:30 MYT ialah 31
-		// Disember 16:30 UTC — nombor siri tahun sebelumnya pada dokumen
+		// Disember 16:30 UTC - nombor siri tahun sebelumnya pada dokumen
 		// yang tak boleh dibetulkan selepas diterbitkan.
 		serial := fmt.Sprintf("MARC-%d-%06d", activity.StartsAt.Time.In(malaysiaTZ).Year(), seq)
 
@@ -336,7 +336,7 @@ func fillPendingCertificateFiles(
 
 		// Kemas kini SELEPAS muat naik berjaya. Kalau ia gagal di sini,
 		// baris kekal tanpa r2_key dan pusingan seterusnya menulis ganti
-		// objek yang sama — muat naik R2 idempoten ikut kunci.
+		// objek yang sama - muat naik R2 idempoten ikut kunci.
 		if err := q.SetCertificateR2Key(ctx, sqlc.SetCertificateR2KeyParams{
 			ID: cert.ID, R2Key: pgText(key),
 		}); err != nil {
@@ -357,7 +357,7 @@ func putCertificateObject(ctx context.Context, r2 *storage.R2Client, key string,
 // ---- Tarik balik ----
 
 // revokeCertificateTx tandakan sijil sebagai ditarik balik, gilirkan failnya
-// untuk dipadam, dan catat audit — SATU transaksi.
+// untuk dipadam, dan catat audit - SATU transaksi.
 //
 // Baris sijil tidak dipadam. Sijil yang ditarik balik mesti tetap boleh
 // disahkan SEBAGAI ditarik balik; baris yang lenyap hanya menghasilkan
@@ -373,7 +373,7 @@ func revokeCertificateTx(
 	q := sqlc.New(pool).WithTx(tx)
 
 	// Dibaca dahulu supaya "tidak dijumpai" dan "sudah ditarik balik" boleh
-	// dibezakan — RevokeCertificate memulangkan ErrNoRows untuk kedua-duanya.
+	// dibezakan - RevokeCertificate memulangkan ErrNoRows untuk kedua-duanya.
 	before, err := q.GetCertificateByID(ctx, certID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -440,7 +440,7 @@ func (h *CertificateHandler) requireManagement(c *gin.Context) bool {
 	return true
 }
 
-// Issue — POST /activities/:id/certificates.
+// Issue - POST /activities/:id/certificates.
 //
 // Menjalankan fasa 1 (transaksi) kemudian fasa 2 (muat naik). Fasa 2 yang
 // gagal separuh jalan BUKAN kegagalan permintaan: sijil sudah wujud dan
@@ -464,7 +464,7 @@ func (h *CertificateHandler) Issue(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "sijil hanya boleh diterbitkan selepas sesi terakhir tamat"})
 		return
 	case errors.Is(err, errUnprintableCertificateField):
-		// Mesejnya membawa nama medan dan nilainya — pengurusan perlu tahu
+		// Mesejnya membawa nama medan dan nilainya - pengurusan perlu tahu
 		// rekod MANA yang perlu dibetulkan.
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
@@ -476,7 +476,7 @@ func (h *CertificateHandler) Issue(c *gin.Context) {
 
 	ready, err := fillPendingCertificateFiles(ctx, h.pool, h.r2, h.baseURL, h.verifyURL, activityID)
 
-	// Diberitahu untuk setiap sijil yang failnya SIAP dalam pusingan ini —
+	// Diberitahu untuk setiap sijil yang failnya SIAP dalam pusingan ini -
 	// termasuk pusingan yang gagal separuh jalan, kerana sijil yang sudah
 	// siap tetap boleh dimuat turun. Baris sijil sudah komit (fasa 1), jadi
 	// ini sudah pun di luar sebarang transaksi.
@@ -484,8 +484,8 @@ func (h *CertificateHandler) Issue(c *gin.Context) {
 
 	if err != nil {
 		log.Printf("sediakan fail sijil aktiviti %s: %v", activityID, err)
-		// Mesej TETAP. err di sini membalut ralat SDK AWS atau Postgres —
-		// nama bucket, hos endpoint, request id — dan tempatnya dalam log,
+		// Mesej TETAP. err di sini membalut ralat SDK AWS atau Postgres -
+		// nama bucket, hos endpoint, request id - dan tempatnya dalam log,
 		// bukan dalam badan respons. files_ready sudah memberitahu pemanggil
 		// sejauh mana ia sampai.
 		c.JSON(http.StatusAccepted, gin.H{
@@ -514,7 +514,7 @@ func (h *CertificateHandler) notifyCertificateReady(ready []sqlc.ActivityCertifi
 	}
 	targets := make([]notifyTarget, 0, len(ready))
 	for _, cert := range ready {
-		// Setiap penerima dipautkan kepada sijilnya SENDIRI — itu perbezaan
+		// Setiap penerima dipautkan kepada sijilnya SENDIRI - itu perbezaan
 		// jenis ini daripada activity_published/activity_cancelled.
 		targets = append(targets, notifyTarget{UserID: cert.UserID, CertificateID: pgUUID(cert.ID)})
 	}
@@ -532,7 +532,7 @@ func (h *CertificateHandler) notifyCertificateReady(ready []sqlc.ActivityCertifi
 	})
 }
 
-// countFilesReady — berapa sijil aktiviti ini yang failnya sudah ada.
+// countFilesReady - berapa sijil aktiviti ini yang failnya sudah ada.
 //
 // SELURUH aktiviti, bukan hanya baris yang baru diterbitkan panggilan ini:
 // pemanggil yang menyambung penerbitan yang gagal separuh jalan mahu tahu
@@ -560,7 +560,7 @@ type revokeCertificateRequest struct {
 	Reason string `json:"reason" binding:"omitempty,max=500"`
 }
 
-// Revoke — POST /certificates/:id/revoke. Pengurusan sahaja.
+// Revoke - POST /certificates/:id/revoke. Pengurusan sahaja.
 func (h *CertificateHandler) Revoke(c *gin.Context) {
 	if !h.requireManagement(c) {
 		return
@@ -596,7 +596,7 @@ func (h *CertificateHandler) Revoke(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"revoked": true})
 }
 
-// certificateResponse — bentuk sijil seperti yang dilihat pemiliknya.
+// certificateResponse - bentuk sijil seperti yang dilihat pemiliknya.
 type certificateResponse struct {
 	ID            uuid.UUID `json:"id"`
 	ActivityID    uuid.UUID `json:"activity_id"`
@@ -608,11 +608,11 @@ type certificateResponse struct {
 	ActivityDate  string    `json:"activity_date"`
 	IssuedAt      time.Time `json:"issued_at"`
 	// FileReady, bukan r2_key: kunci objek dalaman tak pernah keluar ke
-	// klien — muat turun melalui Download yang menandatangani URL.
+	// klien - muat turun melalui Download yang menandatangani URL.
 	FileReady bool `json:"file_ready"`
 }
 
-// ListMine — GET /me/certificates.
+// ListMine - GET /me/certificates.
 func (h *CertificateHandler) ListMine(c *gin.Context) {
 	ctx := c.Request.Context()
 	rows, err := h.queries.ListMyCertificates(ctx, middleware.UserID(c))
@@ -641,27 +641,27 @@ func (h *CertificateHandler) ListMine(c *gin.Context) {
 }
 
 const (
-	// VerifyCertificateRoute — laluan route pengesahan awam, dieksport supaya
+	// VerifyCertificateRoute - laluan route pengesahan awam, dieksport supaya
 	// router.go dan ujian merujuk string yang SAMA. Drift di sini gagal dengan
 	// kuat (pautan QR pada sijil bercetak jadi 404), tetapi sijil yang sudah
-	// dicetak tidak boleh dibetulkan — jadi ia tetap satu pemalar.
+	// dicetak tidak boleh dibetulkan - jadi ia tetap satu pemalar.
 	VerifyCertificateRoute = "/verify/certificates/:token"
 
-	// VerifyRateLimitBucket — nama baldi had kadar bagi route di atas.
+	// VerifyRateLimitBucket - nama baldi had kadar bagi route di atas.
 	//
 	// Dieksport atas sebab yang LEBIH kuat daripada laluan: nama baldi yang
 	// terpesong gagal SENYAP. Trafik pengesahan awam akan mula berkongsi
-	// kunci Redis dengan baldi lain dan menghabiskan kuota log masuk ahli —
+	// kunci Redis dengan baldi lain dan menghabiskan kuota log masuk ahli -
 	// tepat bug yang baldi bernama ini wujud untuk menghalang.
 	VerifyRateLimitBucket = "verify"
 )
 
-// verifyResponse — bentuk respons AWAM, ditakrifkan sebagai struct eksplisit
+// verifyResponse - bentuk respons AWAM, ditakrifkan sebagai struct eksplisit
 // dan bukan gin.H daripada baris DB.
 //
 // Sebab: mengembalikan baris terus bermakna menambah lajur pada
 // activity_certificates secara senyap-senyap menyiarkannya ke internet.
-// Struct ini ialah sempadan yang mesti dilalui dengan sengaja — tiada emel,
+// Struct ini ialah sempadan yang mesti dilalui dengan sengaja - tiada emel,
 // tiada user_id, tiada r2_key, tiada status keahlian.
 //
 // JANGAN tambah `omitempty` pada mana-mana medan: ujian tripwire
@@ -677,7 +677,7 @@ type verifyResponse struct {
 	Status        string `json:"status"` // "sah" | "ditarik_balik"
 }
 
-// Verify — GET /verify/certificates/:token. AWAM, tanpa auth.
+// Verify - GET /verify/certificates/:token. AWAM, tanpa auth.
 //
 // Satu-satunya route modul ini yang boleh dicapai sesiapa di internet: ia
 // yang menyokong kod QR pada sijil bercetak.
@@ -689,7 +689,7 @@ func (h *CertificateHandler) Verify(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak sijil"})
 			return
 		}
-		// 404 yang SAMA — status dan badan — untuk token tak wujud dan token
+		// 404 yang SAMA - status dan badan - untuk token tak wujud dan token
 		// cacat. Respons berbeza akan menjadi oracle: penyerang boleh
 		// mengesahkan token mana yang pernah wujud.
 		c.JSON(http.StatusNotFound, gin.H{"error": "sijil tidak dijumpai"})
@@ -700,7 +700,7 @@ func (h *CertificateHandler) Verify(c *gin.Context) {
 	if cert.RevokedAt.Valid {
 		// Sijil yang ditarik kekal boleh disemak dan dilaporkan sebagai
 		// ditarik. Memadam baris akan menjadikannya nampak seperti tidak
-		// pernah wujud — lebih buruk bagi orang yang sedang mengesahkan.
+		// pernah wujud - lebih buruk bagi orang yang sedang mengesahkan.
 		// Sebab tarik balik SENGAJA tidak didedahkan; ia bukan urusan awam.
 		status = "ditarik_balik"
 	}
@@ -715,7 +715,7 @@ func (h *CertificateHandler) Verify(c *gin.Context) {
 	})
 }
 
-// Download — GET /me/certificates/:id/file.
+// Download - GET /me/certificates/:id/file.
 //
 // Memulangkan URL bertandatangan berumur pendek, bukan bait PDF: R2 yang
 // menyampaikan fail, backend tidak menjadi bottleneck lebar jalur.
@@ -747,7 +747,7 @@ func (h *CertificateHandler) Download(c *gin.Context) {
 		return
 	}
 	if !cert.R2Key.Valid {
-		// Fasa 2 belum siap untuk baris ini — keadaan sementara yang normal,
+		// Fasa 2 belum siap untuk baris ini - keadaan sementara yang normal,
 		// bukan ralat.
 		c.JSON(http.StatusConflict, gin.H{"error": "sijil sedang disediakan, cuba sebentar lagi"})
 		return

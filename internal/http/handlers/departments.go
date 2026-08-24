@@ -1,6 +1,6 @@
-// Package handlers — DepartmentsHandler ialah CRUD ringkas utk
+// Package handlers - DepartmentsHandler ialah CRUD ringkas utk
 // `departments` (rujukan bahagian/jabatan organisasi). Superadmin SAHAJA
-// (padanan gate `blocked_email_domains.go`) — root-level config org-wide.
+// (padanan gate `blocked_email_domains.go`) - root-level config org-wide.
 package handlers
 
 import (
@@ -39,7 +39,7 @@ func (h *DepartmentsHandler) requireSuperAdmin(c *gin.Context) bool {
 	return true
 }
 
-// List — GET /admin/departments. Superadmin sahaja - skrin CRUD penuh.
+// List - GET /admin/departments. Superadmin sahaja - skrin CRUD penuh.
 func (h *DepartmentsHandler) List(c *gin.Context) {
 	if !h.requireSuperAdmin(c) {
 		return
@@ -51,8 +51,8 @@ func (h *DepartmentsHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"departments": rows})
 }
 
-// ListForAssignment — GET /departments. Manager KE ATAS (bukan superadmin
-// sahaja) — baca SAHAJA, utk pemilih bahagian di skrin tetapkan
+// ListForAssignment - GET /departments. Manager KE ATAS (bukan superadmin
+// sahaja) - baca SAHAJA, utk pemilih bahagian di skrin tetapkan
 // bahagian/jawatan ahli (`PATCH /members/:id/department`). Berasingan
 // drpd List (CRUD penuh) sebab manager/admin biasa tak patut boleh
 // tambah/buang/edit rujukan bahagian, cuma pilih drpd senarai sedia ada.
@@ -73,7 +73,7 @@ func (h *DepartmentsHandler) ListForAssignment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"departments": rows})
 }
 
-// listRows — pulangkan (rows, false) SELEPAS menulis respons ralat kalau
+// listRows - pulangkan (rows, false) SELEPAS menulis respons ralat kalau
 // gagal, supaya pemanggil TIDAK menulis respons kedua (dua c.JSON pada
 // context gin yang sama = respons rosak/panic).
 func (h *DepartmentsHandler) listRows(c *gin.Context) ([]sqlc.Department, bool) {
@@ -94,7 +94,7 @@ type addDepartmentRequest struct {
 	SortOrder int32  `json:"sort_order"`
 }
 
-// Create — POST /admin/departments.
+// Create - POST /admin/departments.
 func (h *DepartmentsHandler) Create(c *gin.Context) {
 	if !h.requireSuperAdmin(c) {
 		return
@@ -110,7 +110,7 @@ func (h *DepartmentsHandler) Create(c *gin.Context) {
 		return
 	}
 	// '/' dlm kod pecah routing PATCH/DELETE /admin/departments/:code (Gin
-	// padan pada path yg dah didahulukan-decode — Opus verify 2026-08-25,
+	// padan pada path yg dah didahulukan-decode - Opus verify 2026-08-25,
 	// lihat migration 20260825110000). Tolak di sumber, bukan cuma dok
 	// terperangkap lepas dicipta.
 	if strings.Contains(code, "/") {
@@ -140,7 +140,7 @@ type updateDepartmentRequest struct {
 	SortOrder *int32  `json:"sort_order"`
 }
 
-// Update — PATCH /admin/departments/:code.
+// Update - PATCH /admin/departments/:code.
 func (h *DepartmentsHandler) Update(c *gin.Context) {
 	if !h.requireSuperAdmin(c) {
 		return
@@ -176,7 +176,7 @@ func (h *DepartmentsHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
-// Delete — DELETE /admin/departments/:code.
+// Delete - DELETE /admin/departments/:code.
 func (h *DepartmentsHandler) Delete(c *gin.Context) {
 	if !h.requireSuperAdmin(c) {
 		return

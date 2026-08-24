@@ -18,10 +18,10 @@ on conflict (user_id) do nothing
 returning id, user_id, requested_at, status, completed_at
 `
 
-// `on conflict do nothing` — idempoten, ahli boleh tekan "padam akaun"
+// `on conflict do nothing` - idempoten, ahli boleh tekan "padam akaun"
 // berkali-kali tanpa ralat (padanan pola AddBlockedEmailDomain). Baris
 // SEDIA ADA (bukan yang baru dicuba) yang perlu dipulangkan pada
-// konflik — lihat GetAccountDeletionRequestByUserID di handler.
+// konflik - lihat GetAccountDeletionRequestByUserID di handler.
 func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, userID uuid.UUID) (AccountDeletionRequest, error) {
 	row := q.db.QueryRow(ctx, createAccountDeletionRequest, userID)
 	var i AccountDeletionRequest

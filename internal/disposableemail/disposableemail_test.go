@@ -11,11 +11,11 @@ func TestIsDisposable(t *testing.T) {
 		{"someone@mailinator.com", true},
 		{"someone@gmail.com", false},
 		{"someone@hafizbahtiar98gmail.com", false},
-		// Pengecualian eksplisit — allowlist alamat PENUH menang atas
+		// Pengecualian eksplisit - allowlist alamat PENUH menang atas
 		// domain pelupusan (keputusan produk 2026-08-15).
 		{"google@yopmail.com", false},
 		{"apple@yopmail.com", false},
-		// Alamat lain pada domain yopmail SAMA tetap disekat — allowlist
+		// Alamat lain pada domain yopmail SAMA tetap disekat - allowlist
 		// alamat PENUH, bukan domain.
 		{"randomperson@yopmail.com", true},
 	}
@@ -43,7 +43,7 @@ func TestDomainOf(t *testing.T) {
 	}
 }
 
-// TestIsAllowed — Opus verify 2026-08-15 tangkap bug: laluan jadual DB
+// TestIsAllowed - Opus verify 2026-08-15 tangkap bug: laluan jadual DB
 // `blocked_email_domains` (auth.go) asalnya tak runding dengan
 // allowlist ni langsung, jadi management tambah "yopmail.com" ke
 // jadual akan senyap kunci keluar dua akaun tester. IsAllowed diexport
@@ -67,6 +67,6 @@ func TestIsAllowed(t *testing.T) {
 
 func TestStaticListLoaded(t *testing.T) {
 	if len(staticDomains) < 1000 {
-		t.Fatalf("senarai statik terbenam terlalu kecil (%d domain) — domains.txt mungkin gagal embed", len(staticDomains))
+		t.Fatalf("senarai statik terbenam terlalu kecil (%d domain) - domains.txt mungkin gagal embed", len(staticDomains))
 	}
 }

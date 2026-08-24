@@ -1,4 +1,4 @@
-// Package receipt jana PDF resit donation — dilampirkan pada emel resit
+// Package receipt jana PDF resit donation - dilampirkan pada emel resit
 // (lihat internal/http/handlers/donations.go `sendReceiptEmail`).
 package receipt
 
@@ -13,33 +13,33 @@ import (
 	"github.com/go-pdf/fpdf"
 )
 
-// logoPNG — crest kelab MARC, dipapar di header RESIT YURAN sahaja
-// (`drawFeeHeader`/`GenerateFeePDF`) — BUKAN pada resit donation
+// logoPNG - crest kelab MARC, dipapar di header RESIT YURAN sahaja
+// (`drawFeeHeader`/`GenerateFeePDF`) - BUKAN pada resit donation
 // (`drawHeader`/`GeneratePDF`). Sengaja: donation ni peribadi kepada
-// pembangun, BUKAN kepada kelab (lihat `footerNote` di atas — "Resit
+// pembangun, BUKAN kepada kelab (lihat `footerNote` di atas - "Resit
 // tak boleh nampak macam resit rasmi organisasi"), jadi crest kelab
 // rasmi tak patut muncul di situ. Disaiz kecil (240px) sebelum
-// di-embed — sumber asal (marc_flutter/assets/splash/logo.png) 519px/
+// di-embed - sumber asal (marc_flutter/assets/splash/logo.png) 519px/
 // 344KB terlalu besar untuk header ~22mm, setiap PDF terjana akan bawa
 // bait penuh imej tu.
 //
 //go:embed assets/logo.png
 var logoPNG []byte
 
-// unsafeFilenameChars — apa-apa selain alphanumeric/`-`/`_` ditukar `-`.
+// unsafeFilenameChars - apa-apa selain alphanumeric/`-`/`_` ditukar `-`.
 // `gateway_ref` (ToyyibPay billcode / Stripe PaymentIntent id) selalunya
 // selamat sendiri, tapi jangan percaya input luaran mentah terus dalam
-// header HTTP (Content-Disposition) atau nama lampiran emel — sanitize
+// header HTTP (Content-Disposition) atau nama lampiran emel - sanitize
 // defensif, bukan sebab ada kes sebenar dijumpai.
 var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
 
 // Filename bina nama fail SATU corak dikongsi merentas SEMUA laluan
-// resit — muat turun dalam app (`handlers.respondReceiptPDF`) DAN
+// resit - muat turun dalam app (`handlers.respondReceiptPDF`) DAN
 // lampiran emel (`internal/receiptmail`, `donations.go`
-// sendReceiptEmail) — supaya ahli yang terima resit dua-dua cara nampak
+// sendReceiptEmail) - supaya ahli yang terima resit dua-dua cara nampak
 // nama fail SAMA, bukan dua gaya berlainan. `ref` fallback ke
 // `fallbackID` (biasanya `.String()` id baris) kalau gateway_ref kosong
-// (jaring keselamatan, bukan kes dijangka — dipanggil hanya lepas
+// (jaring keselamatan, bukan kes dijangka - dipanggil hanya lepas
 // status 'succeeded'/'paid').
 func Filename(label, ref, fallbackID string) string {
 	r := strings.TrimSpace(ref)
@@ -57,13 +57,13 @@ func Filename(label, ref, fallbackID string) string {
 // Warna jenama MARC (padanan AppSemanticColors/ColorScheme di
 // marc_flutter/lib/app/theme.dart).
 var (
-	brandColor = [3]int{47, 107, 79}   // #2F6B4F — hijau jenama
-	brandDark  = [3]int{35, 82, 60}    // #23523C — jalur bawah header
-	tintColor  = [3]int{238, 244, 240} // #EEF4F0 — panel jumlah
+	brandColor = [3]int{47, 107, 79}   // #2F6B4F - hijau jenama
+	brandDark  = [3]int{35, 82, 60}    // #23523C - jalur bawah header
+	tintColor  = [3]int{238, 244, 240} // #EEF4F0 - panel jumlah
 	inkColor   = [3]int{28, 27, 25}    // #1C1B19
 	mutedColor = [3]int{107, 107, 107} // #6B6B6B
 	lineColor  = [3]int{228, 225, 218} // #E4E1DA
-	zebraColor = [3]int{250, 249, 246} // #FAF9F6 — baris jadual berselang
+	zebraColor = [3]int{250, 249, 246} // #FAF9F6 - baris jadual berselang
 )
 
 // Geometri muka surat A4 (mm).
@@ -76,20 +76,20 @@ const (
 
 	// PENTING: sumbangan ni pergi kepada pembangun MARC secara peribadi,
 	// BUKAN kepada MAIWP. Resit tak boleh nampak macam resit rasmi
-	// organisasi — nota ni yang jelaskan bezanya, jangan buang.
+	// organisasi - nota ni yang jelaskan bezanya, jangan buang.
 	footerNote = "Sumbangan ini diberikan secara peribadi kepada pembangun " +
 		"aplikasi MARC bagi menampung kos hosting, domain dan penyelenggaraan. " +
 		"Ia BUKAN sumbangan kepada MAIWP atau mana-mana badan amal, dan TIDAK " +
 		"layak untuk pelepasan cukai. Resit ini dijana secara automatik dan sah " +
-		"tanpa tandatangan — sila simpan untuk rekod peribadi anda."
+		"tanpa tandatangan - sila simpan untuk rekod peribadi anda."
 )
 
-// malaysiaTZ — resit sentiasa dipaparkan dalam waktu Malaysia tanpa
+// malaysiaTZ - resit sentiasa dipaparkan dalam waktu Malaysia tanpa
 // mengira zon masa server. FixedZone (bukan LoadLocation) supaya tak
 // bergantung pada tzdata dalam imej container yang nipis.
 var malaysiaTZ = time.FixedZone("MYT", 8*60*60)
 
-// Donation — subset field donation yang perlu untuk resit. Diasingkan
+// Donation - subset field donation yang perlu untuk resit. Diasingkan
 // drpd sqlc.Donation supaya package ni tak perlu import sqlc/pgtype.
 type Donation struct {
 	MemberID    string // "" kalau anonymous/guest
@@ -109,7 +109,7 @@ func GeneratePDF(d Donation) ([]byte, error) {
 	pdf.SetMargins(marginX, marginX, marginX)
 	pdf.SetAutoPageBreak(true, 20)
 	pdf.SetTitle("Resit Sokongan MARC "+d.GatewayRef, true)
-	pdf.SetAuthor("Hafiz — Pembangun MARC", true)
+	pdf.SetAuthor("Hafiz - Pembangun MARC", true)
 
 	// Font teras fpdf guna cp1252, bukan UTF-8. Tanpa penterjemah ni nama
 	// penderma berdiakritik ("Aisyah Zulkifli" vs "Aïsyah") jadi sampah.
@@ -129,7 +129,7 @@ func GeneratePDF(d Donation) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// drawHeader — jalur penuh lebar warna jenama: wordmark di kiri, jenis
+// drawHeader - jalur penuh lebar warna jenama: wordmark di kiri, jenis
 // dokumen + no. rujukan di kanan.
 func drawHeader(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
 	pdf.SetFillColor(brandColor[0], brandColor[1], brandColor[2])
@@ -153,7 +153,7 @@ func drawHeader(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
 	pdf.SetY(headerH + 12)
 }
 
-// drawDonorBlock — "Diterima daripada" di kiri, tarikh + status di kanan.
+// drawDonorBlock - "Diterima daripada" di kiri, tarikh + status di kanan.
 func drawDonorBlock(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
 	top := pdf.GetY()
 	colW := contentW / 2
@@ -174,7 +174,7 @@ func drawDonorBlock(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
 	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
 	pdf.CellFormat(colW, 7, tr(formatDateTime(d.PaidAt)), "", 2, "L", false, 0, "")
 
-	// Lencana status — sumbangan hanya diresitkan selepas 'succeeded',
+	// Lencana status - sumbangan hanya diresitkan selepas 'succeeded',
 	// jadi ia sentiasa BERJAYA di sini.
 	pdf.SetX(marginX + colW)
 	pdf.SetFont("Helvetica", "B", 8)
@@ -188,7 +188,7 @@ func drawDonorBlock(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
 	pdf.SetY(bottom + 8)
 }
 
-// drawAmountPanel — panel bertona: jumlah dalam angka + dalam perkataan
+// drawAmountPanel - panel bertona: jumlah dalam angka + dalam perkataan
 // (amalan standard resit di Malaysia).
 func drawAmountPanel(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
 	words := amountInWords(d.AmountCents, d.Currency)
@@ -220,10 +220,10 @@ func drawAmountPanel(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
 	pdf.SetY(top + panelH + 10)
 }
 
-// drawDetailsTable — jadual dua lajur berselang warna, dengan baris
+// drawDetailsTable - jadual dua lajur berselang warna, dengan baris
 // kepala berjenama.
 func drawDetailsTable(pdf *fpdf.Fpdf, tr func(string) string, d Donation) {
-	// Nama/emel/tarikh sengaja TAK diulang di sini — dah ada dalam blok
+	// Nama/emel/tarikh sengaja TAK diulang di sini - dah ada dalam blok
 	// penderma di atas. Jadual ni khusus butiran transaksi.
 	rows := [][2]string{
 		{"No. Rujukan Transaksi", fallback(d.GatewayRef, "-")},
@@ -281,7 +281,7 @@ func drawFooter(pdf *fpdf.Fpdf, tr func(string) string) {
 	pdf.CellFormat(contentW, 4, tr("Dijana pada "+formatDateTime(time.Now())+" | MARC"), "", 1, "L", false, 0, "")
 }
 
-// label — kapsyen kecil huruf besar yang berulang di setiap seksyen.
+// label - kapsyen kecil huruf besar yang berulang di setiap seksyen.
 // Kursor turun ke baris bawah tapi kekal pada x asal (ln=2).
 func label(pdf *fpdf.Fpdf, text string, w float64) {
 	pdf.SetFont("Helvetica", "B", 8)
@@ -289,7 +289,7 @@ func label(pdf *fpdf.Fpdf, text string, w float64) {
 	pdf.CellFormat(w, 5, text, "", 2, "L", false, 0, "")
 }
 
-// clip potong teks yang lebih lebar drpd sel (fpdf tak clip sendiri —
+// clip potong teks yang lebih lebar drpd sel (fpdf tak clip sendiri -
 // teks panjang akan melimpah menindih lajur sebelah).
 func clip(pdf *fpdf.Fpdf, s string, maxW float64) string {
 	maxW -= 2 // padding dalaman sel
@@ -306,11 +306,11 @@ func clip(pdf *fpdf.Fpdf, s string, maxW float64) string {
 	return s
 }
 
-// FeePayment — subset field untuk resit yuran (pendaftaran ahli ATAU
-// aktiviti) — DIASINGKAN drpd Donation dengan sengaja: yuran ialah
+// FeePayment - subset field untuk resit yuran (pendaftaran ahli ATAU
+// aktiviti) - DIASINGKAN drpd Donation dengan sengaja: yuran ialah
 // bayaran RASMI kepada kelab (bukan sumbangan peribadi kepada
 // pembangun), jadi label dokumen dan nota footer berbeza (tiada
-// disclaimer "bukan sumbangan rasmi"). `Purpose` — "Yuran Pendaftaran
+// disclaimer "bukan sumbangan rasmi"). `Purpose` - "Yuran Pendaftaran
 // Ahli" untuk yuran pendaftaran, atau tajuk aktiviti untuk yuran
 // aktiviti.
 type FeePayment struct {
@@ -323,10 +323,10 @@ type FeePayment struct {
 	PaidAt      time.Time
 	Purpose     string
 
-	// GatewayChargeCents — anggaran fi transaksi ToyyibPay (disahkan
+	// GatewayChargeCents - anggaran fi transaksi ToyyibPay (disahkan
 	// RM1/100 sen, `GATEWAY_CHARGE_CENTS`), untuk resit papar breakdown
 	// SAMA dengan invoice checkout dalam app ("Yuran" + "Caj Pemprosesan
-	// Pembayaran" = "Jumlah Dibayar" — panel jumlah TAK berubah, cuma
+	// Pembayaran" = "Jumlah Dibayar" - panel jumlah TAK berubah, cuma
 	// jadual butiran tambah dua baris). `0` = tiada breakdown (padanan
 	// `CheckoutPage`: kes tepi `AmountCents <= GatewayChargeCents` pun
 	// jatuh balik ke sini via semakan dalam `drawFeeDetailsTable`).
@@ -334,11 +334,11 @@ type FeePayment struct {
 }
 
 const feeFooterNote = "Resit ini dijana secara automatik dan sah tanpa " +
-	"tandatangan — sila simpan untuk rekod peribadi anda."
+	"tandatangan - sila simpan untuk rekod peribadi anda."
 
 // GenerateFeePDF bina resit yuran satu muka surat. Struktur sama dgn
-// GeneratePDF (donation) — jalur header, blok pembayar, panel jumlah,
-// jadual butiran, footer — tapi laluan lukis DIASINGKAN (bukan
+// GeneratePDF (donation) - jalur header, blok pembayar, panel jumlah,
+// jadual butiran, footer - tapi laluan lukis DIASINGKAN (bukan
 // parameterkan draw* sedia ada): label/nota berbeza cukup banyak
 // (rasmi vs peribadi) sehingga kongsi struct akan buat draw* Donation
 // bercabang syarat merata-rata. Kos: sedikit kod berulang; faedah:
@@ -367,7 +367,7 @@ func GenerateFeePDF(p FeePayment) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// logoW/logoGap — saiz crest + jarak ke teks "MARC" di header resit
+// logoW/logoGap - saiz crest + jarak ke teks "MARC" di header resit
 // yuran. `logoW+logoGap` ditolak drpd lebar sel teks sebelah kiri
 // (contentW/2) supaya teks tak bertindih crest.
 const (
@@ -425,7 +425,7 @@ func drawFeePayerBlock(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
 	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
 	pdf.CellFormat(colW, 7, tr(formatDateTime(p.PaidAt)), "", 2, "L", false, 0, "")
 
-	// Lencana status — resit hanya dijana selepas 'succeeded'/'paid', jadi
+	// Lencana status - resit hanya dijana selepas 'succeeded'/'paid', jadi
 	// ia sentiasa BERJAYA di sini (padanan drawDonorBlock).
 	pdf.SetX(marginX + colW)
 	pdf.SetFont("Helvetica", "B", 8)
@@ -476,11 +476,11 @@ func drawFeeDetailsTable(pdf *fpdf.Fpdf, tr func(string) string, p FeePayment) {
 		{"Jenis Yuran", fallback(p.Purpose, "Yuran")},
 	}
 
-	// Breakdown "Yuran"/"Caj Pemprosesan Pembayaran" — SAMA syarat
+	// Breakdown "Yuran"/"Caj Pemprosesan Pembayaran" - SAMA syarat
 	// boundary dgn CheckoutPage (`_InvoiceCard`, marc_flutter): `>`
 	// ketat, bukan `>=`, elak baris "Yuran RM0.00"/negatif yang
 	// mengelirukan untuk yuran kecil. Panel "JUMLAH DIBAYAR"
-	// (drawFeeAmountPanel) TAK berubah — kekal papar `p.AmountCents`
+	// (drawFeeAmountPanel) TAK berubah - kekal papar `p.AmountCents`
 	// penuh, breakdown ni cuma jadual butiran tambahan.
 	if p.AmountCents > p.GatewayChargeCents && p.GatewayChargeCents > 0 {
 		rows = append(rows,
@@ -542,7 +542,7 @@ func drawFeeFooter(pdf *fpdf.Fpdf, tr func(string) string) {
 	pdf.CellFormat(contentW, 4, tr("Dijana pada "+formatDateTime(time.Now())+" | MARC"), "", 1, "L", false, 0, "")
 }
 
-// FormatDateTime papar `t` dalam waktu Malaysia (MYT) — diexport supaya
+// FormatDateTime papar `t` dalam waktu Malaysia (MYT) - diexport supaya
 // emel resit (internal/http/handlers/donations.go) boleh guna penukaran
 // zon masa yang SAMA macam PDF ni, elak emel dan lampiran PDF-nya
 // menunjukkan waktu berbeza 8 jam (UTC server vs MYT).
@@ -557,7 +557,7 @@ func formatDateTime(t time.Time) string {
 	return t.In(malaysiaTZ).Format("2 Jan 2006, 3:04 PM") + " (MYT)"
 }
 
-// formatAmount papar jumlah dengan pemisah ribuan — "RM1,500.00", bukan
+// formatAmount papar jumlah dengan pemisah ribuan - "RM1,500.00", bukan
 // "RM1500.00".
 func formatAmount(cents int64, currency string) string {
 	prefix := "RM"
@@ -590,9 +590,9 @@ func groupThousands(n int64) string {
 	return b.String()
 }
 
-// amountInWords — jumlah dieja dalam Bahasa Melayu, macam resit rasmi
+// amountInWords - jumlah dieja dalam Bahasa Melayu, macam resit rasmi
 // ("Ringgit Malaysia Satu Ribu Lima Ratus sahaja"). Kosong untuk mata
-// wang selain MYR — ejaan Melayu tak sesuai untuk USD/SGD.
+// wang selain MYR - ejaan Melayu tak sesuai untuk USD/SGD.
 func amountInWords(cents int64, currency string) string {
 	if c := strings.ToLower(currency); c != "" && c != "myr" {
 		return ""

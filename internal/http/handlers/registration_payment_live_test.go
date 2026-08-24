@@ -16,18 +16,18 @@ import (
 	"marc/internal/payment"
 )
 
-// L29 — susunan tulis checkout yuran pendaftaran.
+// L29 - susunan tulis checkout yuran pendaftaran.
 //
 // Invariannya: baris DB WUJUD sebelum bil gateway dicipta. Kalau
 // terbalik, INSERT yang gagal meninggalkan bil ToyyibPay SAH yang boleh
-// dibayar tanpa sebarang baris merujuknya — webhook mengena 0 baris dan
+// dibayar tanpa sebarang baris merujuknya - webhook mengena 0 baris dan
 // menyenyapkannya sebagai "replay biasa", reconcile buta kepada apa yang
 // tak pernah wujud, dan duit masuk tanpa rekod.
 //
 // Diuji melalui handler SEBENAR dengan gateway palsu, sebab yang penting
-// ialah SUSUNAN dua operasi itu — bukan salah satu daripadanya.
+// ialah SUSUNAN dua operasi itu - bukan salah satu daripadanya.
 
-// stubGateway — `CreatePayment` boleh dipaksa gagal.
+// stubGateway - `CreatePayment` boleh dipaksa gagal.
 type stubGateway struct {
 	billCode string
 	failWith error
@@ -57,7 +57,7 @@ func (s *stubGateway) CheckStatus(context.Context, string) (string, error) {
 	return "pending", nil
 }
 
-// seedPendingMemberWithPhone — ahli `pending` dengan nombor telefon sah,
+// seedPendingMemberWithPhone - ahli `pending` dengan nombor telefon sah,
 // jadi Checkout tak tersasar ke laluan `phone_required`.
 func seedPendingMemberWithPhone(t *testing.T, ctx context.Context, pool *pgxpool.Pool) uuid.UUID {
 	t.Helper()
@@ -111,7 +111,7 @@ func paymentRowsFor(t *testing.T, ctx context.Context, pool *pgxpool.Pool, userI
 	return out
 }
 
-// Laluan bahagia — baris dicipta DAN dipautkan kepada bil.
+// Laluan bahagia - baris dicipta DAN dipautkan kepada bil.
 func TestCheckoutMenciptaBarisDipautkanKepadaBil(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -133,18 +133,18 @@ func TestCheckoutMenciptaBarisDipautkanKepadaBil(t *testing.T) {
 		t.Errorf("status = %q, mahu \"pending\"", rows[0].Status)
 	}
 	if rows[0].GatewayRef == nil || *rows[0].GatewayRef != bill {
-		t.Errorf("gateway_ref = %v, mahu %q — baris tak dipautkan kepada bil, "+
+		t.Errorf("gateway_ref = %v, mahu %q - baris tak dipautkan kepada bil, "+
 			"webhook takkan menemuinya", rows[0].GatewayRef, bill)
 	}
 }
 
 // INTI L29: bila createBill GAGAL, baris MESTI sudah wujud.
 //
-// Ini penegasan yang gagal pada susunan lama — di situ createBill gagal
+// Ini penegasan yang gagal pada susunan lama - di situ createBill gagal
 // bermakna tiada baris LANGSUNG dicipta, jadi tiada apa untuk dilihat
 // atau didamaikan. (Pada susunan lama kes berbahayanya ialah kebalikan:
 // createBill BERJAYA lalu INSERT gagal, meninggalkan bil tanpa baris.
-// Susunan baharu menjadikan urutan itu mustahil — bil tak pernah dicipta
+// Susunan baharu menjadikan urutan itu mustahil - bil tak pernah dicipta
 // sebelum baris wujud.)
 func TestCheckoutMeninggalkanBarisWalaupunCreateBillGagal(t *testing.T) {
 	pool := activityTestPool(t)
@@ -164,23 +164,23 @@ func TestCheckoutMeninggalkanBarisWalaupunCreateBillGagal(t *testing.T) {
 
 	rows := paymentRowsFor(t, ctx, pool, userID)
 	if len(rows) != 1 {
-		t.Fatalf("baris bayaran = %d, mahu 1 — baris MESTI ditulis SEBELUM "+
+		t.Fatalf("baris bayaran = %d, mahu 1 - baris MESTI ditulis SEBELUM "+
 			"createBill; kalau tiada, susunan dah terbalik semula dan bil "+
 			"yatim boleh berlaku lagi", len(rows))
 	}
 	if rows[0].GatewayRef != nil {
-		t.Errorf("gateway_ref = %q, mahu NULL — tiada bil pernah dicipta", *rows[0].GatewayRef)
+		t.Errorf("gateway_ref = %q, mahu NULL - tiada bil pernah dicipta", *rows[0].GatewayRef)
 	}
 	// Ditandakan 'failed', bukan dibiar 'pending' selamanya: tiada bil
 	// wujud, jadi ia takkan pernah diselesaikan.
 	if rows[0].Status != "failed" {
-		t.Errorf("status = %q, mahu \"failed\" — baris 'pending' tanpa bil akan "+
+		t.Errorf("status = %q, mahu \"failed\" - baris 'pending' tanpa bil akan "+
 			"duduk selamanya dalam sejarah ahli sebagai \"sedang diproses\"",
 			rows[0].Status)
 	}
 }
 
-// Indeks unik SEPARA — inilah yang menjadikan susunan baharu mungkin.
+// Indeks unik SEPARA - inilah yang menjadikan susunan baharu mungkin.
 //
 // Di bawah indeks unik PENUH lama atas (gateway, gateway_ref), ahli
 // KEDUA yang checkout akan berlanggar dengan yang pertama sebaik
@@ -206,7 +206,7 @@ func TestBanyakBarisTanpaRefBolehWujudSerentak(t *testing.T) {
 	for nama, userID := range map[string]uuid.UUID{"A": a, "B": b} {
 		rows := paymentRowsFor(t, ctx, pool, userID)
 		if len(rows) != 1 {
-			t.Errorf("ahli %s: baris = %d, mahu 1 — indeks unik separa tak "+
+			t.Errorf("ahli %s: baris = %d, mahu 1 - indeks unik separa tak "+
 				"berkuat kuasa, dua baris ref-NULL berlanggar", nama, len(rows))
 		}
 	}
@@ -240,7 +240,7 @@ func TestSetGatewayRefSekaliTulis(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 	if tag.RowsAffected() != 0 {
-		t.Fatal("baris yang SUDAH berpaut ditulis ganti — rekod kewangan boleh " +
+		t.Fatal("baris yang SUDAH berpaut ditulis ganti - rekod kewangan boleh " +
 			"dialihkan kepada bil orang lain")
 	}
 
@@ -250,7 +250,7 @@ func TestSetGatewayRefSekaliTulis(t *testing.T) {
 	}
 }
 
-// Ahli yang DAH bayar tak boleh cipta baris baharu — gate sedia ada,
+// Ahli yang DAH bayar tak boleh cipta baris baharu - gate sedia ada,
 // tapi ia kini berjalan SEBELUM sebarang tulisan DB, jadi ujian ni turut
 // mengesahkan susunan baharu tak memperkenalkan baris sampah.
 func TestCheckoutTidakCiptaBarisBilaSudahDibayar(t *testing.T) {
@@ -272,7 +272,7 @@ func TestCheckoutTidakCiptaBarisBilaSudahDibayar(t *testing.T) {
 		t.Errorf("CreatePayment dipanggil %d kali walaupun sudah dibayar", gw.calls)
 	}
 	if selepas := len(paymentRowsFor(t, ctx, pool, userID)); selepas != sebelum {
-		t.Errorf("baris bertambah %d → %d — gate berjalan SELEPAS tulisan DB",
+		t.Errorf("baris bertambah %d → %d - gate berjalan SELEPAS tulisan DB",
 			sebelum, selepas)
 	}
 }

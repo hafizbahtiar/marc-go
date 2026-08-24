@@ -9,12 +9,12 @@ import (
 // URLCache simpan URL yang dah ditandatangani supaya permintaan berulang
 // untuk objek yang SAMA mendapat rentetan URL yang SAMA.
 //
-// Ini bukan pengoptimuman prestasi — menandatangani ialah HMAC setempat,
+// Ini bukan pengoptimuman prestasi - menandatangani ialah HMAC setempat,
 // murah. Ia untuk **kestabilan URL**.
 //
 // Presigned URL mengandungi `X-Amz-Date`. Menandatangani semula pada
 // setiap permintaan menghasilkan URL berbeza setiap kali, dan cache imej
-// pada peranti dikunci ikut URL — jadi setiap tatalan feed akan memuat
+// pada peranti dikunci ikut URL - jadi setiap tatalan feed akan memuat
 // turun semula setiap gambar yang sama. Itu memusnahkan cache klien DAN
 // menghentam bucket yang dikadar-hadkan.
 //
@@ -35,7 +35,7 @@ type memoryEntry struct {
 	expiresAt time.Time
 }
 
-// NewMemoryURLCache — cache setempat per-instance.
+// NewMemoryURLCache - cache setempat per-instance.
 //
 // Cukup untuk satu instance. Dengan berbilang replika, setiap instance
 // menandatangani URLnya sendiri, jadi klien yang mencapai instance
@@ -63,7 +63,7 @@ func (c *memoryURLCache) Set(_ context.Context, key, url string, ttl time.Durati
 	c.entries[key] = memoryEntry{url: url, expiresAt: time.Now().Add(ttl)}
 }
 
-// sweep buang entri luput supaya map tak membesar tanpa had — setiap
+// sweep buang entri luput supaya map tak membesar tanpa had - setiap
 // kunci objek yang pernah dipaparkan akan kekal selamanya kalau tidak.
 func (c *memoryURLCache) sweep() {
 	for {

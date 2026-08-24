@@ -8,7 +8,7 @@ import (
 )
 
 // GenerateOpaqueToken buat token rawak (untuk refresh token & email
-// verification token). Ini yang dihantar ke client / email — bukan
+// verification token). Ini yang dihantar ke client / email - bukan
 // yang disimpan dalam DB.
 func GenerateOpaqueToken() (string, error) {
 	b := make([]byte, 32)

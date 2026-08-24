@@ -6,7 +6,7 @@ import (
 	"marc/internal/db/sqlc"
 )
 
-// seedRoles — padanan internal/db/migrations/20260805223300_seed_roles.sql.
+// seedRoles - padanan internal/db/migrations/20260805223300_seed_roles.sql.
 func seedRoles() []sqlc.Role {
 	return []sqlc.Role{
 		{Key: "ahli", Rank: 10},
@@ -55,7 +55,7 @@ func TestVisibleRankCeilingSuperadminSentiasaTersembunyi(t *testing.T) {
 	roles := seedRoles()
 	for _, viewerRank := range []int32{0, 10, 49, 50, 60, 99} {
 		if got := visibleRankCeiling(roles, viewerRank); got >= 100 {
-			t.Errorf("viewer rank %d dapat siling %d — superadmin terdedah", viewerRank, got)
+			t.Errorf("viewer rank %d dapat siling %d - superadmin terdedah", viewerRank, got)
 		}
 	}
 }

@@ -5,7 +5,7 @@ create table activity_attendances (
   session_id uuid not null references activity_sessions(id) on delete cascade,
 
   -- Keempat-empat kaedah check-in hasilkan baris yang SAMA; hanya method
-  -- dan marked_by berbeza. 'self_scan' dan 'code' belum ada UI — schema
+  -- dan marked_by berbeza. 'self_scan' dan 'code' belum ada UI - schema
   -- sokong supaya menambahnya nanti kerja UI, bukan migration.
   method text not null check (method in ('manual', 'scan', 'self_scan', 'code')),
 

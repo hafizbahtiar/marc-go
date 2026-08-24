@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// MaxBodySize hadkan saiz request body (bytes) — elak memory-exhaustion
+// MaxBodySize hadkan saiz request body (bytes) - elak memory-exhaustion
 // DoS daripada body besar dihantar ke endpoint yang unauthenticated/tak
 // throttled (refresh, logout, verify-email confirm) atau body JSON besar
 // pada endpoint biasa.

@@ -23,7 +23,7 @@ type AddBlockedEmailDomainParams struct {
 	AddedBy pgtype.UUID `json:"added_by"`
 }
 
-// `on conflict do nothing` — idempoten, tambah domain yang dah wujud
+// `on conflict do nothing` - idempoten, tambah domain yang dah wujud
 // bukan ralat (padanan pola ApproveProfile `status <> 'approved'`).
 func (q *Queries) AddBlockedEmailDomain(ctx context.Context, arg AddBlockedEmailDomainParams) (BlockedEmailDomain, error) {
 	row := q.db.QueryRow(ctx, addBlockedEmailDomain, arg.Domain, arg.AddedBy)
@@ -36,7 +36,7 @@ const isEmailDomainBlocked = `-- name: IsEmailDomainBlocked :one
 select exists(select 1 from blocked_email_domains where domain = $1)
 `
 
-// Semakan pendaftaran (/auth/register) — pelengkap kpd senarai statik
+// Semakan pendaftaran (/auth/register) - pelengkap kpd senarai statik
 // terbenam (internal/disposableemail), utk domain tambahan management.
 func (q *Queries) IsEmailDomainBlocked(ctx context.Context, domain string) (bool, error) {
 	row := q.db.QueryRow(ctx, isEmailDomainBlocked, domain)

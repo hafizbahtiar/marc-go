@@ -4,7 +4,7 @@
 --
 -- Kenapa gilir dan bukan padam terus dalam handler: padam R2 ialah
 -- panggilan rangkaian yang boleh gagal. Kalau ia dibuat sebaris dalam
--- DELETE /posts, cuma ada dua pilihan buruk — gagalkan permintaan padam
+-- DELETE /posts, cuma ada dua pilihan buruk - gagalkan permintaan padam
 -- pengguna sebab Cloudflare tak berapa sihat, atau telan ralat itu dan
 -- bocorkan objek senyap-senyap (itulah keadaan sebelum ni). Dengan gilir,
 -- padam post sentiasa berjaya serta-merta dan pembersihan dicuba semula
@@ -12,7 +12,7 @@
 create table deleted_uploads (
   r2_key text primary key,
 
-  -- 'post_deleted' | 'upload_abandoned' — untuk tahu dari mana sampah ni
+  -- 'post_deleted' | 'upload_abandoned' - untuk tahu dari mana sampah ni
   -- datang bila menyiasat penggunaan storan.
   reason text not null,
 

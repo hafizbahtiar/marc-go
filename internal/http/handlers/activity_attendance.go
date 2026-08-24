@@ -37,9 +37,9 @@ var (
 )
 
 // Kaedah yang ada UI. Skema membenarkan 'code' juga, tetapi ia tiada
-// laluan klien lagi — menerimanya sekarang bermakna menerima nilai yang
+// laluan klien lagi - menerimanya sekarang bermakna menerima nilai yang
 // tiada siapa boleh hasilkan secara sah. 'self_scan' DITAMBAH 2026-08-15
-// — lihat komen `Mark` utk reka bentuk keselamatan penuh (kenapa ia
+// - lihat komen `Mark` utk reka bentuk keselamatan penuh (kenapa ia
 // TIDAK memerlukan `checkin_token` berputar seperti yang pernah
 // dibimbangkan TODO.md).
 var validAttendanceMethods = map[string]bool{"manual": true, "scan": true, "self_scan": true}
@@ -49,7 +49,7 @@ type markResult struct {
 	Row     sqlc.ActivityAttendance
 }
 
-// attendanceAmendment — pindaan kehadiran di LUAR tetingkap check-in.
+// attendanceAmendment - pindaan kehadiran di LUAR tetingkap check-in.
 //
 // Nilai bukan-nil melangkau SATU semakan sahaja (tetingkap masa) dan
 // menandakan catatan audit sebagai pindaan. Sebab wajib: pindaan yang tidak
@@ -62,7 +62,7 @@ type attendanceAmendment struct {
 // markAttendanceTx menanda satu kehadiran.
 //
 // Menerima registration_id (skrin senarai, method 'manual') ATAU token yang
-// sudah diselesaikan kepada pendaftaran (scanner, method 'scan') — pemanggil
+// sudah diselesaikan kepada pendaftaran (scanner, method 'scan') - pemanggil
 // yang menyelesaikan token, jadi fungsi ini melihat satu bentuk input
 // sahaja.
 //
@@ -71,7 +71,7 @@ type attendanceAmendment struct {
 // berubah di bawah kita kalau dibaca di luar.
 //
 // amend bukan-nil = pindaan di luar tetingkap. Ia melangkau semakan
-// tetingkap masa DAN TIADA YANG LAIN — kunci aktiviti, semakan
+// tetingkap masa DAN TIADA YANG LAIN - kunci aktiviti, semakan
 // sesi-milik-aktiviti-sama, penolakan pendaftaran yang dibatalkan dan
 // `on conflict do nothing` semuanya kekal di laluan yang sama.
 func markAttendanceTx(
@@ -86,7 +86,7 @@ func markAttendanceTx(
 	if err != nil {
 		return markResult{}, err
 	}
-	// Setiap `return` di bawah berlaku SEBELUM Commit — tiada laluan yang
+	// Setiap `return` di bawah berlaku SEBELUM Commit - tiada laluan yang
 	// boleh menyimpan kehadiran tanpa melepasi semakan tetingkap dan
 	// pemilikan.
 	defer tx.Rollback(ctx)
@@ -101,7 +101,7 @@ func markAttendanceTx(
 		return markResult{}, err
 	}
 
-	// Kunci baris aktiviti — separuh lagi bagi interlock yang
+	// Kunci baris aktiviti - separuh lagi bagi interlock yang
 	// replaceSessionsAudited (Task 6) sudah pegang. activity_attendances
 	// .session_id ialah `on delete cascade`, jadi penggantian set sesi
 	// MEMUSNAHKAN kehadiran dan bukan gagal kerananya; check-in yang commit
@@ -125,7 +125,7 @@ func markAttendanceTx(
 	}
 
 	// SATU-SATUNYA tempat `amend` mengubah kelakuan. Diletakkan di sini,
-	// pada syarat itu sendiri, dan bukan sebagai pulangan awal di atas —
+	// pada syarat itu sendiri, dan bukan sebagai pulangan awal di atas -
 	// pulangan awal akan turut memintas kunci, semakan pemilikan sesi dan
 	// penolakan pendaftaran yang dibatalkan.
 	if amend == nil && !certificate.WithinCheckinWindow(time.Now(), session.StartsAt.Time, session.EndsAt.Time) {
@@ -139,7 +139,7 @@ func markAttendanceTx(
 		}
 		return markResult{}, err
 	}
-	// Tiada FK yang merentasi kedua-dua hubungan — activity_attendances
+	// Tiada FK yang merentasi kedua-dua hubungan - activity_attendances
 	// merujuk pendaftaran dan sesi secara berasingan. Tanpa semakan ini,
 	// pepijat di tempat lain boleh merekod kehadiran aktiviti A atas sesi
 	// aktiviti B, dan kiraan kelayakan sijil terlebih kira secara senyap.
@@ -197,7 +197,7 @@ func markAttendanceTx(
 	return markResult{Created: created, Row: row}, nil
 }
 
-// requireManagement — sama seperti ActivityHandler/RegistrationHandler:
+// requireManagement - sama seperti ActivityHandler/RegistrationHandler:
 // semakan dibuat DALAM handler (authz.IsManagement), bukan middleware.
 func (h *AttendanceHandler) requireManagement(c *gin.Context) bool {
 	ok, err := authz.IsManagement(c.Request.Context(), h.queries, middleware.UserID(c))
@@ -216,36 +216,36 @@ type markAttendanceRequest struct {
 	RegistrationID string `json:"registration_id"`
 	CheckinToken   string `json:"checkin_token"`
 	Method         string `json:"method"`
-	// Amend/Reason — laluan pindaan. Diterima pada kedua-dua bentuk
+	// Amend/Reason - laluan pindaan. Diterima pada kedua-dua bentuk
 	// pengenalan (registration_id dan checkin_token) kerana pindaan ialah
 	// pembetulan kepada laluan yang SAMA, bukan endpoint lain.
 	Amend  bool   `json:"amend"`
 	Reason string `json:"reason" binding:"omitempty,max=500"`
 }
 
-// memberSummary — apa yang skrin scanner perlukan untuk mengesahkan bahawa
+// memberSummary - apa yang skrin scanner perlukan untuk mengesahkan bahawa
 // orang di hadapannya itulah yang baru ditanda.
 type memberSummary struct {
 	DisplayName string `json:"display_name"`
 	MemberID    string `json:"member_id"`
 }
 
-// Mark — POST /activities/:id/sessions/:sid/attendance.
+// Mark - POST /activities/:id/sessions/:sid/attendance.
 //
 // Pengurusan sahaja untuk method 'manual'/'scan': kehadiran ialah bukti
 // yang menentukan siapa menerima sijil, jadi ia tidak boleh ditanda oleh
 // orang yang menerimanya (staff tandakan ahli LAIN).
 //
-// 'self_scan' (2026-08-15) PENGECUALIAN SENGAJA — ahli tandakan
+// 'self_scan' (2026-08-15) PENGECUALIAN SENGAJA - ahli tandakan
 // kehadiran SENDIRI, tiada gate management. Reka bentuk keselamatan:
 // TODO.md pernah nyatakan self_scan "memerlukan token berputar" (elak
 // checkin_token statik jadi kelayakan pembawa yang boleh diedarkan via
 // tangkapan skrin). Reka bentuk di sini elak keperluan itu SEPENUHNYA
 // dengan tidak menggunakan checkin_token/registration_id LANGSUNG utk
-// self_scan — identiti datang drpd JWT pemanggil (`middleware.UserID`),
+// self_scan - identiti datang drpd JWT pemanggil (`middleware.UserID`),
 // bukan drpd apa-apa dalam body permintaan. QR yang diimbas ahli
 // (`checkin_qr_session.dart`) cuma mengekod PASANGAN aktiviti+sesi
-// (data awam venue, bukan kelayakan peribadi) — tangkapan skrinnya
+// (data awam venue, bukan kelayakan peribadi) - tangkapan skrinnya
 // tidak berguna kepada sesiapa: ia cuma "sesi apa", server tetap kira
 // SIAPA drpd token JWT log masuk sebenar peng-imbas.
 func (h *AttendanceHandler) Mark(c *gin.Context) {
@@ -272,7 +272,7 @@ func (h *AttendanceHandler) Mark(c *gin.Context) {
 	var err error
 
 	if req.Method == "self_scan" {
-		// Dua medan ni TIADA makna utk self_scan (identiti drpd JWT) — kalau
+		// Dua medan ni TIADA makna utk self_scan (identiti drpd JWT) - kalau
 		// dibenarkan lalu diabaikan senyap, caller mungkin salah anggap ia
 		// dihormati. Tolak eksplisit supaya salah faham tak berlaku, dan
 		// elak laluan ni pernah jadi "cara kedua" tanda org LAIN tanpa gate
@@ -284,7 +284,7 @@ func (h *AttendanceHandler) Mark(c *gin.Context) {
 			return
 		}
 		// Pindaan (amend) ialah alat PEMBETULAN management (rekod SIAPA
-		// meluluskan pengecualian tetingkap masa, dgn sebab beraudit) —
+		// meluluskan pengecualian tetingkap masa, dgn sebab beraudit) -
 		// bukan sesuatu ahli patut boleh buat atas rekod kehadiran sendiri.
 		if req.Amend {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "self_scan tidak menyokong pindaan"})
@@ -308,7 +308,7 @@ func (h *AttendanceHandler) Mark(c *gin.Context) {
 			return
 		}
 		// TEPAT satu pengenalan. Menerima kedua-duanya bermakna memilih satu
-		// secara senyap bila ia bercanggah — dan yang tidak dipilih itu ahli
+		// secara senyap bila ia bercanggah - dan yang tidak dipilih itu ahli
 		// yang sebenarnya berdiri di depan scanner.
 		if (req.RegistrationID == "") == (req.CheckinToken == "") {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -389,11 +389,11 @@ func (h *AttendanceHandler) Mark(c *gin.Context) {
 	}
 
 	// created=false BUKAN ralat: imbasan berulang ialah kelakuan biasa, dan
-	// UI menunjukkan "sudah ditanda hadir" — juga hijau, bukan merah.
+	// UI menunjukkan "sudah ditanda hadir" - juga hijau, bukan merah.
 	c.JSON(http.StatusOK, gin.H{"created": res.Created, "member": h.memberOf(ctx, reg.UserID)})
 }
 
-// memberOf — nama untuk dipaparkan pada skrin scanner. Profil yang gagal
+// memberOf - nama untuk dipaparkan pada skrin scanner. Profil yang gagal
 // dibaca tidak menggagalkan check-in yang SUDAH commit; ia hanya kembali
 // kosong.
 func (h *AttendanceHandler) memberOf(ctx context.Context, userID uuid.UUID) memberSummary {
@@ -405,7 +405,7 @@ func (h *AttendanceHandler) memberOf(ctx context.Context, userID uuid.UUID) memb
 	return memberSummary{DisplayName: profile.DisplayName.String, MemberID: profile.MemberID}
 }
 
-// Unmark — DELETE /activities/:id/sessions/:sid/attendance/:rid.
+// Unmark - DELETE /activities/:id/sessions/:sid/attendance/:rid.
 //
 // Membuang kehadiran memadam bukti sijil, jadi ia pengurusan sahaja dan
 // SENTIASA diaudit. Tetingkap check-in tidak dikenakan di sini: pembetulan
@@ -437,7 +437,7 @@ func (h *AttendanceHandler) Unmark(c *gin.Context) {
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
 
-	// Kunci yang sama seperti laluan tanda — jejak audit dan baris kehadiran
+	// Kunci yang sama seperti laluan tanda - jejak audit dan baris kehadiran
 	// mesti bergerak bersama penggantian sesi, bukan berselang-seli dengannya.
 	if _, err := q.LockActivityForRegistration(ctx, activityID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

@@ -42,12 +42,12 @@ type auditLogResponse struct {
 	CreatedAt     string          `json:"created_at"`
 }
 
-// List (jejak audit) — management sahaja.
+// List (jejak audit) - management sahaja.
 //
 // Tapisan: ?entity_type=post&entity_id=<uuid>&action=update&actor_id=<uuid>
 // Pagination keyset: ?before_id=<id terakhir yang diterima>&limit=50
 //
-// ip_address dan user_agent SENGAJA tak didedahkan di sini — ia disimpan
+// ip_address dan user_agent SENGAJA tak didedahkan di sini - ia disimpan
 // untuk siasatan penyalahgunaan melalui akses DB terus, bukan untuk
 // tontonan biasa mana-mana ahli pengurusan.
 func (h *AuditHandler) List(c *gin.Context) {
@@ -93,7 +93,7 @@ func (h *AuditHandler) List(c *gin.Context) {
 		actorID = pgtype.UUID{Bytes: parsed, Valid: true}
 	}
 
-	// entity_id ialah tapisan timeline satu entiti — guna query khusus yang
+	// entity_id ialah tapisan timeline satu entiti - guna query khusus yang
 	// padan dengan index (entity_type, entity_id, id desc).
 	if raw := c.Query("entity_id"); raw != "" {
 		entityID, err := uuid.Parse(raw)

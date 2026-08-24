@@ -13,12 +13,12 @@ import (
 	"marc/internal/db/sqlc"
 )
 
-// Sapuan ni membatalkan pendaftaran — tindakan MUSNAH yang berjalan
+// Sapuan ni membatalkan pendaftaran - tindakan MUSNAH yang berjalan
 // tanpa manusia dalam gelung. Sebelum ni `no test files` (TODO.md L36).
 //
 // Yang paling perlu dilindungi ialah DUA cutoff yang sengaja jauh
 // berbeza (45 minit lwn 24 jam). Menyamakannya adalah "pembersihan" yang
-// nampak munasabah sepenuhnya semasa membaca kod — dan ia akan
+// nampak munasabah sepenuhnya semasa membaca kod - dan ia akan
 // membatalkan pendaftaran yang bilnya masih boleh dibayar, menghasilkan
 // baris cancelled+paid yang memerlukan campur tangan manual. Ujian di
 // sini menjadikan penyamaan itu gagal dengan kuat.
@@ -105,7 +105,7 @@ func statusOf(t *testing.T, ctx context.Context, pool *pgxpool.Pool, regID uuid.
 }
 
 // Cabang 1: tak pernah cuba checkout (`payment_ref is null`).
-// Selamat dibatalkan cepat — tiada bil wujud, jadi tiada webhook boleh
+// Selamat dibatalkan cepat - tiada bil wujud, jadi tiada webhook boleh
 // tiba untuk baris ni.
 func TestBatalPendaftaranYangTakPernahCheckout(t *testing.T) {
 	pool, q, ctx := setup(t)
@@ -116,17 +116,17 @@ func TestBatalPendaftaranYangTakPernahCheckout(t *testing.T) {
 	New(q, time.Minute).RunOnce(ctx)
 
 	if got := statusOf(t, ctx, pool, lapuk); got != "cancelled" {
-		t.Errorf("pendaftaran lapuk tanpa bil: status = %q, mahu \"cancelled\" — "+
+		t.Errorf("pendaftaran lapuk tanpa bil: status = %q, mahu \"cancelled\" - "+
 			"slot kapasiti kekal terikat selamanya", got)
 	}
 	if got := statusOf(t, ctx, pool, baharu); got != "registered" {
-		t.Errorf("pendaftaran BAHARU dibatalkan (status = %q) — ahli yang "+
+		t.Errorf("pendaftaran BAHARU dibatalkan (status = %q) - ahli yang "+
 			"sedang di halaman bayaran akan hilang slotnya", got)
 	}
 }
 
 // Cabang 2: bil ToyyibPay SUDAH dicipta. Cutoff di sini sengaja JAUH
-// lebih panjang (24 jam lwn 45 minit) — FPX/bank boleh ambil berjam-jam,
+// lebih panjang (24 jam lwn 45 minit) - FPX/bank boleh ambil berjam-jam,
 // dan membatalkan awal bermakna webhook yang tiba kemudian menanda
 // `payment_status='paid'` atas baris `status='cancelled'`: ahli sudah
 // BAYAR tetapi slotnya hilang.
@@ -144,20 +144,20 @@ func TestBilBelumDibayarGunaCutoffJauhLebihPanjang(t *testing.T) {
 	New(q, time.Minute).RunOnce(ctx)
 
 	if got := statusOf(t, ctx, pool, dalamTetingkap); got != "registered" {
-		t.Errorf("bil berumur %v dibatalkan (status = %q) — cutoff bil nampak "+
+		t.Errorf("bil berumur %v dibatalkan (status = %q) - cutoff bil nampak "+
 			"dah disamakan dgn cutoff tak-pernah-checkout (%v). Ahli yang "+
 			"bayar lewat akan hilang slot walau dah bayar",
 			unstartedAfter+time.Hour, got, unstartedAfter)
 	}
 	if got := statusOf(t, ctx, pool, lapukBenar); got != "cancelled" {
-		t.Errorf("bil berumur > %v tidak dibatalkan (status = %q) — slot "+
+		t.Errorf("bil berumur > %v tidak dibatalkan (status = %q) - slot "+
 			"terikat selamanya", unpaidBillAfter, got)
 	}
 }
 
 // Guard `status <> 'cancelled'` pada kedua-dua query: tanpa ia, baris
 // yang SUDAH dibatalkan kena UPDATE semula setiap 15 minit selama-lamanya
-// — menulis ganti `cancelled_at` (merosakkan jejak "bila SEBENAR ia
+// - menulis ganti `cancelled_at` (merosakkan jejak "bila SEBENAR ia
 // dibatalkan") dan mengembungkan kiraan yang dilog.
 func TestBarisYangSudahDibatalkanTidakDisentuhSemula(t *testing.T) {
 	pool, q, ctx := setup(t)
@@ -182,7 +182,7 @@ func TestBarisYangSudahDibatalkanTidakDisentuhSemula(t *testing.T) {
 	}
 
 	if !pertama.Equal(kedua) {
-		t.Errorf("cancelled_at ditulis ganti pada pusingan kedua (%v → %v) — "+
+		t.Errorf("cancelled_at ditulis ganti pada pusingan kedua (%v → %v) - "+
 			"guard `status <> 'cancelled'` hilang, jejak masa pembatalan rosak",
 			pertama, kedua)
 	}

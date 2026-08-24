@@ -27,7 +27,7 @@ func TestSignedURLKosongUntukKunciKosong(t *testing.T) {
 
 // Kestabilan URL ialah SEBAB cache wujud: menandatangani semula pada
 // setiap permintaan menghasilkan X-Amz-Date berbeza, dan cache imej
-// peranti dikunci ikut URL — jadi setiap tatalan feed akan memuat turun
+// peranti dikunci ikut URL - jadi setiap tatalan feed akan memuat turun
 // semula setiap gambar.
 func TestURLStabilDalamTetingkapCache(t *testing.T) {
 	r := NewR2Client("acct", "id", "secret", "bucket", "")
@@ -41,7 +41,7 @@ func TestURLStabilDalamTetingkapCache(t *testing.T) {
 	second := r.SignedURL(ctx, "posts/a.jpg")
 
 	if first != second {
-		t.Fatalf("URL berubah dalam tetingkap cache — cache imej klien akan terlepas setiap kali\n1: %s\n2: %s", first, second)
+		t.Fatalf("URL berubah dalam tetingkap cache - cache imej klien akan terlepas setiap kali\n1: %s\n2: %s", first, second)
 	}
 }
 
@@ -62,7 +62,7 @@ func TestSignedURLAdaTandatanganDanTempohLuput(t *testing.T) {
 			t.Errorf("URL tiada %s: %s", want, url)
 		}
 	}
-	// Berumur pendek ialah inti perubahan ni — URL kekal bermakna
+	// Berumur pendek ialah inti perubahan ni - URL kekal bermakna
 	// pendedahan kekal.
 	if !strings.Contains(url, "X-Amz-Expires=7200") {
 		t.Errorf("mahu tempoh luput 2 jam, dapat %s", url)
@@ -109,7 +109,7 @@ func TestSignedURLLive(t *testing.T) {
 		t.Fatalf("URL ditandatangani = %d, mahu 200", resp.StatusCode)
 	}
 
-	// Buang query tandatangan — patut ditolak.
+	// Buang query tandatangan - patut ditolak.
 	bare := signed[:strings.Index(signed, "?")]
 	bareResp, err := http.Get(bare)
 	if err != nil {
@@ -117,6 +117,6 @@ func TestSignedURLLive(t *testing.T) {
 	}
 	defer bareResp.Body.Close()
 	if bareResp.StatusCode == http.StatusOK {
-		t.Fatal("objek boleh diambil TANPA tandatangan — bucket masih terdedah")
+		t.Fatal("objek boleh diambil TANPA tandatangan - bucket masih terdedah")
 	}
 }

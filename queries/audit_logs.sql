@@ -16,7 +16,7 @@ limit $3;
 
 -- name: ListAuditLogs :many
 -- Feed audit global dengan tapisan pilihan. Pagination keyset guna
--- `before_id` (bukan OFFSET) — stabil walaupun baris baharu masuk
+-- `before_id` (bukan OFFSET) - stabil walaupun baris baharu masuk
 -- semasa pengguna membelek.
 select * from audit_logs
 where (sqlc.narg('entity_type')::text is null or entity_type = sqlc.narg('entity_type')::text)
@@ -33,7 +33,7 @@ delete from audit_logs where created_at < $1;
 -- name: RedactAuditLogPIIBefore :execrows
 -- Buang metadata permintaan daripada catatan lama TANPA memusnahkan
 -- catatan itu sendiri. Dibenarkan oleh trigger append-only kerana ia
--- hanya menetapkan kedua-dua lajur ini kepada NULL — lihat migration
+-- hanya menetapkan kedua-dua lajur ini kepada NULL - lihat migration
 -- 20260809180000.
 update audit_logs
 set ip_address = null, user_agent = null

@@ -30,7 +30,7 @@ where user_id = $1
 returning *;
 
 -- name: UpdateProfileActive :one
--- Status AKTIF/TAK AKTIF keahlian — berasingan drpd `status` (kelulusan).
+-- Status AKTIF/TAK AKTIF keahlian - berasingan drpd `status` (kelulusan).
 -- Management sahaja (dikuatkuasakan handler), padanan pola UpdateProfileRole.
 update profiles
 set is_active = $2
@@ -38,8 +38,8 @@ where user_id = $1
 returning *;
 
 -- name: UpdateProfileDepartment :one
--- Bahagian/jawatan ahli — management (manager ke atas) sahaja. Semantik
--- GANTI PENUH (bukan partial-coalesce macam UpdateProfile) — handler
+-- Bahagian/jawatan ahli - management (manager ke atas) sahaja. Semantik
+-- GANTI PENUH (bukan partial-coalesce macam UpdateProfile) - handler
 -- hantar nilai akhir terus (Valid:false = kosongkan), sebab tindakan ni
 -- satu borang "tetapkan bahagian+jawatan skrg", bukan patch berperingkat.
 update profiles
@@ -64,7 +64,7 @@ join roles r on r.id = p.role_id
 where p.user_id = $1;
 
 -- name: GetRoleKeyByUserID :one
--- Utk semakan berasaskan role SPESIFIK (bukan kategori umum) — cth
+-- Utk semakan berasaskan role SPESIFIK (bukan kategori umum) - cth
 -- middleware.BlockTesterWrites, yang perlu tahu role 'tester' tepat
 -- (category 'ahli' sengaja sama dengan ahli biasa, jadi
 -- GetRoleCategoryByUserID tak boleh bezakan dua-dua).
@@ -83,11 +83,11 @@ select status from profiles where user_id = $1;
 -- Senarai ahli yang boleh dilihat oleh SEORANG viewer tertentu. Tapisan
 -- dibuat di peringkat SQL (bukan dalam Go) supaya baris yang viewer tak
 -- layak tengok tak pernah pun keluar dari DB:
---   max_rank             — siling hierarki keterlihatan; lihat
+--   max_rank             - siling hierarki keterlihatan; lihat
 --                          `visibleRankCeiling` di handlers/profile.go
---   status               — penapis pilihan (cth 'pending' utk barisan
+--   status               - penapis pilihan (cth 'pending' utk barisan
 --                          kelulusan management)
---   include_all_statuses — management sahaja. Ahli biasa cuma nampak ahli
+--   include_all_statuses - management sahaja. Ahli biasa cuma nampak ahli
 --                          berstatus 'approved' (+ baris dia sendiri,
 --                          apa pun statusnya)
 select
@@ -97,10 +97,10 @@ select
   r.name as role_name,
   r.category as role_category,
   r.rank as role_rank,
-  -- Status bayaran yuran pendaftaran TERKINI (utamakan 'succeeded' —
+  -- Status bayaran yuran pendaftaran TERKINI (utamakan 'succeeded' -
   -- padanan `GetLatestRegistrationPaymentStatus`, sebab sama: checkout
   -- berulang boleh cipta >1 baris). String KOSONG = ahli tak pernah
-  -- cuba bayar (coalesce, BUKAN NULL — sqlc infer tak konsisten
+  -- cuba bayar (coalesce, BUKAN NULL - sqlc infer tak konsisten
   -- nullability keputusan LEFT JOIN LATERAL, string kosong lebih
   -- selamat drpd risiko crash scan NULL->string). Ditambah 2026-08-15
   -- supaya management NAMPAK siapa dah bayar SEBELUM tekan Luluskan,

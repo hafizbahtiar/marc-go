@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestPaymentConfigPulangNilaiConfig — tiada DB diperlukan, handler ni
+// TestPaymentConfigPulangNilaiConfig - tiada DB diperlukan, handler ni
 // bacaan config statik sahaja.
 func TestPaymentConfigPulangNilaiConfig(t *testing.T) {
 	gin.SetMode(gin.TestMode)

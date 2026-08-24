@@ -1,9 +1,9 @@
-// Package handlers — PaymentsHandler menyediakan bacaan sahaja bagi bayaran
+// Package handlers - PaymentsHandler menyediakan bacaan sahaja bagi bayaran
 // (bukan checkout/webhook, yang kekal dalam registration_payment.go/
 // activity_registration_payment.go/donation.go): sejarah bayaran SEORANG
 // ahli (yuran pendaftaran + yuran aktiviti, GET /me/payments) dan tinjauan
 // merentas modul untuk pengurusan (GET /admin/payments, guna payment_logs
-// yang sedia ada — lihat internal/paymentlog).
+// yang sedia ada - lihat internal/paymentlog).
 package handlers
 
 import (
@@ -34,22 +34,22 @@ func NewPaymentsHandler(pool *pgxpool.Pool, gatewayChargeCents int) *PaymentsHan
 	return &PaymentsHandler{queries: sqlc.New(pool), gatewayChargeCents: int64(gatewayChargeCents)}
 }
 
-// respondReceiptPDF stream PDF TERUS sebagai respons HTTP — TIADA
+// respondReceiptPDF stream PDF TERUS sebagai respons HTTP - TIADA
 // simpanan R2 (dibuang 2026-08-24, keputusan pengguna).
 // PDF SENGAJA dijana semula setiap panggilan (bukan disimpan/ditanda
-// "sudah dijana" dalam DB) — resit deterministik drpd data yang dah
+// "sudah dijana" dalam DB) - resit deterministik drpd data yang dah
 // tersimpan (jadual bayaran), jadi jana semula setiap kali selamat &
 // konsisten, dan storan tak pernah tumbuh (fail terbitan, bukan
 // sumber kebenaran). Sebelum ni setiap panggilan buat R2 PUT + baca
 // balik walau fail SAMA persis dgn yang sedia ada (kunci stabil,
-// tulis ganti) — kerja berlebihan tanpa faedah pada skala kelab ni.
+// tulis ganti) - kerja berlebihan tanpa faedah pada skala kelab ni.
 func respondReceiptPDF(c *gin.Context, filename string, pdfBytes []byte) {
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.Data(http.StatusOK, "application/pdf", pdfBytes)
 }
 
-// RegistrationReceipt — GET /me/payments/registration/:id/receipt. Hanya
-// baris SENDIRI (query skop `user_id`) dan hanya bayaran 'succeeded' —
+// RegistrationReceipt - GET /me/payments/registration/:id/receipt. Hanya
+// baris SENDIRI (query skop `user_id`) dan hanya bayaran 'succeeded' -
 // tiada resit untuk bayaran pending/gagal.
 func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
 	id, ok := parseUUIDParam(c, "id")
@@ -87,7 +87,7 @@ func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
 		Currency:    row.Currency,
 		// `gateway_ref` nullable sejak L29. Laluan ni dijaga oleh
 		// semakan `status != "succeeded"` di atas, dan bayaran tak boleh
-		// jadi 'succeeded' tanpa webhook yang memadankan ref — jadi ia
+		// jadi 'succeeded' tanpa webhook yang memadankan ref - jadi ia
 		// sentiasa diisi di sini. `textOrEmpty` jaring keselamatan,
 		// bukan kes yang dijangka.
 		GatewayRef:         textOrEmpty(row.GatewayRef),
@@ -104,8 +104,8 @@ func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
 	respondReceiptPDF(c, receipt.Filename("Pendaftaran", textOrEmpty(row.GatewayRef), row.ID.String()), pdfBytes)
 }
 
-// ActivityReceipt — GET /me/payments/activity/:id/receipt. `:id` ialah
-// id PENDAFTARAN (activity_registrations.id), bukan id aktiviti — hanya
+// ActivityReceipt - GET /me/payments/activity/:id/receipt. `:id` ialah
+// id PENDAFTARAN (activity_registrations.id), bukan id aktiviti - hanya
 // baris SENDIRI dan hanya `payment_status = 'paid'`.
 func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
 	id, ok := parseUUIDParam(c, "id")
@@ -128,7 +128,7 @@ func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
 	}
 	if row.PaymentStatus == "refunded" {
 		// Mesej berasingan drpd 'pending'/'not_required' (Opus verify
-		// 2026-08-15) — "belum berjaya" salah bagi bayaran yang MEMANG
+		// 2026-08-15) - "belum berjaya" salah bagi bayaran yang MEMANG
 		// pernah berjaya lalu dikembalikan. Flutter tak pernah sampai
 		// laluan ni (butang disembunyikan bila bukan 'paid'), tapi
 		// caller API terus patut nampak mesej yang betul.
@@ -151,10 +151,10 @@ func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
 		AmountCents: int64(row.FeeCents),
 		Currency:    row.Currency,
 		GatewayRef:  textOrEmpty(row.PaymentRef),
-		// `registered_at` — waktu PENDAFTARAN dicipta (checkout mula),
+		// `registered_at` - waktu PENDAFTARAN dicipta (checkout mula),
 		// bukan waktu bayaran DISAHKAN (ahli boleh bayar berjam-jam
 		// kemudian). Sama anggaran/keputusan yang DonationReceipt guna
-		// (`created_at`, lihat komen di sana) — activity_registrations
+		// (`created_at`, lihat komen di sana) - activity_registrations
 		// pun tiada lajur "confirmed at" khusus. Timestamp SEBENAR wujud
 		// dalam payment_logs (event webhook), tapi resit sengaja tak
 		// query jadual log utk medan kosmetik ni (Opus verify 2026-08-15).
@@ -171,8 +171,8 @@ func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
 	respondReceiptPDF(c, receipt.Filename("Aktiviti", textOrEmpty(row.PaymentRef), row.ID.String()), pdfBytes)
 }
 
-// DonationReceipt — GET /me/payments/donation/:id/receipt. Ahli LOG
-// MASUK sahaja — donation anonymous (user_id null) tiada akaun untuk
+// DonationReceipt - GET /me/payments/donation/:id/receipt. Ahli LOG
+// MASUK sahaja - donation anonymous (user_id null) tiada akaun untuk
 // tuntut baris ni, jejak mereka cuma emel resit yang dihantar semasa
 // webhook (donations.go sendReceiptEmail).
 func (h *PaymentsHandler) DonationReceipt(c *gin.Context) {
@@ -213,9 +213,9 @@ func (h *PaymentsHandler) DonationReceipt(c *gin.Context) {
 		AmountCents: int64(d.AmountCents),
 		Currency:    d.Currency,
 		GatewayRef:  d.GatewayRef,
-		// `created_at` — bukan tarikh bayaran SEBENAR (donations tiada
+		// `created_at` - bukan tarikh bayaran SEBENAR (donations tiada
 		// lajur paid_at, TODO.md L22/L27), sama anggaran yang emel resit
-		// asal guna kalau webhook lambat. Diterima — konsisten dgn
+		// asal guna kalau webhook lambat. Diterima - konsisten dgn
 		// gelagat sedia ada, bukan regresi.
 		PaidAt: d.CreatedAt.Time,
 	})
@@ -226,7 +226,7 @@ func (h *PaymentsHandler) DonationReceipt(c *gin.Context) {
 	}
 
 	// Padanan PERSIS nama lampiran emel resit donation sedia ada
-	// (`donations.go` sendReceiptEmail) — ahli yang muat turun dari app
+	// (`donations.go` sendReceiptEmail) - ahli yang muat turun dari app
 	// dan yang terima emel nampak nama fail SAMA, bukan dua gaya.
 	respondReceiptPDF(c, receipt.Filename("Sokongan", d.GatewayRef, d.ID.String()), pdfBytes)
 }
@@ -252,7 +252,7 @@ type activityPaymentItem struct {
 	RegisteredAt       pgtype.Timestamptz `json:"registered_at"`
 }
 
-// donationPaymentItem — satu derma milik ahli log masuk.
+// donationPaymentItem - satu derma milik ahli log masuk.
 //
 // SENGAJA tiada `donor_name`/`donor_email`: ahli boleh menderma dengan
 // nama/emel yang berbeza daripada akaunnya, dan senarai ni cuma perlu
@@ -267,7 +267,7 @@ type donationPaymentItem struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-// Mine — GET /me/payments. TIGA senarai berasingan (bukan satu list
+// Mine - GET /me/payments. TIGA senarai berasingan (bukan satu list
 // digabung): ketiga-tiga jenis bayaran ni struktur berbeza (yuran
 // pendaftaran boleh ada >1 percubaan per ahli; yuran aktiviti satu baris
 // setiap pendaftaran; derma bebas daripada kedua-duanya) dan Flutter
@@ -276,7 +276,7 @@ type donationPaymentItem struct {
 // `donations` ditambah 2026-08-22 (L33). Sebelum ni endpoint resit derma
 // (`GET /me/payments/donation/:id/receipt`) wujud dan berfungsi, tapi
 // TIADA permukaan API yang pernah mendedahkan `donations.id` kepada
-// pemiliknya — jadi ia mati secara praktikal melainkan seseorang meneka
+// pemiliknya - jadi ia mati secara praktikal melainkan seseorang meneka
 // UUID. Kliennya pun sudah ada (`PaymentReceiptRepository.donation`);
 // yang hilang cuma senarainya.
 func (h *PaymentsHandler) Mine(c *gin.Context) {
@@ -356,11 +356,11 @@ var validPaymentLogModules = map[string]bool{
 	"activity_fee":     true,
 }
 
-// paymentLogItem — sengaja TIADA RawPayload. Payload mentah gateway boleh
+// paymentLogItem - sengaja TIADA RawPayload. Payload mentah gateway boleh
 // bawa PII pembayar (billTo/billEmail/billPhone ToyyibPay) dan sengaja
 // disimpan TANPA scrub di payment_logs (lihat migrasi
 // 20260815*_create_payment_logs.sql) sebab diagnosis insiden perlukan
-// bentuk asal — akses padanya terhad kepada pelayan (query DB terus),
+// bentuk asal - akses padanya terhad kepada pelayan (query DB terus),
 // bukan didedahkan menerusi API kepada mana-mana app pengurusan.
 type paymentLogItem struct {
 	ID          int64              `json:"id"`
@@ -376,26 +376,26 @@ type paymentLogItem struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-// superAdminRoleKey — siling "superadmin sahaja" utk data derma. Derma
-// (Stripe) dianggap lebih sensitif drpd yuran (kelab) — keputusan produk
+// superAdminRoleKey - siling "superadmin sahaja" utk data derma. Derma
+// (Stripe) dianggap lebih sensitif drpd yuran (kelab) - keputusan produk
 // 2026-08-15: management biasa (supervisor/manager/admin) TAK nampak
 // baris donation langsung dalam /admin/payments, walau tapisan "Semua".
 const superAdminRoleKey = "superadmin"
 
-// nonDonationModules — apa yang management BIASA (bukan superadmin)
+// nonDonationModules - apa yang management BIASA (bukan superadmin)
 // boleh nampak bila tiada tapisan modul eksplisit diminta.
 var nonDonationModules = []string{"registration_fee", "activity_fee"}
 
 var allPaymentLogModules = []string{"donation", "registration_fee", "activity_fee"}
 
-// ListAll — GET /admin/payments. Tinjauan merentas modul guna payment_logs
-// sedia ada — pengurusan sahaja (disemak DALAM handler, padanan
+// ListAll - GET /admin/payments. Tinjauan merentas modul guna payment_logs
+// sedia ada - pengurusan sahaja (disemak DALAM handler, padanan
 // PaymentReconcileHandler.Run). Cursor keyset `before_id` (padanan
-// ListPosts), bukan offset — offset jadi tak stabil bila baris baharu
+// ListPosts), bukan offset - offset jadi tak stabil bila baris baharu
 // terus masuk semasa pengurus menatal.
 //
 // Modul `donation` disekat kepada superadmin sahaja (lihat komen
-// `superAdminRoleKey`) — dikuatkuasakan di SINI (Go), bukan bergantung
+// `superAdminRoleKey`) - dikuatkuasakan di SINI (Go), bukan bergantung
 // pada Flutter menyembunyikan cip penapis; caller yang minta
 // `?module=donation` terus (bukan menerusi UI) tetap disekat.
 func (h *PaymentsHandler) ListAll(c *gin.Context) {

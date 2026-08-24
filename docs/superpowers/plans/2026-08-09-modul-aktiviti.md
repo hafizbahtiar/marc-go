@@ -1,4 +1,4 @@
-# Modul Aktiviti — Pelan Pelaksanaan
+# Modul Aktiviti - Pelan Pelaksanaan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,8 +14,8 @@
 
 - Migration goose single-file dengan `-- +goose Up` / `-- +goose Down` dalam fail yang sama, nama `<timestamp>_<snake_case>.sql` dalam `internal/db/migrations/`.
 - Query ditulis tangan dalam `queries/<jadual>.sql`, kod dijana `sqlc generate`. **Jangan** edit apa-apa dalam `internal/db/sqlc/` dengan tangan.
-- Semakan management dibuat dalam handler melalui `authz.IsManagement(ctx, q, userID)`. **JANGAN** cipta middleware `RequireManagement` — corak itu tidak wujud dalam repo ini.
-- `audit.Record` mesti dipanggil dengan `sqlc.Queries` yang terikat pada transaksi mutasi (`queries.WithTx(tx)`), dan ralatnya **tidak boleh ditelan** — gagalkan keseluruhan permintaan.
+- Semakan management dibuat dalam handler melalui `authz.IsManagement(ctx, q, userID)`. **JANGAN** cipta middleware `RequireManagement` - corak itu tidak wujud dalam repo ini.
+- `audit.Record` mesti dipanggil dengan `sqlc.Queries` yang terikat pada transaksi mutasi (`queries.WithTx(tx)`), dan ralatnya **tidak boleh ditelan** - gagalkan keseluruhan permintaan.
 - Baldi had kadar mesti **dinamakan**: `rateLimiter.Limit("<nama>", ...)`. Baldi tanpa nama berkongsi kunci Redis dan saling menghabiskan kuota.
 - Semua teks yang dilihat pengguna (mesej ralat API, UI Flutter, kandungan PDF) dalam **Bahasa Melayu**.
 - Ujian yang perlukan Postgres dijaga env var dan di-skip secara lalai, ikut corak `HANDLER_TEST_DB`. Modul ini guna `ACTIVITY_TEST_DB`. Guna DB **buangan**, bukan DB dev.
@@ -29,7 +29,7 @@
 
 ## Struktur Fail
 
-**Backend — cipta:**
+**Backend - cipta:**
 
 | Fail | Tanggungjawab |
 |---|---|
@@ -44,9 +44,9 @@
 | `queries/activity_registrations.sql` | Query pendaftaran |
 | `queries/activity_attendances.sql` | Query kehadiran |
 | `queries/activity_certificates.sql` | Query sijil |
-| `internal/certificate/certificate.go` | Penjanaan PDF — fungsi tulen |
+| `internal/certificate/certificate.go` | Penjanaan PDF - fungsi tulen |
 | `internal/certificate/certificate_test.go` | Ujian PDF |
-| `internal/certificate/eligibility.go` | Kelayakan + tetingkap masa — fungsi tulen |
+| `internal/certificate/eligibility.go` | Kelayakan + tetingkap masa - fungsi tulen |
 | `internal/certificate/eligibility_test.go` | Ujian kelayakan |
 | `internal/http/handlers/activities.go` | CRUD aktiviti + sesi |
 | `internal/http/handlers/activity_registrations.go` | Daftar/batal/senarai |
@@ -54,19 +54,19 @@
 | `internal/http/handlers/activity_certificates.go` | Terbit/tarik/muat turun/verify |
 | `internal/http/handlers/activities_live_test.go` | Ujian lawan Postgres sebenar |
 
-**Backend — ubah suai:**
+**Backend - ubah suai:**
 
 | Fail | Perubahan |
 |---|---|
-| `internal/storage/r2.go` | Tambah `PutObject` — muat naik sisi-server |
+| `internal/storage/r2.go` | Tambah `PutObject` - muat naik sisi-server |
 | `internal/http/router.go` | Daftar route baharu + baldi `verify` |
 
-**Flutter — cipta:** `lib/features/activities/` (models, providers, 5 halaman ahli, 4 halaman management, widgets).
+**Flutter - cipta:** `lib/features/activities/` (models, providers, 5 halaman ahli, 4 halaman management, widgets).
 
 ## Helper yang dikongsi
 
 Task 6 hingga 10 menggunakan helper penukaran jenis ini. **Semak
-`internal/http/handlers/bind.go` dan fail handler sedia ada dahulu** — sebahagian
+`internal/http/handlers/bind.go` dan fail handler sedia ada dahulu** - sebahagian
 mungkin sudah wujud dengan nama lain. Tambah yang tiada ke `bind.go`, jangan
 cipta pendua setempat dalam setiap fail:
 
@@ -100,7 +100,7 @@ func doGETStatus(t *testing.T, pool *pgxpool.Pool, path string) int             
 ```
 
 `doGET`/`doGETStatus` membina router melalui `httptest.NewServer` dengan pool
-ujian dan melakukan permintaan sebenar — endpoint pengesahan **awam**, jadi
+ujian dan melakukan permintaan sebenar - endpoint pengesahan **awam**, jadi
 ujian tidak boleh memintas lapisan HTTP tempat had kadar dan pemilihan medan
 sebenarnya berlaku.
 
@@ -120,7 +120,7 @@ diciptanya. DB ujian dikongsi antara ujian dalam pakej yang sama.
 - Create: `internal/db/migrations/20260810100500_create_activity_certificates.sql`
 
 **Interfaces:**
-- Produces: enam jadual — `activity_categories`, `activities`, `activity_sessions`, `activity_registrations`, `activity_attendances`, `activity_certificates`. Semua task selepas ini bergantung pada nama lajur di sini.
+- Produces: enam jadual - `activity_categories`, `activities`, `activity_sessions`, `activity_registrations`, `activity_attendances`, `activity_certificates`. Semua task selepas ini bergantung pada nama lajur di sini.
 
 - [ ] **Step 1: Tulis migration kategori + seed**
 
@@ -272,7 +272,7 @@ create table activity_attendances (
   session_id uuid not null references activity_sessions(id) on delete cascade,
 
   -- Keempat-empat kaedah check-in hasilkan baris yang SAMA; hanya method
-  -- dan marked_by berbeza. 'self_scan' dan 'code' belum ada UI — schema
+  -- dan marked_by berbeza. 'self_scan' dan 'code' belum ada UI - schema
   -- sokong supaya menambahnya nanti kerja UI, bukan migration.
   method text not null check (method in ('manual', 'scan', 'self_scan', 'code')),
 
@@ -303,7 +303,7 @@ create table activity_certificates (
 
   serial text not null unique,
 
-  -- Berasingan daripada serial. Serial berjujukan — kalau ia juga kunci
+  -- Berasingan daripada serial. Serial berjujukan - kalau ia juga kunci
   -- pengesahan awam, sesiapa boleh tambah satu dan menuai nama semua ahli.
   verify_token text not null unique,
 
@@ -342,7 +342,7 @@ goose -dir internal/db/migrations postgres "$DATABASE_URL" down-to 2026080921000
 goose -dir internal/db/migrations postgres "$DATABASE_URL" up
 ```
 
-Dijangka: tiada ralat pada kedua-dua arah. Kalau `down` gagal atas kekangan foreign key, susunan `drop` salah — betulkan sebelum teruskan.
+Dijangka: tiada ralat pada kedua-dua arah. Kalau `down` gagal atas kekangan foreign key, susunan `drop` salah - betulkan sebelum teruskan.
 
 - [ ] **Step 9: Commit**
 
@@ -363,7 +363,7 @@ git commit -m "feat(activity): schema aktiviti, sesi, pendaftaran, kehadiran, si
 
 **Interfaces:**
 - Consumes: jadual dari Task 1.
-- Produces: kaedah `*sqlc.Queries` yang dipakai setiap handler selepas ini — `ListActivityCategories`, `CreateActivity`, `GetActivityByID`, `ListActivities`, `UpdateActivity`, `SetActivityStatus`, `RecomputeActivityWindow`, `DeleteActivitySessions`, `CreateActivitySession`, `ListActivitySessions`, `CountSessionsWithAttendance`, `LockActivityForRegistration`, `CountActiveRegistrations`, `CreateRegistration`, `CancelRegistration`, `GetRegistrationByActivityAndUser`, `GetRegistrationByCheckinToken`, `ListRegistrationsByActivity`, `ListMyRegistrations`, `MarkAttendance`, `DeleteAttendance`, `ListAttendanceByActivity`, `CountAttendanceByRegistration`, `GetActivitySessionByID`, `ListEligibleForCertificate`, `CreateCertificate`, `SetCertificateR2Key`, `ListCertificatesPendingFile`, `ListMyCertificates`, `GetCertificateByID`, `GetCertificateByVerifyToken`, `RevokeCertificate`.
+- Produces: kaedah `*sqlc.Queries` yang dipakai setiap handler selepas ini - `ListActivityCategories`, `CreateActivity`, `GetActivityByID`, `ListActivities`, `UpdateActivity`, `SetActivityStatus`, `RecomputeActivityWindow`, `DeleteActivitySessions`, `CreateActivitySession`, `ListActivitySessions`, `CountSessionsWithAttendance`, `LockActivityForRegistration`, `CountActiveRegistrations`, `CreateRegistration`, `CancelRegistration`, `GetRegistrationByActivityAndUser`, `GetRegistrationByCheckinToken`, `ListRegistrationsByActivity`, `ListMyRegistrations`, `MarkAttendance`, `DeleteAttendance`, `ListAttendanceByActivity`, `CountAttendanceByRegistration`, `GetActivitySessionByID`, `ListEligibleForCertificate`, `CreateCertificate`, `SetCertificateR2Key`, `ListCertificatesPendingFile`, `ListMyCertificates`, `GetCertificateByID`, `GetCertificateByVerifyToken`, `RevokeCertificate`.
 
 - [ ] **Step 1: Tulis `queries/activities.sql`**
 
@@ -388,7 +388,7 @@ join activity_categories c on c.id = a.category_id
 where a.id = $1 and a.deleted_at is null;
 
 -- name: ListActivities :many
--- Keyset pagination atas (starts_at, id) — sama corak dengan ListPosts,
+-- Keyset pagination atas (starts_at, id) - sama corak dengan ListPosts,
 -- elak baris terlepas bila dua aktiviti berkongsi timestamp tepat.
 -- upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir
 -- dahulu). upcoming=false → yang dah tamat, isih menurun.
@@ -443,7 +443,7 @@ where id = $1;
 
 -- name: RecomputeActivityWindow :exec
 -- Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
--- selepas cipta — dipanggil dalam transaksi yang sama dengan setiap
+-- selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 -- perubahan set sesi.
 update activities a set
   starts_at = s.min_start,
@@ -487,7 +487,7 @@ select count(*) from activity_sessions where activity_id = $1;
 
 ```sql
 -- name: LockActivityForRegistration :one
--- `for update` atas baris aktiviti — ini yang menyerikan pendaftaran
+-- `for update` atas baris aktiviti - ini yang menyerikan pendaftaran
 -- serentak supaya kiraan kapasiti tak boleh basi antara baca dan tulis.
 select * from activities where id = $1 and deleted_at is null for update;
 
@@ -567,7 +567,7 @@ select count(*) from activity_attendances where registration_id = $1;
 
 ```sql
 -- name: ListEligibleForCertificate :many
--- Server mengira sendiri siapa layak — management tidak menyenaraikan.
+-- Server mengira sendiri siapa layak - management tidak menyenaraikan.
 -- Klausa payment_status kekal walaupun payment belum diintegrasikan:
 -- fee_cents sentiasa 0 buat masa ini, jadi ia sentiasa benar.
 select r.id as registration_id, r.user_id, pr.display_name,
@@ -629,7 +629,7 @@ sqlc generate
 
 Dijangka: tiada ralat, `internal/db/sqlc/` mengandungi fail baharu untuk keempat-empat fail query.
 
-Kalau `sqlc` mengadu tentang `case when` dalam `order by` pada `ListActivities`, ia tidak dapat menyimpulkan jenis — tambah `::timestamptz` pada ungkapan `case` yang berkenaan.
+Kalau `sqlc` mengadu tentang `case when` dalam `order by` pada `ListActivities`, ia tidak dapat menyimpulkan jenis - tambah `::timestamptz` pada ungkapan `case` yang berkenaan.
 
 - [ ] **Step 6: Sahkan kompilasi**
 
@@ -648,7 +648,7 @@ git commit -m "feat(activity): query sqlc untuk aktiviti, pendaftaran, kehadiran
 
 ---
 
-## Task 3: Logik tulen — kelayakan & tetingkap masa
+## Task 3: Logik tulen - kelayakan & tetingkap masa
 
 **Files:**
 - Create: `internal/certificate/eligibility.go`
@@ -734,21 +734,21 @@ func TestWithinCheckinWindow(t *testing.T) {
 go test ./internal/certificate/ -run 'TestIsEligible|TestWithinCheckinWindow' -v
 ```
 
-Dijangka: GAGAL — `undefined: IsEligible`.
+Dijangka: GAGAL - `undefined: IsEligible`.
 
 - [ ] **Step 3: Tulis implementasi minimum**
 
 `internal/certificate/eligibility.go`:
 
 ```go
-// Package certificate mengandungi logik sijil yang TULEN — tiada DB, tiada
+// Package certificate mengandungi logik sijil yang TULEN - tiada DB, tiada
 // R2, tiada rangkaian. Itu yang menjadikannya boleh diuji tanpa infra,
 // sama seperti internal/receipt.
 package certificate
 
 import "time"
 
-// CheckinWindowPadding — berapa lama sebelum/selepas sesi kehadiran masih
+// CheckinWindowPadding - berapa lama sebelum/selepas sesi kehadiran masih
 // boleh ditanda sebagai check-in biasa.
 //
 // Tanpa had ini, kehadiran boleh ditanda seminggu kemudian tanpa jejak, dan
@@ -756,7 +756,7 @@ import "time"
 // pindaan berasingan yang dicatat audit.
 const CheckinWindowPadding = 2 * time.Hour
 
-// IsEligible — layakkah pendaftaran ini menerima sijil?
+// IsEligible - layakkah pendaftaran ini menerima sijil?
 //
 // Perbandingan dibuat dalam integer (attended*100 >= total*threshold) dan
 // bukan float, supaya kes sempadan seperti 2/3 pada ambang 66 vs 67
@@ -768,7 +768,7 @@ func IsEligible(attended, totalSessions, thresholdPct int) bool {
 	return attended*100 >= totalSessions*thresholdPct
 }
 
-// WithinCheckinWindow — bolehkah kehadiran ditanda sekarang untuk sesi ini?
+// WithinCheckinWindow - bolehkah kehadiran ditanda sekarang untuk sesi ini?
 func WithinCheckinWindow(now, sessionStart, sessionEnd time.Time) bool {
 	return !now.Before(sessionStart.Add(-CheckinWindowPadding)) &&
 		!now.After(sessionEnd.Add(CheckinWindowPadding))
@@ -845,7 +845,7 @@ func TestGeneratePDFPulangkanPDFSah(t *testing.T) {
 		t.Errorf("output bukan PDF, 8 bait pertama: %q", out[:min(8, len(out))])
 	}
 	// Sijil dengan QR terbenam sepatutnya jauh melebihi seribu bait.
-	// Ambang longgar sengaja — ini semakan kewarasan, bukan ujian saiz.
+	// Ambang longgar sengaja - ini semakan kewarasan, bukan ujian saiz.
 	if len(out) < 2000 {
 		t.Errorf("PDF terlalu kecil (%d bait), QR mungkin tak terbenam", len(out))
 	}
@@ -854,7 +854,7 @@ func TestGeneratePDFPulangkanPDFSah(t *testing.T) {
 func TestGeneratePDFTolakNamaTakBolehDikodkan(t *testing.T) {
 	d := testData()
 	// Fon Helvetica terbina fpdf hanya meliputi cp1252. Tanpa semakan ini,
-	// nama begini akan DITERBITKAN dengan aksara hilang senyap-senyap —
+	// nama begini akan DITERBITKAN dengan aksara hilang senyap-senyap -
 	// sijil rosak yang tiada siapa perasan sehingga penerima membukanya.
 	d.RecipientName = "李小龍"
 
@@ -895,7 +895,7 @@ func min(a, b int) int {
 go test ./internal/certificate/ -run 'TestGeneratePDF|TestEncodableName' -v
 ```
 
-Dijangka: GAGAL — `undefined: GeneratePDF`.
+Dijangka: GAGAL - `undefined: GeneratePDF`.
 
 - [ ] **Step 4: Tulis implementasi**
 
@@ -928,7 +928,7 @@ var (
 	mutedColor = [3]int{110, 116, 122}
 )
 
-// Data — segala yang perlu untuk mencetak satu sijil. Semuanya sudah
+// Data - segala yang perlu untuk mencetak satu sijil. Semuanya sudah
 // disnapshot oleh pemanggil; fungsi ini tidak membaca DB.
 type Data struct {
 	Serial        string
@@ -939,7 +939,7 @@ type Data struct {
 	VerifyURL     string
 }
 
-// EncodableName — bolehkah nama ini dicetak tanpa kehilangan aksara?
+// EncodableName - bolehkah nama ini dicetak tanpa kehilangan aksara?
 //
 // fpdf dengan fon terbina mengekod ke cp1252 dan menggantikan aksara di
 // luar julat itu secara SENYAP. Kita memeriksa terlebih dahulu supaya
@@ -1036,7 +1036,7 @@ func drawFooter(pdf *fpdf.Fpdf, tr func(string) string, d Data) error {
 	if err != nil {
 		return fmt.Errorf("jana QR: %w", err)
 	}
-	// RegisterImageReader membaca dari memori — tiada fail sementara.
+	// RegisterImageReader membaca dari memori - tiada fail sementara.
 	pdf.RegisterImageOptionsReader("qr", fpdf.ImageOptions{ImageType: "PNG"}, bytes.NewReader(png))
 	pdf.ImageOptions("qr", pageW-marginX-28, pageH-58, 28, 28, false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 
@@ -1068,7 +1068,7 @@ Dijangka: semua LULUS.
 
 - [ ] **Step 6: Semakan visual manual sekali sahaja**
 
-Tulis skrip buangan yang mengeluarkan PDF ke fail dan bukanya. Penampilan tidak boleh diuji secara automatik — ini satu-satunya pemeriksaannya.
+Tulis skrip buangan yang mengeluarkan PDF ke fail dan bukanya. Penampilan tidak boleh diuji secara automatik - ini satu-satunya pemeriksaannya.
 
 ```bash
 cat > /tmp/certgen.go <<'EOF'
@@ -1121,7 +1121,7 @@ git commit -m "feat(certificate): jana PDF sijil landskap A4 dengan QR pengesaha
 **Interfaces:**
 - Produces: `func (r *R2Client) PutObject(ctx context.Context, key, contentType string, body []byte) error`
 
-Sebab task ini wujud: `R2Client` sekarang hanya boleh **presign** — klien yang memuat naik. PDF sijil dijana di server, jadi server perlu boleh memuat naik sendiri.
+Sebab task ini wujud: `R2Client` sekarang hanya boleh **presign** - klien yang memuat naik. PDF sijil dijana di server, jadi server perlu boleh memuat naik sendiri.
 
 - [ ] **Step 1: Tulis ujian live yang gagal**
 
@@ -1141,7 +1141,7 @@ import (
 	"time"
 )
 
-// Ujian live — di-skip melainkan R2_LIVE_TEST=1, sama corak dengan
+// Ujian live - di-skip melainkan R2_LIVE_TEST=1, sama corak dengan
 // TestR2LivePermissions sedia ada.
 func TestR2PutObjectLive(t *testing.T) {
 	if os.Getenv("R2_LIVE_TEST") != "1" {
@@ -1189,7 +1189,7 @@ func TestR2PutObjectLive(t *testing.T) {
 go test ./internal/storage/ -run TestR2PutObjectLive
 ```
 
-Dijangka: GAGAL kompilasi — `r.PutObject undefined`.
+Dijangka: GAGAL kompilasi - `r.PutObject undefined`.
 
 - [ ] **Step 3: Tambah `PutObject`**
 
@@ -1199,7 +1199,7 @@ Dalam `internal/storage/r2.go`, tambah selepas `PresignUpload`:
 // PutObject muat naik bait terus dari server ke R2.
 //
 // Berbeza daripada PresignUpload (klien memuat naik sendiri), ini untuk
-// kandungan yang DIJANA server dan tidak pernah menyentuh peranti — PDF
+// kandungan yang DIJANA server dan tidak pernah menyentuh peranti - PDF
 // sijil. Tiada semakan dimensi imej di sini; pemanggil yang tahu apa yang
 // dihantarnya.
 func (r *R2Client) PutObject(ctx context.Context, key, contentType string, body []byte) error {
@@ -1227,7 +1227,7 @@ Pastikan `bytes`, `github.com/aws/aws-sdk-go-v2/aws`, dan `github.com/aws/aws-sd
 go build ./... && R2_LIVE_TEST=1 go test ./internal/storage/ -run TestR2PutObjectLive -v
 ```
 
-Dijangka: LULUS (atau SKIP kalau kelayakan tiada — dalam kes itu jalankan sekali dengan kelayakan sebenar sebelum menganggap task ini selesai).
+Dijangka: LULUS (atau SKIP kalau kelayakan tiada - dalam kes itu jalankan sekali dengan kelayakan sebenar sebelum menganggap task ini selesai).
 
 - [ ] **Step 5: Commit**
 
@@ -1267,7 +1267,7 @@ import (
 	"marc/internal/db/sqlc"
 )
 
-// activityTestPool — sama corak dengan handler test sedia ada: di-skip
+// activityTestPool - sama corak dengan handler test sedia ada: di-skip
 // melainkan ACTIVITY_TEST_DB ditetapkan. Guna DB BUANGAN.
 func activityTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -1283,7 +1283,7 @@ func activityTestPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// TestReplaceSessionsMengekalkanInvarianTetingkap — harga yang kita bayar
+// TestReplaceSessionsMengekalkanInvarianTetingkap - harga yang kita bayar
 // untuk mendenormalisasi activities.starts_at/ends_at. Kalau ujian ini
 // tiada, invarian itu hanya niat baik.
 func TestReplaceSessionsMengekalkanInvarianTetingkap(t *testing.T) {
@@ -1315,7 +1315,7 @@ func TestReplaceSessionsMengekalkanInvarianTetingkap(t *testing.T) {
 		t.Errorf("ends_at = %v, mahu %v", got.EndsAt.Time, wantEnd)
 	}
 
-	// Buang sesi paling awal — tetingkap mesti mengecut, bukan kekal basi.
+	// Buang sesi paling awal - tetingkap mesti mengecut, bukan kekal basi.
 	if err := replaceSessionsTx(ctx, pool, activityID, sessions[:1]); err != nil {
 		t.Fatalf("replaceSessions kedua: %v", err)
 	}
@@ -1336,11 +1336,11 @@ ACTIVITY_TEST_DB="postgres://localhost:5432/marc_activity?sslmode=disable" \
 
 Cipta DB dahulu kalau belum: `createdb marc_activity` kemudian jalankan `goose ... up` ke atasnya.
 
-Dijangka: GAGAL kompilasi — `undefined: seedActivity`, `undefined: replaceSessionsTx`, `undefined: sessionInput`.
+Dijangka: GAGAL kompilasi - `undefined: seedActivity`, `undefined: replaceSessionsTx`, `undefined: sessionInput`.
 
 - [ ] **Step 3: Tulis handler dan fungsi transaksi**
 
-`internal/http/handlers/activities.go` — bahagian penting (invarian):
+`internal/http/handlers/activities.go` - bahagian penting (invarian):
 
 ```go
 package handlers
@@ -1396,7 +1396,7 @@ func replaceSessionsTx(ctx context.Context, pool *pgxpool.Pool, activityID uuid.
 	defer tx.Rollback(ctx)
 	q := sqlc.New(pool).WithTx(tx)
 
-	// Sesi yang sudah ada kehadiran tak boleh dibuang — kehadiran itu bukti
+	// Sesi yang sudah ada kehadiran tak boleh dibuang - kehadiran itu bukti
 	// yang menyokong sijil.
 	withAttendance, err := q.CountSessionsWithAttendance(ctx, activityID)
 	if err != nil {
@@ -1470,7 +1470,7 @@ func (h *ActivityHandler) ReplaceSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"sessions": sessions})
 }
 
-// requireManagement — semakan management dibuat DALAM handler, ikut corak
+// requireManagement - semakan management dibuat DALAM handler, ikut corak
 // sedia ada (lihat audit.go, profile.go). Tiada middleware RequireManagement
 // dalam repo ini; jangan cipta satu.
 func (h *ActivityHandler) requireManagement(c *gin.Context) bool {
@@ -1499,9 +1499,9 @@ Tulis juga: `Create` (cipta aktiviti status `draft` + sesi awal dalam satu trans
 }
 ```
 
-`is_registered` dikira untuk **pemanggil semasa** melalui `GetRegistrationByActivityAndUser` — `pgx.ErrNoRows` bermakna `false`, bukan ralat. `List` juga menyertakan `registration_count` (query sudah mengiranya) supaya kad senarai boleh menunjukkan slot berbaki tanpa N+1.
+`is_registered` dikira untuk **pemanggil semasa** melalui `GetRegistrationByActivityAndUser` - `pgx.ErrNoRows` bermakna `false`, bukan ralat. `List` juga menyertakan `registration_count` (query sudah mengiranya) supaya kad senarai boleh menunjukkan slot berbaki tanpa N+1.
 
-Helper penukaran jenis (`pgTimestamptz`, `pgUUID`, dsb.) dan `parseUUIDParam` — lihat bahagian "Helper yang dikongsi" di atas. Semak `bind.go` sebelum menambah.
+Helper penukaran jenis (`pgTimestamptz`, `pgUUID`, dsb.) dan `parseUUIDParam` - lihat bahagian "Helper yang dikongsi" di atas. Semak `bind.go` sebelum menambah.
 
 - [ ] **Step 4: Tulis helper ujian `seedActivity`**
 
@@ -1515,7 +1515,7 @@ func seedActivity(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	err := pool.QueryRow(ctx,
 		`select id from activity_categories where key = 'badminton'`).Scan(&categoryID)
 	if err != nil {
-		t.Fatalf("kategori seed tiada — jalankan migration atas DB ujian: %v", err)
+		t.Fatalf("kategori seed tiada - jalankan migration atas DB ujian: %v", err)
 	}
 
 	start := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
@@ -1604,7 +1604,7 @@ import (
 )
 
 // Ujian paling penting dalam modul ini. Tanpa ia, `select ... for update`
-// dalam registerTx hanya niat baik — tiada apa yang membuktikan dua ahli
+// dalam registerTx hanya niat baik - tiada apa yang membuktikan dua ahli
 // tidak boleh merebut slot terakhir yang sama.
 func TestRegisterPerlumbaanSlotTerakhir(t *testing.T) {
 	pool := activityTestPool(t)
@@ -1645,7 +1645,7 @@ func TestRegisterPerlumbaanSlotTerakhir(t *testing.T) {
 		t.Errorf("ditolak 'penuh' = %d, mahu %d", penuh, len(users)-1)
 	}
 
-	// Semakan kedua terhadap DB — kaunter dalam-memori boleh menipu.
+	// Semakan kedua terhadap DB - kaunter dalam-memori boleh menipu.
 	q := sqlc.New(pool)
 	n, err := q.CountActiveRegistrations(ctx, activityID)
 	if err != nil {
@@ -1691,7 +1691,7 @@ ACTIVITY_TEST_DB="postgres://localhost:5432/marc_activity?sslmode=disable" \
   go test ./internal/http/handlers/ -run 'TestRegister|TestDaftarSemula' -v
 ```
 
-Dijangka: GAGAL kompilasi — `undefined: registerTx`.
+Dijangka: GAGAL kompilasi - `undefined: registerTx`.
 
 - [ ] **Step 3: Tulis `registerTx` dan handler**
 
@@ -1742,7 +1742,7 @@ func newCheckinToken() (string, error) {
 // `select ... for update` atas baris aktiviti ialah intinya: tanpa kunci
 // itu, dua permintaan serentak boleh kedua-duanya membaca "9 daripada 10
 // terisi" dan kedua-duanya memasukkan baris. Pada skala ratusan ahli, kunci
-// baris ini percuma — tiada sebab untuk mereka sesuatu yang lebih pintar.
+// baris ini percuma - tiada sebab untuk mereka sesuatu yang lebih pintar.
 func registerTx(ctx context.Context, pool *pgxpool.Pool, activityID, userID uuid.UUID) (sqlc.ActivityRegistration, error) {
 	var zero sqlc.ActivityRegistration
 
@@ -1817,7 +1817,7 @@ Handler `Register` memetakan ralat: `errActivityFull` → `409` "aktiviti sudah 
 
 `Cancel` memanggil `q.CancelRegistration`; `pgx.ErrNoRows` → `404` "anda tidak berdaftar". `ListForActivity` perlukan management. `ListMine` memanggil `ListMyRegistrations` untuk pengguna semasa.
 
-Tiada `audit.Record` untuk pendaftaran — volum tinggi, dan baris itu sendiri menyimpan `registered_at`/`cancelled_at`. Keputusan sama seperti `create` post.
+Tiada `audit.Record` untuk pendaftaran - volum tinggi, dan baris itu sendiri menyimpan `registered_at`/`cancelled_at`. Keputusan sama seperti `create` post.
 
 - [ ] **Step 4: Tulis helper ujian**
 
@@ -1830,7 +1830,7 @@ ACTIVITY_TEST_DB="postgres://localhost:5432/marc_activity?sslmode=disable" \
   go test ./internal/http/handlers/ -run 'TestRegister|TestDaftarSemula' -v -race
 ```
 
-Dijangka: LULUS. Bendera `-race` penting di sini — ujian ini menjalankan goroutine serentak.
+Dijangka: LULUS. Bendera `-race` penting di sini - ujian ini menjalankan goroutine serentak.
 
 - [ ] **Step 6: Daftar route**
 
@@ -1880,7 +1880,7 @@ func TestTandaKehadiranDiLuarTetingkapDitolak(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
 
-	// Sesi yang tamat tiga hari lalu — jauh di luar padding 2 jam.
+	// Sesi yang tamat tiga hari lalu - jauh di luar padding 2 jam.
 	activityID := seedActivityWithCapacity(t, pool, 10)
 	sessionID := seedSession(t, pool, activityID,
 		time.Now().Add(-72*time.Hour), time.Now().Add(-70*time.Hour))
@@ -1915,7 +1915,7 @@ func TestTandaKehadiranDuaKaliIdempoten(t *testing.T) {
 	}
 
 	// QR dipegang di depan lens menghantar permintaan berulang. Yang kedua
-	// bukan ralat — ia hanya tiada kerja, dan UI perlu tahu bezanya supaya
+	// bukan ralat - ia hanya tiada kerja, dan UI perlu tahu bezanya supaya
 	// ia boleh menunjukkan "sudah hadir" berbanding "✓ baru ditanda".
 	second, err := markAttendanceTx(ctx, pool, sessionID, reg.ID, "scan", userID)
 	if err != nil {
@@ -1940,7 +1940,7 @@ ACTIVITY_TEST_DB="postgres://localhost:5432/marc_activity?sslmode=disable" \
   go test ./internal/http/handlers/ -run TestTandaKehadiran -v
 ```
 
-Dijangka: GAGAL kompilasi — `undefined: markAttendanceTx`.
+Dijangka: GAGAL kompilasi - `undefined: markAttendanceTx`.
 
 - [ ] **Step 3: Tulis implementasi**
 
@@ -1979,7 +1979,7 @@ type markResult struct {
 // markAttendanceTx menanda satu kehadiran.
 //
 // Menerima registration_id (skrin senarai, method 'manual') ATAU token yang
-// sudah diselesaikan kepada pendaftaran (scanner, method 'scan') — pemanggil
+// sudah diselesaikan kepada pendaftaran (scanner, method 'scan') - pemanggil
 // yang menyelesaikan token, jadi fungsi ini melihat satu bentuk input
 // sahaja.
 func markAttendanceTx(ctx context.Context, pool *pgxpool.Pool, sessionID, registrationID uuid.UUID, method string, actorID uuid.UUID) (markResult, error) {
@@ -2045,7 +2045,7 @@ func markAttendanceTx(ctx context.Context, pool *pgxpool.Pool, sessionID, regist
 }
 ```
 
-Handler `Mark` menerima badan `{"registration_id": "...", "checkin_token": "...", "method": "manual|scan"}` — tepat satu daripada dua medan pengenalan. `checkin_token` diselesaikan melalui `GetRegistrationByCheckinToken`; token tidak dikenali → `404` "QR tidak dikenali". Pemetaan ralat: `errOutsideCheckinWindow` → `422` "di luar tetingkap check-in", `errNotRegistered` → `409` "ahli ini tidak berdaftar untuk aktiviti ini".
+Handler `Mark` menerima badan `{"registration_id": "...", "checkin_token": "...", "method": "manual|scan"}` - tepat satu daripada dua medan pengenalan. `checkin_token` diselesaikan melalui `GetRegistrationByCheckinToken`; token tidak dikenali → `404` "QR tidak dikenali". Pemetaan ralat: `errOutsideCheckinWindow` → `422` "di luar tetingkap check-in", `errNotRegistered` → `409` "ahli ini tidak berdaftar untuk aktiviti ini".
 
 Respons mesti membezakan `created` supaya UI boleh menunjukkan "✓ ditanda" berbanding "sudah hadir":
 
@@ -2122,7 +2122,7 @@ func TestTerbitSijilIdempoten(t *testing.T) {
 	}
 
 	// Panggilan kedua tak boleh menerbitkan pendua ATAU membazirkan nombor
-	// siri — unik (activity_id, user_id) menghalang baris, dan siri hanya
+	// siri - unik (activity_id, user_id) menghalang baris, dan siri hanya
 	// diambil untuk baris yang benar-benar dimasukkan.
 	second, err := issueCertificatesTx(ctx, pool, activityID, uuid.Nil)
 	if err != nil {
@@ -2175,7 +2175,7 @@ func TestFasaDuaMenyambungBarisTanpaR2Key(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCertificatesPendingFile: %v", err)
 	}
-	// Fasa 1 sengaja meninggalkan r2_key null — muat naik berlaku SELEPAS
+	// Fasa 1 sengaja meninggalkan r2_key null - muat naik berlaku SELEPAS
 	// komit, sebab rollback Postgres tidak boleh memadam objek R2.
 	if len(pending) != 2 {
 		t.Errorf("sijil menunggu fail = %d, mahu 2", len(pending))
@@ -2210,9 +2210,9 @@ ACTIVITY_TEST_DB="postgres://localhost:5432/marc_activity?sslmode=disable" \
   go test ./internal/http/handlers/ -run 'TestTerbitSijil|TestSijilHanya|TestFasaDua|TestNomborSiri' -v
 ```
 
-Dijangka: GAGAL kompilasi — `undefined: issueCertificatesTx`.
+Dijangka: GAGAL kompilasi - `undefined: issueCertificatesTx`.
 
-- [ ] **Step 3: Tulis fasa 1 — transaksi**
+- [ ] **Step 3: Tulis fasa 1 - transaksi**
 
 Dalam `internal/http/handlers/activity_certificates.go`:
 
@@ -2267,7 +2267,7 @@ func issueCertificatesTx(ctx context.Context, pool *pgxpool.Pool, activityID, ac
 		}
 
 		// NextSequence ialah `update ... returning` atas jadual `sequences`
-		// — ia BERUNDUR dengan transaksi ini. `create sequence` Postgres
+		// - ia BERUNDUR dengan transaksi ini. `create sequence` Postgres
 		// tidak, dan akan meninggalkan lompang dalam penomboran sijil.
 		seq, err := qtx.NextSequence(ctx, "certificate_serial")
 		if err != nil {
@@ -2323,7 +2323,7 @@ var errActivityNotFinished = errors.New("aktiviti belum tamat")
 
 Nota tentang `NextSequence` yang dipanggil per-sijil: satu sijil gagal → keseluruhan transaksi berundur → tiada nombor siri terbazir. Itu tepat yang diuji `TestNomborSiriTidakMelompatBilaTransaksiGagal`.
 
-- [ ] **Step 4: Tulis fasa 2 — jana dan muat naik**
+- [ ] **Step 4: Tulis fasa 2 - jana dan muat naik**
 
 ```go
 // fillPendingCertificateFiles ialah FASA 2: jana PDF dan muat naik untuk
@@ -2364,7 +2364,7 @@ func fillPendingCertificateFiles(ctx context.Context, pool *pgxpool.Pool, r2 *st
 
 		// Kemas kini SELEPAS muat naik berjaya. Kalau ia gagal di sini,
 		// baris kekal tanpa r2_key dan pusingan seterusnya menulis ganti
-		// objek yang sama — muat naik R2 idempoten ikut kunci.
+		// objek yang sama - muat naik R2 idempoten ikut kunci.
 		if err := q.SetCertificateR2Key(ctx, sqlc.SetCertificateR2KeyParams{
 			ID: cert.ID, R2Key: pgText(key),
 		}); err != nil {
@@ -2375,11 +2375,11 @@ func fillPendingCertificateFiles(ctx context.Context, pool *pgxpool.Pool, r2 *st
 }
 ```
 
-Handler `Issue` memanggil fasa 1 kemudian fasa 2, dan memulangkan `202` dengan kiraan kalau fasa 2 gagal separuh jalan — sijil sudah wujud, failnya belum. Badan respons: `{"issued": 12, "files_ready": 9, "message": "..."}`.
+Handler `Issue` memanggil fasa 1 kemudian fasa 2, dan memulangkan `202` dengan kiraan kalau fasa 2 gagal separuh jalan - sijil sudah wujud, failnya belum. Badan respons: `{"issued": 12, "files_ready": 9, "message": "..."}`.
 
 `Download` memulangkan presigned URL; `r2_key` null → `409` `{"error": "sijil sedang disediakan, cuba sebentar lagi"}`.
 
-`Revoke`: `RevokeCertificate`, `EnqueueDeletedUpload` dengan `reason = "certificate_revoked"`, dan `audit.Record` dengan `Action: audit.ActionDelete` — semuanya dalam satu transaksi.
+`Revoke`: `RevokeCertificate`, `EnqueueDeletedUpload` dengan `reason = "certificate_revoked"`, dan `audit.Record` dengan `Action: audit.ActionDelete` - semuanya dalam satu transaksi.
 
 - [ ] **Step 5: Jalankan ujian, sahkan ia lulus**
 
@@ -2416,7 +2416,7 @@ Tambah pada `activity_certificates_live_test.go`:
 
 ```go
 // Endpoint AWAM pertama yang mendedahkan nama ahli. Ujian ini ditulis
-// sebagai penegasan atas SET medan, bukan atas nilai — supaya sesiapa yang
+// sebagai penegasan atas SET medan, bukan atas nilai - supaya sesiapa yang
 // menambah medan pada masa depan memecahkan ujian ini dan terpaksa
 // memikirkannya semula. Semakan privasi yang bergantung pada ingatan tidak
 // bertahan.
@@ -2443,7 +2443,7 @@ func TestVerifyTidakMendedahkanPII(t *testing.T) {
 	}
 	for key := range payload {
 		if !dibenarkan[key] {
-			t.Errorf("respons awam mengandungi medan tak dibenarkan %q — "+
+			t.Errorf("respons awam mengandungi medan tak dibenarkan %q - "+
 				"semak semula sama ada ia patut awam sebelum meluaskan senarai", key)
 		}
 	}
@@ -2463,7 +2463,7 @@ func TestVerifyTokenTidakDikenaliSentiasa404(t *testing.T) {
 	statusSalah := doGETStatus(t, pool, "/verify/certificates/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 	if statusTiada != http.StatusNotFound || statusSalah != http.StatusNotFound {
-		t.Errorf("status = %d dan %d, kedua-duanya mahu 404 — respons berbeza "+
+		t.Errorf("status = %d dan %d, kedua-duanya mahu 404 - respons berbeza "+
 			"menjadi oracle yang mengesahkan token mana yang pernah wujud",
 			statusTiada, statusSalah)
 	}
@@ -2477,12 +2477,12 @@ ACTIVITY_TEST_DB="postgres://localhost:5432/marc_activity?sslmode=disable" \
   go test ./internal/http/handlers/ -run TestVerify -v
 ```
 
-Dijangka: GAGAL — route belum wujud, `404` dengan badan kosong (`json.Unmarshal` gagal).
+Dijangka: GAGAL - route belum wujud, `404` dengan badan kosong (`json.Unmarshal` gagal).
 
 - [ ] **Step 3: Tulis handler Verify**
 
 ```go
-// verifyResponse — bentuk respons awam, ditakrifkan sebagai struct EKSPLISIT
+// verifyResponse - bentuk respons awam, ditakrifkan sebagai struct EKSPLISIT
 // dan bukan gin.H daripada baris DB.
 //
 // Sebab: mengembalikan baris terus bermakna menambah lajur pada
@@ -2513,7 +2513,7 @@ func (h *CertificateHandler) Verify(c *gin.Context) {
 	if cert.RevokedAt.Valid {
 		// Sijil yang ditarik kekal boleh disemak dan dilaporkan sebagai
 		// ditarik. Memadam baris akan menjadikannya nampak seperti tidak
-		// pernah wujud — lebih buruk bagi orang yang sedang mengesahkan.
+		// pernah wujud - lebih buruk bagi orang yang sedang mengesahkan.
 		status = "ditarik_balik"
 	}
 
@@ -2547,7 +2547,7 @@ Dalam `internal/http/router.go`:
 	verified.POST("/certificates/:id/revoke", certificateHandler.Revoke)
 ```
 
-Kalau `cfg.PublicBaseURL` belum wujud dalam `internal/config`, tambahkannya (baca dari env `PUBLIC_BASE_URL`, lalai `http://localhost:8080`). Ia perlu untuk URL QR — URL relatif tidak berguna pada sijil bercetak.
+Kalau `cfg.PublicBaseURL` belum wujud dalam `internal/config`, tambahkannya (baca dari env `PUBLIC_BASE_URL`, lalai `http://localhost:8080`). Ia perlu untuk URL QR - URL relatif tidak berguna pada sijil bercetak.
 
 - [ ] **Step 5: Jalankan ujian, sahkan ia lulus**
 
@@ -2594,7 +2594,7 @@ Semak dahulu nilai `check` semasa:
 psql "$DATABASE_URL" -c "\d+ notifications"
 ```
 
-Kemudian tulis `20260810100600_widen_notifications_activity.sql` mengikut corak `20260807120100_widen_notifications_member_status.sql` — gugurkan kekangan sedia ada dan cipta semula dengan nilai tambahan `activity_published`, `activity_cancelled`, `certificate_ready`.
+Kemudian tulis `20260810100600_widen_notifications_activity.sql` mengikut corak `20260807120100_widen_notifications_member_status.sql` - gugurkan kekangan sedia ada dan cipta semula dengan nilai tambahan `activity_published`, `activity_cancelled`, `certificate_ready`.
 
 - [ ] **Step 2: Jalankan migration**
 
@@ -2608,7 +2608,7 @@ Dijangka: bersih pada kedua-dua arah.
 
 - [ ] **Step 3: Hantar push pada tiga titik**
 
-Dalam handler `Publish` — selepas transaksi komit, hantar kepada semua ahli yang diluluskan:
+Dalam handler `Publish` - selepas transaksi komit, hantar kepada semua ahli yang diluluskan:
 
 ```go
 	// Selepas komit, bukan di dalam transaksi: kegagalan push tidak
@@ -2636,9 +2636,9 @@ Kalau `ListApprovedUserIDs` belum wujud, tambah ke `queries/profiles.sql`:
 select user_id from profiles where status = 'approved';
 ```
 
-Dalam `Cancel` — hantar hanya kepada yang berdaftar (guna `ListRegistrationsByActivity`), tajuk "Aktiviti Dibatalkan".
+Dalam `Cancel` - hantar hanya kepada yang berdaftar (guna `ListRegistrationsByActivity`), tajuk "Aktiviti Dibatalkan".
 
-Dalam `Issue` — hantar kepada setiap penerima sijil, tajuk "Sijil Anda Sedia".
+Dalam `Issue` - hantar kepada setiap penerima sijil, tajuk "Sijil Anda Sedia".
 
 - [ ] **Step 4: Sahkan pembinaan**
 
@@ -2655,7 +2655,7 @@ git commit -m "feat(activity): notifikasi push untuk terbit, batal, dan sijil se
 
 ---
 
-## Task 12: Flutter — model, provider, senarai, detail, daftar
+## Task 12: Flutter - model, provider, senarai, detail, daftar
 
 **Files:**
 - Create: `lib/features/activities/activity_models.dart`
@@ -2669,7 +2669,7 @@ git commit -m "feat(activity): notifikasi push untuk terbit, batal, dan sijil se
 
 - [ ] **Step 1: Tulis model**
 
-`lib/features/activities/activity_models.dart` — kelas biasa dengan `fromJson`, ikut corak `post_models.dart` (repo ini tidak guna `freezed`; jangan perkenalkannya):
+`lib/features/activities/activity_models.dart` - kelas biasa dengan `fromJson`, ikut corak `post_models.dart` (repo ini tidak guna `freezed`; jangan perkenalkannya):
 
 ```dart
 class ActivitySession {
@@ -2734,7 +2734,7 @@ class Activity {
   bool get isCancelled => status == 'cancelled';
 
   /// Boleh daftar hanya bila SEMUA syarat lulus. Server tetap hakim
-  /// muktamad — ini untuk melumpuhkan butang, bukan untuk mempercayai.
+  /// muktamad - ini untuk melumpuhkan butang, bukan untuk mempercayai.
   bool get canRegister =>
       !isRegistered && !isFull && !registrationClosed && !isCancelled && status == 'published';
 
@@ -2836,7 +2836,7 @@ Dijangka: LULUS (model ditulis dalam Step 1).
 
 - [ ] **Step 4: Tulis provider**
 
-`activity_providers.dart` mengikut corak `post_providers.dart` — `FutureProvider.family` untuk detail, `StateNotifier` untuk senarai bercursor. Aksi `registerActivity` mesti mengendalikan `409` daripada server dengan bersih:
+`activity_providers.dart` mengikut corak `post_providers.dart` - `FutureProvider.family` untuk detail, `StateNotifier` untuk senarai bercursor. Aksi `registerActivity` mesti mengendalikan `409` daripada server dengan bersih:
 
 ```dart
 Future<String?> registerActivity(Ref ref, String activityId) async {
@@ -2847,7 +2847,7 @@ Future<String?> registerActivity(Ref ref, String activityId) async {
   } on DioException catch (e) {
     // 409 daripada server ialah kebenaran, bukan kes tepi. Dua ahli boleh
     // menekan Daftar dalam saat yang sama dan kiraan tempatan tak dapat
-    // menghalangnya — server yang menyerikan.
+    // menghalangnya - server yang menyerikan.
     if (e.response?.statusCode == 409) {
       ref.invalidate(activityDetailProvider(activityId));
       return errorMessage(e); // helper sedia ada dalam core/error_utils.dart
@@ -2882,7 +2882,7 @@ git commit -m "feat(activities): senarai, detail, dan pendaftaran aktiviti"
 
 ---
 
-## Task 13: Flutter — aktiviti saya, QR check-in, sijil saya
+## Task 13: Flutter - aktiviti saya, QR check-in, sijil saya
 
 **Files:**
 - Create: `lib/features/activities/my_activities_page.dart`
@@ -2896,12 +2896,12 @@ flutter pub add qr_flutter
 flutter build apk --debug
 ```
 
-Dijangka: pembinaan lulus. `qr_flutter` ialah rendering tulen Dart — ia tidak sepatutnya menyentuh kekangan compileSdk. Kalau ia berlaku, pin ke versi lebih awal dan catat sebabnya dalam komen `pubspec` mengikut corak `permission_handler`.
+Dijangka: pembinaan lulus. `qr_flutter` ialah rendering tulen Dart - ia tidak sepatutnya menyentuh kekangan compileSdk. Kalau ia berlaku, pin ke versi lebih awal dan catat sebabnya dalam komen `pubspec` mengikut corak `permission_handler`.
 
 - [ ] **Step 2: Tulis halaman aktiviti saya dengan QR**
 
 ```dart
-// QR ialah checkin_token daripada data yang SUDAH dimuatkan — tiada
+// QR ialah checkin_token daripada data yang SUDAH dimuatkan - tiada
 // panggilan rangkaian untuk menjananya.
 //
 // Liputan di gelanggang sukan selalunya teruk. Ahli boleh membuka skrin ini
@@ -2927,7 +2927,7 @@ Widget buildCheckinQr(BuildContext context, String token) {
 }
 ```
 
-Latar belakang QR mesti **putih tegar**, bukan warna tema — QR gelap-atas-gelap dalam mod gelap tidak boleh diimbas.
+Latar belakang QR mesti **putih tegar**, bukan warna tema - QR gelap-atas-gelap dalam mod gelap tidak boleh diimbas.
 
 - [ ] **Step 3: Tulis halaman sijil saya**
 
@@ -2973,7 +2973,7 @@ git commit -m "feat(activities): aktiviti saya dengan QR check-in dan muat turun
 
 ---
 
-## Task 14: Flutter — skrin management
+## Task 14: Flutter - skrin management
 
 **Files:**
 - Create: `lib/features/activities/manage/activity_form_page.dart`
@@ -2992,11 +2992,11 @@ Pemilih sesi di atas, senarai peserta di bawah dengan suis hadir. Ketik → `POS
 
 - [ ] **Step 3: Halaman terbit sijil**
 
-Papar kiraan layak sebelum mengesahkan, kemudian `POST /activities/{id}/certificates`. Respons `202` bermakna sijil diterbitkan tetapi sebahagian fail belum siap — tunjukkan mesej itu dan bukan ralat.
+Papar kiraan layak sebelum mengesahkan, kemudian `POST /activities/{id}/certificates`. Respons `202` bermakna sijil diterbitkan tetapi sebahagian fail belum siap - tunjukkan mesej itu dan bukan ralat.
 
 - [ ] **Step 4: Sembunyikan skrin ini daripada bukan-management**
 
-Guna semakan role sedia ada dalam `auth_state.dart`. Ini kemudahan UI sahaja — server tetap menguatkuasakan.
+Guna semakan role sedia ada dalam `auth_state.dart`. Ini kemudahan UI sahaja - server tetap menguatkuasakan.
 
 - [ ] **Step 5: Sahkan secara manual**
 
@@ -3011,7 +3011,7 @@ git commit -m "feat(activities): skrin management untuk aktiviti, kehadiran, sij
 
 ---
 
-## Task 15: Flutter — scanner QR
+## Task 15: Flutter - scanner QR
 
 **Files:**
 - Create: `lib/features/activities/manage/checkin_scanner_page.dart`
@@ -3031,12 +3031,12 @@ flutter build apk --debug
 Kalau pembinaan **gagal** dengan ralat compileSdk/AGP: turunkan versi (`flutter pub add mobile_scanner:^5.2.3`) dan cuba lagi. Catat versi yang berjaya dan sebabnya dalam komen `pubspec.yaml` mengikut corak `permission_handler`:
 
 ```yaml
-  # Dipin ke <versi> — versi lebih baharu perlukan compileSdk <n>, yang
+  # Dipin ke <versi> - versi lebih baharu perlukan compileSdk <n>, yang
   # melanggar siling 35 projek ini (lihat komen permission_handler).
   mobile_scanner: <versi>
 ```
 
-Kalau tiada versi yang membina: **berhenti**, laporkan kepada pengguna, dan tinggalkan task ini belum selesai. Jangan naikkan compileSdk untuk memuatkannya — itu perubahan seluruh projek yang telah dielakkan dengan sengaja.
+Kalau tiada versi yang membina: **berhenti**, laporkan kepada pengguna, dan tinggalkan task ini belum selesai. Jangan naikkan compileSdk untuk memuatkannya - itu perubahan seluruh projek yang telah dielakkan dengan sengaja.
 
 - [ ] **Step 2: Tambah kebenaran kamera**
 
@@ -3075,7 +3075,7 @@ void main() {
   });
 
   // Sudah hadir BUKAN ralat. Kalau ia dipaparkan merah, pengurusan akan
-  // fikir imbasan gagal dan cuba lagi — atau lebih teruk, tanda manual
+  // fikir imbasan gagal dan cuba lagi - atau lebih teruk, tanda manual
   // atas kehadiran yang sudah wujud.
   test('sudah hadir ialah keadaan tersendiri, bukan ralat', () {
     final r = ScanResult.fromResponse({'created': false, 'member': {'display_name': 'Ahmad'}});
@@ -3113,7 +3113,7 @@ void main() {
 flutter test test/features/activities/scan_result_test.dart
 ```
 
-Dijangka: GAGAL — `scan_result.dart` tidak wujud.
+Dijangka: GAGAL - `scan_result.dart` tidak wujud.
 
 - [ ] **Step 5: Tulis `scan_result.dart`**
 
@@ -3242,11 +3242,11 @@ git commit -m "feat(activities): scanner QR check-in dengan nyahlantun dan keada
 
 Tambah bahagian "Modul Aktiviti" yang menyenaraikan apa yang siap dan apa yang **belum**:
 
-- Yuran aktiviti — `fee_cents` wujud tetapi tiada gateway; aktiviti berbayar belum berfungsi
-- Check-in `self_scan` dan `code` — schema sokong, tiada UI, perlukan token berputar
-- Sijil pencapaian (johan/naib johan) — tidak dilaksanakan
+- Yuran aktiviti - `fee_cents` wujud tetapi tiada gateway; aktiviti berbayar belum berfungsi
+- Check-in `self_scan` dan `code` - schema sokong, tiada UI, perlukan token berputar
+- Sijil pencapaian (johan/naib johan) - tidak dilaksanakan
 - Peringatan H-1 memerlukan kerja berjadual (semak sama ada `retention` sweep boleh menjadi tuan rumah)
-- Aktiviti tidak pernah beralih ke `completed` secara automatik — perlukan kerja berjadual atau peralihan pada penerbitan sijil
+- Aktiviti tidak pernah beralih ke `completed` secara automatik - perlukan kerja berjadual atau peralihan pada penerbitan sijil
 
 - [ ] **Step 2: Kemas kini `DATABASE.md`**
 
@@ -3265,7 +3265,7 @@ Catat feature folder `activities`, versi `mobile_scanner` yang dipin dan sebabny
 ```bash
 cd /Users/hafiz/Developments/marc_go
 git add TODO.md DATABASE.md ARCHITECTURE.md
-git commit -m "docs: modul aktiviti — status siap dan jurang yang tinggal"
+git commit -m "docs: modul aktiviti - status siap dan jurang yang tinggal"
 
 cd /Users/hafiz/Developments/marc_flutter
 git add TODO.md

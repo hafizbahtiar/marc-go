@@ -86,7 +86,7 @@ func nullableUUIDString(id pgtype.UUID) *string {
 	return &s
 }
 
-// encodeCursor/decodeCursor — keyset pagination cursor atas (created_at,
+// encodeCursor/decodeCursor - keyset pagination cursor atas (created_at,
 // id), format "<rfc3339nano>|<uuid>". Client (Flutter) rawat cursor ni
 // sebagai opaque string (simpan & echo balik je), so format dalaman boleh
 // tukar bila-bila tanpa perlu ubah frontend.
@@ -115,7 +115,7 @@ func isForeignKeyViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }
 
-// canModify — pattern ownership (Stage 3) + moderation (Stage 10): pemilik
+// canModify - pattern ownership (Stage 3) + moderation (Stage 10): pemilik
 // resource sendiri, ATAU management, boleh edit/padam.
 func canModify(ctx context.Context, q *sqlc.Queries, userID, resourceAuthorID uuid.UUID) (bool, error) {
 	if userID == resourceAuthorID {
@@ -125,7 +125,7 @@ func canModify(ctx context.Context, q *sqlc.Queries, userID, resourceAuthorID uu
 }
 
 // notifyOwner rekod notification dalam DB + hantar push, untuk like/comment
-// pada content sendiri (bukan self-notify kalau actor == recipient — cth
+// pada content sendiri (bukan self-notify kalau actor == recipient - cth
 // like post sendiri). Kegagalan sini tak patut gagalkan request utama
 // (like/comment dah berjaya di DB), so cuma log.
 func notifyOwner(
@@ -157,7 +157,7 @@ func notifyOwner(
 	}
 }
 
-// postCore — field sepunya antara GetPostByIDRow dan ListPostsRow (dua
+// postCore - field sepunya antara GetPostByIDRow dan ListPostsRow (dua
 // sqlc row type berlainan tapi shape sama), supaya buildPostResponses
 // boleh kongsi logic untuk single post & list.
 type postCore struct {
@@ -191,7 +191,7 @@ func coreFromListPostsRow(r sqlc.ListPostsRow) postCore {
 }
 
 // buildPostResponses batch semua data tambahan (like count, comment count,
-// liked-by-me, images) untuk senarai post sekali gus — elak N+1 query.
+// liked-by-me, images) untuk senarai post sekali gus - elak N+1 query.
 func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID, cores []postCore) ([]postResponse, error) {
 	if len(cores) == 0 {
 		return []postResponse{}, nil

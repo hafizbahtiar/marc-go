@@ -13,13 +13,13 @@ import (
 	"marc/internal/db/sqlc"
 )
 
-// L15 — pendaftaran tak boleh dibatalkan selepas aktiviti TAMAT
+// L15 - pendaftaran tak boleh dibatalkan selepas aktiviti TAMAT
 // (keputusan produk 2026-08-22).
 //
 // Kenapa ia penting: `ListEligibleForCertificate` menuntut
 // `r.status = 'registered'`. Ahli yang hadir setiap sesi lalu menekan
 // "Batal pendaftaran" pada aktiviti yang sudah tamat memusnahkan
-// kelayakan sijilnya sendiri — senyap (pembatalan sengaja tak diaudit),
+// kelayakan sijilnya sendiri - senyap (pembatalan sengaja tak diaudit),
 // dan tanpa laluan pulih dalam app.
 
 // seedActivityEndingAt cipta aktiviti diterbitkan yang `ends_at`-nya
@@ -64,7 +64,7 @@ func registrationStatusByID(t *testing.T, pool *pgxpool.Pool, regID uuid.UUID) s
 	return s
 }
 
-// Aktiviti masih akan datang — pembatalan MESTI berfungsi seperti biasa.
+// Aktiviti masih akan datang - pembatalan MESTI berfungsi seperti biasa.
 func TestCancelDibenarkanSebelumAktivitiTamat(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -86,7 +86,7 @@ func TestCancelDibenarkanSebelumAktivitiTamat(t *testing.T) {
 	}
 }
 
-// INTI L15 — aktiviti sudah tamat, pembatalan mesti ditolak DAN baris
+// INTI L15 - aktiviti sudah tamat, pembatalan mesti ditolak DAN baris
 // mesti kekal 'registered'.
 func TestCancelDitolakSelepasAktivitiTamat(t *testing.T) {
 	pool := activityTestPool(t)
@@ -105,7 +105,7 @@ func TestCancelDitolakSelepasAktivitiTamat(t *testing.T) {
 		t.Fatalf("kod = %d, mahu 422. Badan: %s", rec.Code, rec.Body.String())
 	}
 	if got := registrationStatusByID(t, pool, regID); got != "registered" {
-		t.Errorf("status = %q, mahu kekal \"registered\" — ahli baru sahaja "+
+		t.Errorf("status = %q, mahu kekal \"registered\" - ahli baru sahaja "+
 			"memusnahkan kelayakan sijilnya sendiri", got)
 	}
 }
@@ -128,7 +128,7 @@ func TestCancelGuardHidupDalamSQLBukanHanyaHandler(t *testing.T) {
 		UserID:     userID,
 	})
 	if err == nil {
-		t.Fatal("CancelRegistration BERJAYA pada aktiviti yang sudah tamat — " +
+		t.Fatal("CancelRegistration BERJAYA pada aktiviti yang sudah tamat - " +
 			"guard hanya dalam handler, jadi mana-mana laluan lain boleh " +
 			"memintasnya")
 	}
