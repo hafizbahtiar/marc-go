@@ -87,7 +87,12 @@ type Querier interface {
 	// hash yang SAMA cuba consume LAGI selepas ni, row dah wujud tapi
 	// consumed_at dah bukan null, so 0 rows returned di sini -> caller
 	// boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
-	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
+	//
+	// consumed_ip direkod supaya reuse-grace-window (auth.go) boleh semak IP
+	// request yang menang consume sama dengan IP request reuse - elak
+	// attacker yang curi token dari IP lain lolos grace window sekadar
+	// dengan race timing terhadap request pemilik sah.
+	ConsumeRefreshToken(ctx context.Context, arg ConsumeRefreshTokenParams) (RefreshToken, error)
 	// Tuntut token secara ATOMIK: satu pernyataan, `delete ... returning`.
 	// Padanan tepat ConsumePasswordResetToken (queries/password_reset_tokens.sql)
 	// dan atas sebab yang SAMA -- baca-dahulu-kemudian-tulis ada jurang
