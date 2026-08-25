@@ -157,7 +157,9 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (t
 		// Metadata device untuk skrin "sesi aktif" (GET /me/sessions).
 		// Direkod pada saat token dikeluarkan sebab ni satu-satunya
 		// tempat kita masih pegang request asal yang mencipta sesi.
-		UserAgent: ptrToText(c.Request.UserAgent()),
+		// Flutter hantar label mesra (`X-MARC-Device-Label` dari
+		// device_info_plus); fallback ke User-Agent HTTP mentah.
+		UserAgent: deviceLabelFromRequest(c),
 		CreatedIp: ptrToText(c.ClientIP()),
 	})
 	if err != nil {
@@ -169,6 +171,16 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (t
 		RefreshToken: refresh,
 		ExpiresIn:    int(h.jwt.AccessTTL() / time.Second),
 	}, nil
+}
+
+// deviceLabelFromRequest - label peranti utk skrin sesi aktif. App Flutter
+// hantar `X-MARC-Device-Label` (cth "iPhone Hafiz · iOS 18.0"); pelayar/
+// client lama kekal pada User-Agent HTTP.
+func deviceLabelFromRequest(c *gin.Context) pgtype.Text {
+	if label := strings.TrimSpace(c.GetHeader("X-MARC-Device-Label")); label != "" {
+		return ptrToText(label)
+	}
+	return ptrToText(c.Request.UserAgent())
 }
 
 type registerRequest struct {
