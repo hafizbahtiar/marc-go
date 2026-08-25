@@ -154,6 +154,11 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (t
 		TokenHash: auth.HashToken(refresh),
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(h.refreshTTL), Valid: true},
 		FamilyID:  familyID,
+		// Metadata device untuk skrin "sesi aktif" (GET /me/sessions).
+		// Direkod pada saat token dikeluarkan sebab ni satu-satunya
+		// tempat kita masih pegang request asal yang mencipta sesi.
+		UserAgent: ptrToText(c.Request.UserAgent()),
+		CreatedIp: ptrToText(c.ClientIP()),
 	})
 	if err != nil {
 		return tokenPairResponse{}, err

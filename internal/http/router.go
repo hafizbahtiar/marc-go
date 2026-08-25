@@ -150,6 +150,12 @@ func NewRouter(
 	protected.POST("/me/deletion-request", accountDeletionRateLimiter, profileHandler.RequestAccountDeletion)
 	protected.POST("/auth/logout-all", authHandler.LogoutAll)
 
+	// Sesi aktif (self-service) - sama gate `protected` dgn /me di atas.
+	// Adik-beradik satu-baris kepada /auth/logout-all: senarai device yang
+	// log masuk + "log keluar device ni" sahaja.
+	protected.GET("/me/sessions", authHandler.ListMySessions)
+	protected.DELETE("/me/sessions/:id", profileUpdateRateLimiter, authHandler.RevokeMySession)
+
 	// Alamat ahli (self-service) - sama gate `protected` dgn /me di atas
 	// (RequireAuth sahaja, tiada RequireApprovedStatus - padanan alasan
 	// yang sama: data peribadi profil, bukan aktiviti kelab).
