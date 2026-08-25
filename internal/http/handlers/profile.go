@@ -508,6 +508,160 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 	c.JSON(http.StatusOK, members)
 }
 
+// memberDetailResponse - GET /members/:id, tiga peringkat keterlihatan
+// medan (lihat GetMemberDetail). Tier 2/3 SENTIASA hadir dlm JSON tapi
+// bernilai `null` bila caller tak layak - padanan corak Email/
+// RegistrationPaymentStatus dlm memberResponse, supaya client bezakan
+// "null = disembunyikan" drpd "tiada nilai" tanpa logik keadaan tambahan.
+type memberDetailResponse struct {
+	// Tier 1 - sesiapa dlm skop visibleRankCeiling.
+	UserID         string  `json:"user_id"`
+	MemberID       string  `json:"member_id"`
+	DisplayName    *string `json:"display_name"`
+	AvatarURL      *string `json:"avatar_url"`
+	RoleKey        string  `json:"role_key"`
+	RoleName       string  `json:"role_name"`
+	RoleRank       int32   `json:"role_rank"`
+	Category       string  `json:"category"`
+	Status         string  `json:"status"`
+	IsActive       bool    `json:"is_active"`
+	DepartmentCode *string `json:"department_code"`
+	DepartmentName *string `json:"department_name"`
+	Position       *string `json:"position"`
+
+	// Tier 2 - caller.RoleCategory == authz.CategoryManagement sahaja.
+	Email                     *string `json:"email"`
+	Phone                     *string `json:"phone"`
+	RegistrationPaymentStatus *string `json:"registration_payment_status"`
+
+	// Tier 3 - caller.RoleKey == "superadmin" sahaja.
+	EmergencyContactName  *string           `json:"emergency_contact_name"`
+	EmergencyContactPhone *string           `json:"emergency_contact_phone"`
+	HealthNotes           *string           `json:"health_notes"`
+	TelegramLinked        *bool             `json:"telegram_linked"`
+	TelegramUsername      *string           `json:"telegram_username"`
+	Addresses             []addressResponse `json:"addresses"`
+}
+
+// GetMemberDetail - GET /members/:id. Skrin profil SATU ahli (bukan
+// senarai) - berbeza drpd Members yang pulangkan pelbagai baris ringkas.
+// Tiga peringkat keterlihatan medan dikuatkuasakan DI SINI (server-side)
+// - client cuma render apa yang response bagi, tiada logik sembunyi/
+// tunjuk medan berasaskan role di client:
+//
+//	Tier 1 (semua viewer dlm skop visibleRankCeiling): nama, gambar,
+//	no. ahli, role, bahagian, jawatan, status aktif.
+//	Tier 2 (caller.RoleCategory == management): + emel, telefon, status
+//	bayaran pendaftaran.
+//	Tier 3 (caller.RoleKey == "superadmin", BUKAN sekadar admin/manager):
+//	+ kenalan kecemasan, nota kesihatan, status/username Telegram,
+//	senarai alamat penuh.
+//
+// Keterlihatan BARIS (boleh nampak ahli ni langsung ke tidak) guna
+// visibleRankCeiling sama macam Members - 404 (bukan 403) kalau target
+// rank > siling caller, elak dedah KEWUJUDAN baris rank tinggi kepada
+// viewer bawah (padanan cara GetPostByID dsb pulang 404 generik).
+//
+// Tiada audit log - bacaan sahaja, padanan GET /members (audit cuma utk
+// TINDAKAN spt approve/reject/tukar role, bukan senarai/lihat).
+func (h *ProfileHandler) GetMemberDetail(c *gin.Context) {
+	targetID, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	caller, err := h.queries.GetProfileByUserID(ctx, callerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "profil tidak dijumpai"})
+		return
+	}
+
+	// 404 (bukan 500) - ID tak wujud ialah keadaan biasa (pautan lapuk,
+	// ahli dipadam), bukan ralat pelayan.
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+
+	roles, err := h.queries.ListRoles(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat profil ahli"})
+		return
+	}
+	// Keterlihatan BARIS - kena semak SEBELUM apa-apa medan (termasuk
+	// Tier 1) dibina, kalau tidak viewer bawah siling boleh nampak
+	// serpihan Tier 1 target rank tinggi sebelum 404 sempat dipulangkan.
+	if target.RoleRank > visibleRankCeiling(roles, caller.RoleRank) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+	// Padanan peraturan Members - ahli biasa cuma nampak ahli berstatus
+	// 'approved' (+ baris dia sendiri). Endpoint ni direktori ahli, bukan
+	// barisan kelulusan, jadi profil ahli 'pending'/'rejected' tak patut
+	// dibaca melalui sini oleh bukan-pengurusan.
+	if caller.RoleCategory != authz.CategoryManagement &&
+		target.Status != "approved" && target.UserID != callerID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+
+	res := memberDetailResponse{
+		UserID:         target.UserID.String(),
+		MemberID:       target.MemberID,
+		DisplayName:    textToPtr(target.DisplayName),
+		AvatarURL:      avatarURLFor(ctx, h.r2, target.AvatarR2Key),
+		RoleKey:        target.RoleKey,
+		RoleName:       target.RoleName,
+		RoleRank:       target.RoleRank,
+		Category:       target.RoleCategory,
+		Status:         target.Status,
+		IsActive:       target.IsActive,
+		DepartmentCode: textToPtr(target.DepartmentCode),
+		DepartmentName: textToPtr(target.DepartmentName),
+		Position:       textToPtr(target.Position),
+	}
+
+	if caller.RoleCategory == authz.CategoryManagement {
+		email := target.Email
+		res.Email = &email
+		res.Phone = textToPtr(target.Phone)
+
+		// Padanan pola Me() - status bayaran cuma wujud kalau ahli PERNAH
+		// cuba bayar (pgx.ErrNoRows = tak pernah, bukan ralat pelayan).
+		if status, err := h.queries.GetLatestRegistrationPaymentStatus(ctx, targetID); err == nil {
+			res.RegistrationPaymentStatus = &status
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("baca status bayaran pendaftaran (target=%s): %v", targetID, err)
+		}
+	}
+
+	if caller.RoleKey == superAdminRoleKey {
+		res.EmergencyContactName = textToPtr(target.EmergencyContactName)
+		res.EmergencyContactPhone = textToPtr(target.EmergencyContactPhone)
+		res.HealthNotes = textToPtr(target.HealthNotes)
+		telegramLinked := target.TelegramChatID.Valid
+		res.TelegramLinked = &telegramLinked
+		res.TelegramUsername = textToPtr(target.TelegramUsername)
+
+		addrRows, err := h.queries.ListAddressesByUser(ctx, targetID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat profil ahli"})
+			return
+		}
+		addresses := make([]addressResponse, len(addrRows))
+		for i, row := range addrRows {
+			addresses[i] = toAddressResponse(row)
+		}
+		res.Addresses = addresses
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
 // visibleRankCeiling - rank TERTINGGI yang seorang viewer boleh nampak
 // dalam senarai ahli. Peraturan: nampak semua orang sehingga SATU
 // tingkat di atas rank sendiri, kecuali rank tertinggi (superadmin) yang

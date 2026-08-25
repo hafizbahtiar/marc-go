@@ -178,6 +178,10 @@ func NewRouter(
 	// RequireApprovedStatus).
 	approved := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	approved.GET("/members", profileHandler.Members)
+	// Profil SATU ahli (view-only, tiered) - laluan dua segmen, tiada
+	// pertembungan dgn /members (satu segmen) atau tindakan tiga segmen
+	// di bawah (Gin padan ikut kedalaman laluan penuh, bukan awalan).
+	approved.GET("/members/:id", profileHandler.GetMemberDetail)
 	approved.POST("/members/:id/approve", profileHandler.ApproveMember)
 	approved.POST("/members/:id/reject", profileHandler.RejectMember)
 	approved.POST("/members/:id/cancel-registration-payment", profileHandler.CancelMemberRegistrationPayment)
