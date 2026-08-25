@@ -26,29 +26,35 @@ func sessionsAuthHandler(pool *pgxpool.Pool) *AuthHandler {
 
 // seedRefreshToken cipta satu baris refresh_tokens milik userID. ttl
 // negatif = token luput (untuk sahkan tapisan expires_at).
-func seedRefreshToken(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID, userAgent, ip string, ttl time.Duration) uuid.UUID {
+func seedRefreshToken(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID, userAgent, ip string, ttl time.Duration) sqlc.RefreshToken {
+	t.Helper()
+	return seedRefreshTokenInFamily(t, pool, userID, uuid.New(), userAgent, ip, ttl)
+}
+
+func seedRefreshTokenInFamily(t *testing.T, pool *pgxpool.Pool, userID, familyID uuid.UUID, userAgent, ip string, ttl time.Duration) sqlc.RefreshToken {
 	t.Helper()
 	row, err := sqlc.New(pool).CreateRefreshToken(context.Background(), sqlc.CreateRefreshTokenParams{
 		UserID:    userID,
 		TokenHash: auth.HashToken(uuid.NewString()),
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(ttl), Valid: true},
-		FamilyID:  uuid.New(),
+		FamilyID:  familyID,
 		UserAgent: ptrToText(userAgent),
 		CreatedIp: ptrToText(ip),
 	})
 	if err != nil {
 		t.Fatalf("seed refresh token: %v", err)
 	}
-	return row.ID
+	return row
 }
 
-func callListSessions(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID) *httptest.ResponseRecorder {
+func callListSessions(t *testing.T, pool *pgxpool.Pool, userID, currentFamily uuid.UUID) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodGet, "/me/sessions", nil)
 	c.Set("userID", userID)
+	c.Set("sessionID", currentFamily)
 
 	sessionsAuthHandler(pool).ListMySessions(c)
 	c.Writer.WriteHeaderNow()
@@ -120,7 +126,7 @@ func TestListMySessionsHanyaMilikPemanggil(t *testing.T) {
 	mine := seedRefreshToken(t, pool, me, "iPhone Safari", "203.0.113.7", time.Hour)
 	theirs := seedRefreshToken(t, pool, orangLain, "Android Chrome", "198.51.100.9", time.Hour)
 
-	rec := callListSessions(t, pool, me)
+	rec := callListSessions(t, pool, me, uuid.Nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("kod = %d, mahu 200. Badan: %s", rec.Code, rec.Body.String())
 	}
@@ -129,8 +135,8 @@ func TestListMySessionsHanyaMilikPemanggil(t *testing.T) {
 	if len(body) != 1 {
 		t.Fatalf("sesi = %d, mahu 1 (hanya milik pemanggil). Badan: %s", len(body), rec.Body.String())
 	}
-	if body[0].ID != mine.String() {
-		t.Fatalf("id = %s, mahu %s", body[0].ID, mine)
+	if body[0].ID != mine.FamilyID.String() {
+		t.Fatalf("id = %s, mahu family %s", body[0].ID, mine.FamilyID)
 	}
 	if body[0].UserAgent == nil || *body[0].UserAgent != "iPhone Safari" {
 		t.Fatalf("user_agent = %v, mahu 'iPhone Safari'", body[0].UserAgent)
@@ -138,10 +144,64 @@ func TestListMySessionsHanyaMilikPemanggil(t *testing.T) {
 	if body[0].CreatedIP == nil || *body[0].CreatedIP != "203.0.113.7" {
 		t.Fatalf("created_ip = %v, mahu '203.0.113.7'", body[0].CreatedIP)
 	}
+	if body[0].IsCurrent {
+		t.Fatal("is_current patut false tanpa sid dalam context")
+	}
 	for _, s := range body {
-		if s.ID == theirs.String() {
+		if s.ID == theirs.FamilyID.String() {
 			t.Fatal("sesi ahli lain bocor dalam senarai")
 		}
+	}
+}
+
+// Rotate (refresh) cipta baris baru dalam family yang sama - senarai
+// mesti kekal SATU sesi, bukan nampak macam dua device.
+func TestListMySessionsKumpulanIkutFamily(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	asal := seedRefreshToken(t, pool, me, "Infinix X6833B - Android 14", "203.0.113.1", time.Hour)
+	seedRefreshTokenInFamily(t, pool, me, asal.FamilyID, "Infinix X6833B - Android 14", "203.0.113.1", time.Hour)
+
+	body := decodeSessions(t, callListSessions(t, pool, me, uuid.Nil))
+	if len(body) != 1 {
+		t.Fatalf("sesi = %d, mahu 1 (satu family). Badan: %+v", len(body), body)
+	}
+	if body[0].ID != asal.FamilyID.String() {
+		t.Fatalf("id = %s, mahu family %s", body[0].ID, asal.FamilyID)
+	}
+}
+
+func TestListMySessionsTandaPerantiIni(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	ini := seedRefreshToken(t, pool, me, "Peranti Ini", "203.0.113.1", time.Hour)
+	lain := seedRefreshToken(t, pool, me, "Peranti Lain", "203.0.113.2", time.Hour)
+
+	body := decodeSessions(t, callListSessions(t, pool, me, ini.FamilyID))
+	if len(body) != 2 {
+		t.Fatalf("sesi = %d, mahu 2", len(body))
+	}
+	var sawCurrent, sawOther bool
+	for _, s := range body {
+		switch s.ID {
+		case ini.FamilyID.String():
+			if !s.IsCurrent {
+				t.Fatal("family semasa tak bertanda is_current")
+			}
+			sawCurrent = true
+		case lain.FamilyID.String():
+			if s.IsCurrent {
+				t.Fatal("family lain tersalah tandakan is_current")
+			}
+			sawOther = true
+		}
+	}
+	if !sawCurrent || !sawOther {
+		t.Fatalf("tak jumpa kedua-dua family: %+v", body)
 	}
 }
 
@@ -155,9 +215,9 @@ func TestListMySessionsAbaikanYangLuput(t *testing.T) {
 	hidup := seedRefreshToken(t, pool, me, "Hidup", "203.0.113.1", time.Hour)
 	seedRefreshToken(t, pool, me, "Luput", "203.0.113.2", -time.Hour)
 
-	body := decodeSessions(t, callListSessions(t, pool, me))
-	if len(body) != 1 || body[0].ID != hidup.String() {
-		t.Fatalf("mahu hanya sesi hidup (%s), dapat %+v", hidup, body)
+	body := decodeSessions(t, callListSessions(t, pool, me, uuid.Nil))
+	if len(body) != 1 || body[0].ID != hidup.FamilyID.String() {
+		t.Fatalf("mahu hanya sesi hidup (%s), dapat %+v", hidup.FamilyID, body)
 	}
 }
 
@@ -169,7 +229,7 @@ func TestListMySessionsMetadataKosongJadiNull(t *testing.T) {
 	me := seedMember(t, ctx, pool, "ahli", "approved")
 	seedRefreshToken(t, pool, me, "", "", time.Hour)
 
-	body := decodeSessions(t, callListSessions(t, pool, me))
+	body := decodeSessions(t, callListSessions(t, pool, me, uuid.Nil))
 	if len(body) != 1 {
 		t.Fatalf("sesi = %d, mahu 1", len(body))
 	}
@@ -186,15 +246,35 @@ func TestRevokeMySessionPadamBarisBetul(t *testing.T) {
 	sasaran := seedRefreshToken(t, pool, me, "Device A", "203.0.113.1", time.Hour)
 	kekal := seedRefreshToken(t, pool, me, "Device B", "203.0.113.2", time.Hour)
 
-	rec := callRevokeSession(t, pool, me, sasaran)
+	rec := callRevokeSession(t, pool, me, sasaran.FamilyID)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("kod = %d, mahu 204. Badan: %s", rec.Code, rec.Body.String())
 	}
-	if refreshTokenExists(t, pool, sasaran) {
+	if refreshTokenExists(t, pool, sasaran.ID) {
 		t.Fatal("sesi sasaran patut dipadam")
 	}
-	if !refreshTokenExists(t, pool, kekal) {
+	if !refreshTokenExists(t, pool, kekal.ID) {
 		t.Fatal("sesi lain TAK patut dipadam")
+	}
+}
+
+// Punca "revoke this device nothing happen": padam SATU hash, sibling
+// rotate dalam family yang sama kekal - access token masih boleh
+// refresh. Revoke mesti padam SELURUH family.
+func TestRevokeMySessionPadamSeluruhFamily(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	asal := seedRefreshToken(t, pool, me, "Device A", "203.0.113.1", time.Hour)
+	putar := seedRefreshTokenInFamily(t, pool, me, asal.FamilyID, "Device A", "203.0.113.1", time.Hour)
+
+	rec := callRevokeSession(t, pool, me, asal.FamilyID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("kod = %d, mahu 204. Badan: %s", rec.Code, rec.Body.String())
+	}
+	if refreshTokenExists(t, pool, asal.ID) || refreshTokenExists(t, pool, putar.ID) {
+		t.Fatal("kedua-dua baris family patut dipadam")
 	}
 }
 
@@ -209,11 +289,11 @@ func TestRevokeMySessionMilikOrangLain404(t *testing.T) {
 
 	theirs := seedRefreshToken(t, pool, orangLain, "Device Orang Lain", "198.51.100.9", time.Hour)
 
-	rec := callRevokeSession(t, pool, me, theirs)
+	rec := callRevokeSession(t, pool, me, theirs.FamilyID)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("kod = %d, mahu 404. Badan: %s", rec.Code, rec.Body.String())
 	}
-	if !refreshTokenExists(t, pool, theirs) {
+	if !refreshTokenExists(t, pool, theirs.ID) {
 		t.Fatal("sesi ahli lain dipadam - ownership TIDAK dikuatkuasakan dalam query")
 	}
 }
@@ -238,7 +318,7 @@ func TestRevokeMySessionsBulkPadamYangMilikSendiri(t *testing.T) {
 	b := seedRefreshToken(t, pool, me, "Device B", "203.0.113.2", time.Hour)
 	kekal := seedRefreshToken(t, pool, me, "Device C", "203.0.113.3", time.Hour)
 
-	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{a, b})
+	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{a.FamilyID, b.FamilyID})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("kod = %d, mahu 200. Badan: %s", rec.Code, rec.Body.String())
 	}
@@ -249,10 +329,10 @@ func TestRevokeMySessionsBulkPadamYangMilikSendiri(t *testing.T) {
 	if body.Deleted != 2 {
 		t.Fatalf("deleted = %d, mahu 2", body.Deleted)
 	}
-	if refreshTokenExists(t, pool, a) || refreshTokenExists(t, pool, b) {
+	if refreshTokenExists(t, pool, a.ID) || refreshTokenExists(t, pool, b.ID) {
 		t.Fatal("sesi A/B patut dipadam")
 	}
-	if !refreshTokenExists(t, pool, kekal) {
+	if !refreshTokenExists(t, pool, kekal.ID) {
 		t.Fatal("sesi C patut kekal")
 	}
 }
@@ -266,7 +346,7 @@ func TestRevokeMySessionsBulkIdOrangLainDiabaikan(t *testing.T) {
 	mine := seedRefreshToken(t, pool, me, "Device A", "203.0.113.1", time.Hour)
 	theirs := seedRefreshToken(t, pool, orangLain, "Device Orang Lain", "198.51.100.9", time.Hour)
 
-	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{mine, theirs})
+	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{mine.FamilyID, theirs.FamilyID})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("kod = %d, mahu 200. Badan: %s", rec.Code, rec.Body.String())
 	}
@@ -277,7 +357,7 @@ func TestRevokeMySessionsBulkIdOrangLainDiabaikan(t *testing.T) {
 	if body.Deleted != 1 {
 		t.Fatalf("deleted = %d, mahu 1 (hanya milik sendiri)", body.Deleted)
 	}
-	if !refreshTokenExists(t, pool, theirs) {
+	if !refreshTokenExists(t, pool, theirs.ID) {
 		t.Fatal("sesi ahli lain dipadam - ownership TIDAK dikuatkuasakan")
 	}
 }

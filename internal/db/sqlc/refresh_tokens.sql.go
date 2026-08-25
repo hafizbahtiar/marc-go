@@ -128,8 +128,28 @@ func (q *Queries) DeleteRefreshTokenByIDAndUser(ctx context.Context, arg DeleteR
 	return result.RowsAffected(), nil
 }
 
+const deleteRefreshTokenFamilyByIDAndUser = `-- name: DeleteRefreshTokenFamilyByIDAndUser :execrows
+delete from refresh_tokens where family_id = $1 and user_id = $2
+`
+
+type DeleteRefreshTokenFamilyByIDAndUserParams struct {
+	FamilyID uuid.UUID `json:"family_id"`
+	UserID   uuid.UUID `json:"user_id"`
+}
+
+// Padam SELURUH family (semua baris rotate), bukan satu hash. Kalau
+// cuma padam baris `:id` token, sibling yang baru di-issue semasa
+// refresh kekal hidup - "log keluar peranti ini" nampak macam tak jadi.
+func (q *Queries) DeleteRefreshTokenFamilyByIDAndUser(ctx context.Context, arg DeleteRefreshTokenFamilyByIDAndUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRefreshTokenFamilyByIDAndUser, arg.FamilyID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteRefreshTokensByIDsAndUser = `-- name: DeleteRefreshTokensByIDsAndUser :execrows
-delete from refresh_tokens where user_id = $1 and id = any($2::uuid[])
+delete from refresh_tokens where user_id = $1 and family_id = any($2::uuid[])
 `
 
 type DeleteRefreshTokensByIDsAndUserParams struct {
@@ -137,9 +157,8 @@ type DeleteRefreshTokensByIDsAndUserParams struct {
 	Ids    []uuid.UUID `json:"ids"`
 }
 
-// Bulk revoke sesi aktif (skrin "log keluar device terpilih").
-// Ownership dalam query: id milik ahli lain diabaikan senyap (0 baris
-// dipadam), bukan 404 - elak kebocoran kewujudan id sesi orang lain.
+// Bulk revoke ikut family_id (id sesi dalam GET /me/sessions).
+// Ownership dalam query: family milik ahli lain diabaikan senyap.
 func (q *Queries) DeleteRefreshTokensByIDsAndUser(ctx context.Context, arg DeleteRefreshTokensByIDsAndUserParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteRefreshTokensByIDsAndUser, arg.UserID, arg.Ids)
 	if err != nil {

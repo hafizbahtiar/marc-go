@@ -139,7 +139,7 @@ type tokenPairResponse struct {
 // dalam DB). Access token TTL diambil dari j.accessTTL secara implicit
 // melalui GenerateAccessToken.
 func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (tokenPairResponse, error) {
-	access, err := h.jwt.GenerateAccessToken(userID)
+	access, err := h.jwt.GenerateAccessToken(userID, familyID)
 	if err != nil {
 		return tokenPairResponse{}, err
 	}

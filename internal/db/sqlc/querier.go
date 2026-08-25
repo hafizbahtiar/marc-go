@@ -181,9 +181,12 @@ type Querier interface {
 	// boleh bezakan "dipadam" drpd "tiada baris" dan pulang 404 tanpa
 	// membocorkan kewujudan id sesi milik orang lain.
 	DeleteRefreshTokenByIDAndUser(ctx context.Context, arg DeleteRefreshTokenByIDAndUserParams) (int64, error)
-	// Bulk revoke sesi aktif (skrin "log keluar device terpilih").
-	// Ownership dalam query: id milik ahli lain diabaikan senyap (0 baris
-	// dipadam), bukan 404 - elak kebocoran kewujudan id sesi orang lain.
+	// Padam SELURUH family (semua baris rotate), bukan satu hash. Kalau
+	// cuma padam baris `:id` token, sibling yang baru di-issue semasa
+	// refresh kekal hidup - "log keluar peranti ini" nampak macam tak jadi.
+	DeleteRefreshTokenFamilyByIDAndUser(ctx context.Context, arg DeleteRefreshTokenFamilyByIDAndUserParams) (int64, error)
+	// Bulk revoke ikut family_id (id sesi dalam GET /me/sessions).
+	// Ownership dalam query: family milik ahli lain diabaikan senyap.
 	DeleteRefreshTokensByIDsAndUser(ctx context.Context, arg DeleteRefreshTokensByIDsAndUserParams) (int64, error)
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeleteTelegramLinkTokensByUser(ctx context.Context, userID uuid.UUID) error

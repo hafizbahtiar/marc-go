@@ -54,8 +54,13 @@ order by created_at desc;
 -- membocorkan kewujudan id sesi milik orang lain.
 delete from refresh_tokens where id = $1 and user_id = $2;
 
+-- name: DeleteRefreshTokenFamilyByIDAndUser :execrows
+-- Padam SELURUH family (semua baris rotate), bukan satu hash. Kalau
+-- cuma padam baris `:id` token, sibling yang baru di-issue semasa
+-- refresh kekal hidup - "log keluar peranti ini" nampak macam tak jadi.
+delete from refresh_tokens where family_id = $1 and user_id = $2;
+
 -- name: DeleteRefreshTokensByIDsAndUser :execrows
--- Bulk revoke sesi aktif (skrin "log keluar device terpilih").
--- Ownership dalam query: id milik ahli lain diabaikan senyap (0 baris
--- dipadam), bukan 404 - elak kebocoran kewujudan id sesi orang lain.
-delete from refresh_tokens where user_id = $1 and id = any(sqlc.arg('session_ids')::uuid[]);
+-- Bulk revoke ikut family_id (id sesi dalam GET /me/sessions).
+-- Ownership dalam query: family milik ahli lain diabaikan senyap.
+delete from refresh_tokens where user_id = $1 and family_id = any(sqlc.arg('ids')::uuid[]);
