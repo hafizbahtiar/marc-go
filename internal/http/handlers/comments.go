@@ -132,6 +132,7 @@ func (h *CommentHandler) authorOf(ctx context.Context, userID uuid.UUID) authorR
 		log.Printf("baca profil %s untuk respons komen: %v", userID, err)
 		return author
 	}
+	author.UserID = userID.String()
 	author.MemberID = profile.MemberID
 	if profile.DisplayName.Valid {
 		s := profile.DisplayName.String
@@ -228,6 +229,7 @@ func (h *CommentHandler) List(c *gin.Context) {
 			CreatedAt:       formatTime(r.CreatedAt),
 			EditedAt:        formatTimeNullable(r.EditedAt),
 			Author: authorResponse{
+				UserID:      r.AuthorID.String(),
 				MemberID:    r.AuthorMemberID,
 				DisplayName: displayName,
 				AvatarURL:   avatarURLFor(ctx, h.r2, r.AuthorAvatarR2Key),

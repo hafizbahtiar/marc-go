@@ -21,6 +21,10 @@ import (
 const defaultPageLimit = 20
 
 type authorResponse struct {
+	// UserID - id sebenar (bukan member_id yang mesra-manusia), supaya
+	// client boleh navigasi ke GET /members/:id (skrin profil ahli)
+	// terus dari post/comment tanpa lookup tambahan.
+	UserID      string  `json:"user_id"`
 	MemberID    string  `json:"member_id"`
 	DisplayName *string `json:"display_name"`
 
@@ -267,6 +271,7 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 			CreatedAt: formatTime(c.CreatedAt),
 			EditedAt:  formatTimeNullable(c.EditedAt),
 			Author: authorResponse{
+				UserID:      c.AuthorID.String(),
 				MemberID:    c.AuthorMemberID,
 				DisplayName: displayName,
 				AvatarURL:   avatarURLFor(ctx, h.r2, c.AuthorAvatarR2Key),
