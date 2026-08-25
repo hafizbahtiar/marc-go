@@ -181,6 +181,10 @@ type Querier interface {
 	// boleh bezakan "dipadam" drpd "tiada baris" dan pulang 404 tanpa
 	// membocorkan kewujudan id sesi milik orang lain.
 	DeleteRefreshTokenByIDAndUser(ctx context.Context, arg DeleteRefreshTokenByIDAndUserParams) (int64, error)
+	// Bulk revoke sesi aktif (skrin "log keluar device terpilih").
+	// Ownership dalam query: id milik ahli lain diabaikan senyap (0 baris
+	// dipadam), bukan 404 - elak kebocoran kewujudan id sesi orang lain.
+	DeleteRefreshTokensByIDsAndUser(ctx context.Context, arg DeleteRefreshTokensByIDsAndUserParams) (int64, error)
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeleteTelegramLinkTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DepartmentExists(ctx context.Context, code string) (bool, error)

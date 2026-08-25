@@ -128,6 +128,26 @@ func (q *Queries) DeleteRefreshTokenByIDAndUser(ctx context.Context, arg DeleteR
 	return result.RowsAffected(), nil
 }
 
+const deleteRefreshTokensByIDsAndUser = `-- name: DeleteRefreshTokensByIDsAndUser :execrows
+delete from refresh_tokens where user_id = $1 and id = any($2::uuid[])
+`
+
+type DeleteRefreshTokensByIDsAndUserParams struct {
+	UserID uuid.UUID   `json:"user_id"`
+	Ids    []uuid.UUID `json:"ids"`
+}
+
+// Bulk revoke sesi aktif (skrin "log keluar device terpilih").
+// Ownership dalam query: id milik ahli lain diabaikan senyap (0 baris
+// dipadam), bukan 404 - elak kebocoran kewujudan id sesi orang lain.
+func (q *Queries) DeleteRefreshTokensByIDsAndUser(ctx context.Context, arg DeleteRefreshTokensByIDsAndUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRefreshTokensByIDsAndUser, arg.UserID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteRefreshTokensByUser = `-- name: DeleteRefreshTokensByUser :exec
 delete from refresh_tokens where user_id = $1
 `

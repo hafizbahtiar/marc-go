@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"marc/internal/db/sqlc"
 	"marc/internal/http/middleware"
@@ -78,4 +79,48 @@ func (h *AuthHandler) RevokeMySession(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+type revokeMySessionsRequest struct {
+	IDs []string `json:"ids" binding:"required,min=1,max=50,dive,uuid"`
+}
+
+type revokeMySessionsResponse struct {
+	Deleted int64 `json:"deleted"`
+}
+
+// RevokeMySessions - POST /me/sessions/revoke. Padam banyak sesi (device)
+// milik pemanggil dalam SATU query. Id milik ahli lain atau tak wujud
+// diabaikan senyap (hanya baris milik sendiri dipadam) - padanan
+// DeleteRefreshTokensByIDsAndUser.
+func (h *AuthHandler) RevokeMySessions(c *gin.Context) {
+	var req revokeMySessionsRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+
+	ids := make([]uuid.UUID, len(req.IDs))
+	for i, s := range req.IDs {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id sesi tidak sah"})
+			return
+		}
+		ids[i] = id
+	}
+
+	deleted, err := h.queries.DeleteRefreshTokensByIDsAndUser(c.Request.Context(), sqlc.DeleteRefreshTokensByIDsAndUserParams{
+		UserID: middleware.UserID(c),
+		Ids:    ids,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal log keluar sesi"})
+		return
+	}
+	if deleted == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "sesi tidak dijumpai"})
+		return
+	}
+
+	c.JSON(http.StatusOK, revokeMySessionsResponse{Deleted: deleted})
 }

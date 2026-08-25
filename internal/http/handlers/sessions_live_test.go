@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,6 +51,29 @@ func callListSessions(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID) *httpt
 	c.Set("userID", userID)
 
 	sessionsAuthHandler(pool).ListMySessions(c)
+	c.Writer.WriteHeaderNow()
+	return rec
+}
+
+func callRevokeSessionsBulk(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID, ids []uuid.UUID) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	idStrs := make([]string, len(ids))
+	for i, id := range ids {
+		idStrs[i] = id.String()
+	}
+	body, err := json.Marshal(map[string][]string{"ids": idStrs})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	c.Request = httptest.NewRequest(http.MethodPost, "/me/sessions/revoke", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("userID", userID)
+
+	sessionsAuthHandler(pool).RevokeMySessions(c)
 	c.Writer.WriteHeaderNow()
 	return rec
 }
@@ -199,6 +224,70 @@ func TestRevokeMySessionIDTakWujud404(t *testing.T) {
 	me := seedMember(t, ctx, pool, "ahli", "approved")
 
 	rec := callRevokeSession(t, pool, me, uuid.New())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("kod = %d, mahu 404. Badan: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRevokeMySessionsBulkPadamYangMilikSendiri(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	a := seedRefreshToken(t, pool, me, "Device A", "203.0.113.1", time.Hour)
+	b := seedRefreshToken(t, pool, me, "Device B", "203.0.113.2", time.Hour)
+	kekal := seedRefreshToken(t, pool, me, "Device C", "203.0.113.3", time.Hour)
+
+	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{a, b})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("kod = %d, mahu 200. Badan: %s", rec.Code, rec.Body.String())
+	}
+	var body revokeMySessionsResponse
+	if err := decodeJSON(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Deleted != 2 {
+		t.Fatalf("deleted = %d, mahu 2", body.Deleted)
+	}
+	if refreshTokenExists(t, pool, a) || refreshTokenExists(t, pool, b) {
+		t.Fatal("sesi A/B patut dipadam")
+	}
+	if !refreshTokenExists(t, pool, kekal) {
+		t.Fatal("sesi C patut kekal")
+	}
+}
+
+func TestRevokeMySessionsBulkIdOrangLainDiabaikan(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+	orangLain := seedMember(t, ctx, pool, "ahli", "approved")
+
+	mine := seedRefreshToken(t, pool, me, "Device A", "203.0.113.1", time.Hour)
+	theirs := seedRefreshToken(t, pool, orangLain, "Device Orang Lain", "198.51.100.9", time.Hour)
+
+	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{mine, theirs})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("kod = %d, mahu 200. Badan: %s", rec.Code, rec.Body.String())
+	}
+	var body revokeMySessionsResponse
+	if err := decodeJSON(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Deleted != 1 {
+		t.Fatalf("deleted = %d, mahu 1 (hanya milik sendiri)", body.Deleted)
+	}
+	if !refreshTokenExists(t, pool, theirs) {
+		t.Fatal("sesi ahli lain dipadam - ownership TIDAK dikuatkuasakan")
+	}
+}
+
+func TestRevokeMySessionsBulkTiadaPadanan404(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{uuid.New()})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("kod = %d, mahu 404. Badan: %s", rec.Code, rec.Body.String())
 	}

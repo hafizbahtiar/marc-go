@@ -154,6 +154,7 @@ func NewRouter(
 	// Adik-beradik satu-baris kepada /auth/logout-all: senarai device yang
 	// log masuk + "log keluar device ni" sahaja.
 	protected.GET("/me/sessions", authHandler.ListMySessions)
+	protected.POST("/me/sessions/revoke", profileUpdateRateLimiter, authHandler.RevokeMySessions)
 	protected.DELETE("/me/sessions/:id", profileUpdateRateLimiter, authHandler.RevokeMySession)
 
 	// Alamat ahli (self-service) - sama gate `protected` dgn /me di atas
