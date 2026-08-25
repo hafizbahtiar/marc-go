@@ -16,7 +16,7 @@ const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
 update refresh_tokens
 set consumed_at = now(), consumed_ip = $2
 where token_hash = $1 and consumed_at is null
-returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip
+returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip, user_agent, created_ip
 `
 
 type ConsumeRefreshTokenParams struct {
@@ -48,14 +48,16 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, arg ConsumeRefreshTok
 		&i.FamilyID,
 		&i.ConsumedAt,
 		&i.ConsumedIp,
+		&i.UserAgent,
+		&i.CreatedIp,
 	)
 	return i, err
 }
 
 const createRefreshToken = `-- name: CreateRefreshToken :one
-insert into refresh_tokens (user_id, token_hash, expires_at, family_id)
-values ($1, $2, $3, $4)
-returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip
+insert into refresh_tokens (user_id, token_hash, expires_at, family_id, user_agent, created_ip)
+values ($1, $2, $3, $4, $5, $6)
+returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip, user_agent, created_ip
 `
 
 type CreateRefreshTokenParams struct {
@@ -63,14 +65,22 @@ type CreateRefreshTokenParams struct {
 	TokenHash string             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	FamilyID  uuid.UUID          `json:"family_id"`
+	UserAgent pgtype.Text        `json:"user_agent"`
+	CreatedIp pgtype.Text        `json:"created_ip"`
 }
 
+// user_agent/created_ip dirakam pada masa token dikeluarkan (issueTokens)
+// semata-mata untuk skrin "sesi aktif" - supaya ahli boleh kenal device
+// mana yang log masuk sebelum tekan "log keluar" padanya. Nilai mentah
+// disimpan; tiada parsing jadi "iPhone/Chrome" di sini.
 func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error) {
 	row := q.db.QueryRow(ctx, createRefreshToken,
 		arg.UserID,
 		arg.TokenHash,
 		arg.ExpiresAt,
 		arg.FamilyID,
+		arg.UserAgent,
+		arg.CreatedIp,
 	)
 	var i RefreshToken
 	err := row.Scan(
@@ -82,6 +92,8 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		&i.FamilyID,
 		&i.ConsumedAt,
 		&i.ConsumedIp,
+		&i.UserAgent,
+		&i.CreatedIp,
 	)
 	return i, err
 }
@@ -95,6 +107,66 @@ func (q *Queries) DeleteRefreshTokenByHash(ctx context.Context, tokenHash string
 	return err
 }
 
+const deleteRefreshTokenByIDAndUser = `-- name: DeleteRefreshTokenByIDAndUser :execrows
+delete from refresh_tokens where id = $1 and user_id = $2
+`
+
+type DeleteRefreshTokenByIDAndUserParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+// Ownership dikuatkuasakan DALAM query (bukan semak dalam Go selepas
+// fetch) - padanan GetAddressByIDAndUser. `:execrows` supaya caller
+// boleh bezakan "dipadam" drpd "tiada baris" dan pulang 404 tanpa
+// membocorkan kewujudan id sesi milik orang lain.
+func (q *Queries) DeleteRefreshTokenByIDAndUser(ctx context.Context, arg DeleteRefreshTokenByIDAndUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRefreshTokenByIDAndUser, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRefreshTokenFamilyByIDAndUser = `-- name: DeleteRefreshTokenFamilyByIDAndUser :execrows
+delete from refresh_tokens where family_id = $1 and user_id = $2
+`
+
+type DeleteRefreshTokenFamilyByIDAndUserParams struct {
+	FamilyID uuid.UUID `json:"family_id"`
+	UserID   uuid.UUID `json:"user_id"`
+}
+
+// Padam SELURUH family (semua baris rotate), bukan satu hash. Kalau
+// cuma padam baris `:id` token, sibling yang baru di-issue semasa
+// refresh kekal hidup - "log keluar peranti ini" nampak macam tak jadi.
+func (q *Queries) DeleteRefreshTokenFamilyByIDAndUser(ctx context.Context, arg DeleteRefreshTokenFamilyByIDAndUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRefreshTokenFamilyByIDAndUser, arg.FamilyID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRefreshTokensByIDsAndUser = `-- name: DeleteRefreshTokensByIDsAndUser :execrows
+delete from refresh_tokens where user_id = $1 and family_id = any($2::uuid[])
+`
+
+type DeleteRefreshTokensByIDsAndUserParams struct {
+	UserID uuid.UUID   `json:"user_id"`
+	Ids    []uuid.UUID `json:"ids"`
+}
+
+// Bulk revoke ikut family_id (id sesi dalam GET /me/sessions).
+// Ownership dalam query: family milik ahli lain diabaikan senyap.
+func (q *Queries) DeleteRefreshTokensByIDsAndUser(ctx context.Context, arg DeleteRefreshTokensByIDsAndUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRefreshTokensByIDsAndUser, arg.UserID, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteRefreshTokensByUser = `-- name: DeleteRefreshTokensByUser :exec
 delete from refresh_tokens where user_id = $1
 `
@@ -105,7 +177,7 @@ func (q *Queries) DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUI
 }
 
 const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
-select id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip from refresh_tokens where token_hash = $1
+select id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip, user_agent, created_ip from refresh_tokens where token_hash = $1
 `
 
 func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
@@ -120,8 +192,52 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (
 		&i.FamilyID,
 		&i.ConsumedAt,
 		&i.ConsumedIp,
+		&i.UserAgent,
+		&i.CreatedIp,
 	)
 	return i, err
+}
+
+const listActiveRefreshTokensByUser = `-- name: ListActiveRefreshTokensByUser :many
+select id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip, user_agent, created_ip from refresh_tokens
+where user_id = $1 and expires_at > now()
+order by created_at desc
+`
+
+// Sesi aktif milik pemanggil sendiri. `expires_at > now()` sahaja yang
+// ditapis: baris yang dah dirotate (consumed_at bukan null) tapi family
+// masih hidup sengaja TAK ditapis - ia masih mewakili device yang log
+// masuk, dan menapisnya akan buat device aktif hilang dari senarai
+// sebaik sahaja app refresh token.
+func (q *Queries) ListActiveRefreshTokensByUser(ctx context.Context, userID uuid.UUID) ([]RefreshToken, error) {
+	rows, err := q.db.Query(ctx, listActiveRefreshTokensByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RefreshToken
+	for rows.Next() {
+		var i RefreshToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.TokenHash,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.FamilyID,
+			&i.ConsumedAt,
+			&i.ConsumedIp,
+			&i.UserAgent,
+			&i.CreatedIp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const revokeRefreshTokenFamily = `-- name: RevokeRefreshTokenFamily :exec

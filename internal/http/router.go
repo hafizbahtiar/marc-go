@@ -150,6 +150,13 @@ func NewRouter(
 	protected.POST("/me/deletion-request", accountDeletionRateLimiter, profileHandler.RequestAccountDeletion)
 	protected.POST("/auth/logout-all", authHandler.LogoutAll)
 
+	// Sesi aktif (self-service) - sama gate `protected` dgn /me di atas.
+	// Adik-beradik satu-baris kepada /auth/logout-all: senarai device yang
+	// log masuk + "log keluar device ni" sahaja.
+	protected.GET("/me/sessions", authHandler.ListMySessions)
+	protected.POST("/me/sessions/revoke", profileUpdateRateLimiter, authHandler.RevokeMySessions)
+	protected.DELETE("/me/sessions/:id", profileUpdateRateLimiter, authHandler.RevokeMySession)
+
 	// Alamat ahli (self-service) - sama gate `protected` dgn /me di atas
 	// (RequireAuth sahaja, tiada RequireApprovedStatus - padanan alasan
 	// yang sama: data peribadi profil, bukan aktiviti kelab).
@@ -178,6 +185,10 @@ func NewRouter(
 	// RequireApprovedStatus).
 	approved := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
 	approved.GET("/members", profileHandler.Members)
+	// Profil SATU ahli (view-only, tiered) - laluan dua segmen, tiada
+	// pertembungan dgn /members (satu segmen) atau tindakan tiga segmen
+	// di bawah (Gin padan ikut kedalaman laluan penuh, bukan awalan).
+	approved.GET("/members/:id", profileHandler.GetMemberDetail)
 	approved.POST("/members/:id/approve", profileHandler.ApproveMember)
 	approved.POST("/members/:id/reject", profileHandler.RejectMember)
 	approved.POST("/members/:id/cancel-registration-payment", profileHandler.CancelMemberRegistrationPayment)

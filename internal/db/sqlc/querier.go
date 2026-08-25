@@ -134,6 +134,10 @@ type Querier interface {
 	CreatePost(ctx context.Context, arg CreatePostParams) (Post, error)
 	CreatePostImage(ctx context.Context, arg CreatePostImageParams) (PostImage, error)
 	CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error)
+	// user_agent/created_ip dirakam pada masa token dikeluarkan (issueTokens)
+	// semata-mata untuk skrin "sesi aktif" - supaya ahli boleh kenal device
+	// mana yang log masuk sebelum tekan "log keluar" padanya. Nilai mentah
+	// disimpan; tiada parsing jadi "iPhone/Chrome" di sini.
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateRegistration(ctx context.Context, arg CreateRegistrationParams) (ActivityRegistration, error)
 	// SENGAJA tanpa `gateway_ref` (L29, 2026-08-22). Baris ditulis SEBELUM
@@ -172,6 +176,18 @@ type Querier interface {
 	// Tanpa skop user - untuk penyapu latar, bukan permintaan pengguna.
 	DeletePendingUploadByKey(ctx context.Context, r2Key string) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
+	// Ownership dikuatkuasakan DALAM query (bukan semak dalam Go selepas
+	// fetch) - padanan GetAddressByIDAndUser. `:execrows` supaya caller
+	// boleh bezakan "dipadam" drpd "tiada baris" dan pulang 404 tanpa
+	// membocorkan kewujudan id sesi milik orang lain.
+	DeleteRefreshTokenByIDAndUser(ctx context.Context, arg DeleteRefreshTokenByIDAndUserParams) (int64, error)
+	// Padam SELURUH family (semua baris rotate), bukan satu hash. Kalau
+	// cuma padam baris `:id` token, sibling yang baru di-issue semasa
+	// refresh kekal hidup - "log keluar peranti ini" nampak macam tak jadi.
+	DeleteRefreshTokenFamilyByIDAndUser(ctx context.Context, arg DeleteRefreshTokenFamilyByIDAndUserParams) (int64, error)
+	// Bulk revoke ikut family_id (id sesi dalam GET /me/sessions).
+	// Ownership dalam query: family milik ahli lain diabaikan senyap.
+	DeleteRefreshTokensByIDsAndUser(ctx context.Context, arg DeleteRefreshTokensByIDsAndUserParams) (int64, error)
 	DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DeleteTelegramLinkTokensByUser(ctx context.Context, userID uuid.UUID) error
 	DepartmentExists(ctx context.Context, code string) (bool, error)
@@ -300,6 +316,12 @@ type Querier interface {
 	// sini SERENTAK dengan notifikasi ditambah, bukan selepasnya.
 	LikeComment(ctx context.Context, arg LikeCommentParams) (int64, error)
 	LikePost(ctx context.Context, arg LikePostParams) (int64, error)
+	// Sesi aktif milik pemanggil sendiri. `expires_at > now()` sahaja yang
+	// ditapis: baris yang dah dirotate (consumed_at bukan null) tapi family
+	// masih hidup sengaja TAK ditapis - ia masih mewakili device yang log
+	// masuk, dan menapisnya akan buat device aktif hilang dari senarai
+	// sebaik sahaja app refresh token.
+	ListActiveRefreshTokensByUser(ctx context.Context, userID uuid.UUID) ([]RefreshToken, error)
 	// Keyset pagination atas (starts_at, id) - sama corak dengan ListPosts,
 	// elak baris terlepas bila dua aktiviti berkongsi timestamp tepat.
 	// upcoming=true → aktiviti yang belum tamat, isih menaik (paling hampir

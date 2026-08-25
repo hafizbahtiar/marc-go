@@ -11,6 +11,7 @@ import (
 )
 
 const userIDKey = "userID"
+const sessionIDKey = "sessionID"
 
 func RequireAuth(j *auth.JWT) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -21,13 +22,14 @@ func RequireAuth(j *auth.JWT) gin.HandlerFunc {
 			return
 		}
 
-		userID, err := j.ParseAccessToken(token)
+		userID, sessionID, err := j.ParseAccessToken(token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token tidak sah"})
 			return
 		}
 
 		c.Set(userIDKey, userID)
+		c.Set(sessionIDKey, sessionID)
 		c.Next()
 	}
 }
@@ -36,6 +38,17 @@ func RequireAuth(j *auth.JWT) gin.HandlerFunc {
 // route yang dilindungi RequireAuth.
 func UserID(c *gin.Context) uuid.UUID {
 	return c.MustGet(userIDKey).(uuid.UUID)
+}
+
+// SessionID - family_id sesi dari claim `sid`. uuid.Nil untuk token lama
+// (sebelum sid wujud) - GET /me/sessions tak akan tandakan "peranti ini".
+func SessionID(c *gin.Context) uuid.UUID {
+	v, ok := c.Get(sessionIDKey)
+	if !ok {
+		return uuid.Nil
+	}
+	id, _ := v.(uuid.UUID)
+	return id
 }
 
 // OptionalAuth cuba parse Bearer token kalau ada, tapi TAK abort request
@@ -47,8 +60,9 @@ func OptionalAuth(j *auth.JWT) gin.HandlerFunc {
 		header := c.GetHeader("Authorization")
 		token, ok := strings.CutPrefix(header, "Bearer ")
 		if ok && token != "" {
-			if userID, err := j.ParseAccessToken(token); err == nil {
+			if userID, sessionID, err := j.ParseAccessToken(token); err == nil {
 				c.Set(userIDKey, userID)
+				c.Set(sessionIDKey, sessionID)
 			}
 		}
 		c.Next()

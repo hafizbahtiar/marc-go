@@ -22,17 +22,21 @@ func TestAccessTokenPusinganPenuh(t *testing.T) {
 	j := NewJWT(testSecret, 15*time.Minute)
 	want := uuid.New()
 
-	token, err := j.GenerateAccessToken(want)
+	sid := uuid.New()
+	token, err := j.GenerateAccessToken(want, sid)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
 
-	got, err := j.ParseAccessToken(token)
+	got, gotSID, err := j.ParseAccessToken(token)
 	if err != nil {
 		t.Fatalf("ParseAccessToken: %v", err)
 	}
 	if got != want {
 		t.Errorf("user id = %v, mahu %v", got, want)
+	}
+	if gotSID != sid {
+		t.Errorf("session id = %v, mahu %v", gotSID, sid)
 	}
 }
 
@@ -40,25 +44,25 @@ func TestAccessTokenLuputDitolak(t *testing.T) {
 	// TTL negatif = token yang sudah luput pada saat ia dijana.
 	j := NewJWT(testSecret, -time.Minute)
 
-	token, err := j.GenerateAccessToken(uuid.New())
+	token, err := j.GenerateAccessToken(uuid.New(), uuid.Nil)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
 
-	if _, err := j.ParseAccessToken(token); err == nil {
+	if _, _, err := j.ParseAccessToken(token); err == nil {
 		t.Fatal("token LUPUT diterima - sesi tak pernah tamat")
 	}
 }
 
 func TestAccessTokenRahsiaLainDitolak(t *testing.T) {
 	issuer := NewJWT(testSecret, 15*time.Minute)
-	token, err := issuer.GenerateAccessToken(uuid.New())
+	token, err := issuer.GenerateAccessToken(uuid.New(), uuid.Nil)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
 
 	verifier := NewJWT("rahsia-yang-berbeza-sama-sekali", 15*time.Minute)
-	if _, err := verifier.ParseAccessToken(token); err == nil {
+	if _, _, err := verifier.ParseAccessToken(token); err == nil {
 		t.Fatal("token ditandatangani rahsia LAIN diterima - sesiapa yang " +
 			"boleh jana JWT boleh menyamar sebagai mana-mana ahli")
 	}
@@ -99,7 +103,7 @@ func TestParseAccessTokenTolakAlgBukanHMAC(t *testing.T) {
 		t.Fatalf("jana token alg=none: %v", err)
 	}
 
-	if _, err := j.ParseAccessToken(tokenNone); err == nil {
+	if _, _, err := j.ParseAccessToken(tokenNone); err == nil {
 		t.Fatal("token `alg: none` DITERIMA - sesiapa boleh mengarang token " +
 			"untuk mana-mana user id tanpa sebarang rahsia")
 	}
@@ -127,10 +131,31 @@ func TestParseAccessTokenTolakSampahDanSubjectCacat(t *testing.T) {
 		"tandatangan diusik":        signed + "x",
 	} {
 		t.Run(nama, func(t *testing.T) {
-			if _, err := j.ParseAccessToken(token); err == nil {
+			if _, _, err := j.ParseAccessToken(token); err == nil {
 				t.Fatalf("token %q diterima", nama)
 			}
 		})
+	}
+}
+
+func TestAccessTokenTanpaSidKekalSah(t *testing.T) {
+	j := NewJWT(testSecret, 15*time.Minute)
+	want := uuid.New()
+
+	token, err := j.GenerateAccessToken(want, uuid.Nil)
+	if err != nil {
+		t.Fatalf("GenerateAccessToken: %v", err)
+	}
+
+	got, sid, err := j.ParseAccessToken(token)
+	if err != nil {
+		t.Fatalf("ParseAccessToken: %v", err)
+	}
+	if got != want {
+		t.Errorf("user id = %v, mahu %v", got, want)
+	}
+	if sid != uuid.Nil {
+		t.Errorf("session id = %v, mahu uuid.Nil (token tanpa sid)", sid)
 	}
 }
 

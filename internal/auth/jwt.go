@@ -23,18 +23,31 @@ func (j *JWT) AccessTTL() time.Duration {
 	return j.accessTTL
 }
 
-func (j *JWT) GenerateAccessToken(userID uuid.UUID) (string, error) {
-	claims := jwt.RegisteredClaims{
-		Subject:   userID.String(),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.accessTTL)),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
+// accessClaims - RegisteredClaims + `sid` (family_id refresh token).
+// `sid` kenal SESI (device), bukan baris token yang berputar setiap
+// refresh. Token lama tanpa `sid` tetap sah; SessionID = uuid.Nil.
+type accessClaims struct {
+	SessionID string `json:"sid,omitempty"`
+	jwt.RegisteredClaims
+}
+
+func (j *JWT) GenerateAccessToken(userID, sessionID uuid.UUID) (string, error) {
+	claims := accessClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID.String(),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.accessTTL)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	if sessionID != uuid.Nil {
+		claims.SessionID = sessionID.String()
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(j.secret)
 }
 
-func (j *JWT) ParseAccessToken(tokenString string) (uuid.UUID, error) {
-	claims := &jwt.RegisteredClaims{}
+func (j *JWT) ParseAccessToken(tokenString string) (userID, sessionID uuid.UUID, err error) {
+	claims := &accessClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrInvalidToken
@@ -42,13 +55,18 @@ func (j *JWT) ParseAccessToken(tokenString string) (uuid.UUID, error) {
 		return j.secret, nil
 	})
 	if err != nil || !token.Valid {
-		return uuid.UUID{}, ErrInvalidToken
+		return uuid.UUID{}, uuid.UUID{}, ErrInvalidToken
 	}
 
-	userID, err := uuid.Parse(claims.Subject)
+	userID, err = uuid.Parse(claims.Subject)
 	if err != nil {
-		return uuid.UUID{}, ErrInvalidToken
+		return uuid.UUID{}, uuid.UUID{}, ErrInvalidToken
 	}
-
-	return userID, nil
+	if claims.SessionID != "" {
+		sessionID, err = uuid.Parse(claims.SessionID)
+		if err != nil {
+			return uuid.UUID{}, uuid.UUID{}, ErrInvalidToken
+		}
+	}
+	return userID, sessionID, nil
 }
