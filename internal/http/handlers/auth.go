@@ -78,7 +78,24 @@ const dummyPasswordHash = "$2a$10$/8Dd.SDyfy2jxDvvxwPheeHLucYAitJ42OSSoz8wtyR1UT
 // BUKAN reuse attack - elak false-positive family revocation yang
 // paksa re-login tanpa sebab. Attacker sebenar yang curi token dan guna
 // lambat (lebih dari tempoh ni) tetap dikesan macam biasa.
+//
+// Grace ni SAHAJA tak cukup: attacker yang curi token boleh sengaja
+// race replay dalam 5 saat lepas pemilik sah refresh, supaya reuse dia
+// pun jatuh dalam tempoh ni dan lolos tanpa family revocation. Sebab
+// tu grace cuma dipakai bila IP request reuse SAMA dengan IP yang
+// menang consume asal (consumedIPMatches) - device/rangkaian attacker
+// curi biasanya berbeza dari device pemilik sah, jadi race timing
+// semata-mata tak lagi cukup untuk lepasi pengesanan.
 const refreshReuseGraceWindow = 5 * time.Second
+
+// consumedIPMatches - reuse dianggap race/retry SAH cuma bila datang
+// dari IP yang sama dengan request yang menang consume token asal.
+// IP kosong (consumed_ip tak direkod, cth data lama sebelum migration
+// ni) dilayan sebagai TAK padan - fail closed, terus ke family
+// revocation macam reuse attack biasa.
+func consumedIPMatches(consumedIP pgtype.Text, requestIP string) bool {
+	return consumedIP.Valid && consumedIP.String != "" && consumedIP.String == requestIP
+}
 
 type AuthHandler struct {
 	pool             *pgxpool.Pool
@@ -362,7 +379,10 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	// dalam SATU statement, sama race-safety macam DELETE...RETURNING
 	// asal - kalau dua request serentak hantar hash yang sama, cuma
 	// satu dapat row balik (menang); yang satu lagi dapat 0 rows.
-	consumed, err := h.queries.ConsumeRefreshToken(ctx, hash)
+	consumed, err := h.queries.ConsumeRefreshToken(ctx, sqlc.ConsumeRefreshTokenParams{
+		TokenHash:  hash,
+		ConsumedIp: pgtype.Text{String: c.ClientIP(), Valid: true},
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Sama ada token ni tak pernah wujud, ATAU dah consumed
@@ -373,7 +393,9 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 			// session user asli yang sama) sama-sama terputus, paksa
 			// re-login penuh.
 			if existing, ferr := h.queries.GetRefreshTokenByHash(ctx, hash); ferr == nil && existing.ConsumedAt.Valid {
-				if time.Since(existing.ConsumedAt.Time) > refreshReuseGraceWindow {
+				withinGrace := time.Since(existing.ConsumedAt.Time) <= refreshReuseGraceWindow &&
+					consumedIPMatches(existing.ConsumedIp, c.ClientIP())
+				if !withinGrace {
 					if rerr := h.queries.RevokeRefreshTokenFamily(ctx, existing.FamilyID); rerr != nil {
 						log.Printf("gagal revoke refresh token family lepas reuse dikesan: %v", rerr)
 					} else {

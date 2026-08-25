@@ -305,6 +305,7 @@ type RefreshToken struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	FamilyID   uuid.UUID          `json:"family_id"`
 	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	ConsumedIp pgtype.Text        `json:"consumed_ip"`
 }
 
 type RegistrationPayment struct {

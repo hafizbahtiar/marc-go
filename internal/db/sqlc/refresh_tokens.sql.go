@@ -14,10 +14,15 @@ import (
 
 const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
 update refresh_tokens
-set consumed_at = now()
+set consumed_at = now(), consumed_ip = $2
 where token_hash = $1 and consumed_at is null
-returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at
+returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip
 `
+
+type ConsumeRefreshTokenParams struct {
+	TokenHash  string      `json:"token_hash"`
+	ConsumedIp pgtype.Text `json:"consumed_ip"`
+}
 
 // Atomic single-use: UPDATE...RETURNING dalam SATU statement, guard
 // "consumed_at is null" jamin cuma SATU concurrent request menang kalau
@@ -26,8 +31,13 @@ returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_a
 // hash yang SAMA cuba consume LAGI selepas ni, row dah wujud tapi
 // consumed_at dah bukan null, so 0 rows returned di sini -> caller
 // boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
-func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error) {
-	row := q.db.QueryRow(ctx, consumeRefreshToken, tokenHash)
+//
+// consumed_ip direkod supaya reuse-grace-window (auth.go) boleh semak IP
+// request yang menang consume sama dengan IP request reuse - elak
+// attacker yang curi token dari IP lain lolos grace window sekadar
+// dengan race timing terhadap request pemilik sah.
+func (q *Queries) ConsumeRefreshToken(ctx context.Context, arg ConsumeRefreshTokenParams) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, consumeRefreshToken, arg.TokenHash, arg.ConsumedIp)
 	var i RefreshToken
 	err := row.Scan(
 		&i.ID,
@@ -37,6 +47,7 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (Re
 		&i.CreatedAt,
 		&i.FamilyID,
 		&i.ConsumedAt,
+		&i.ConsumedIp,
 	)
 	return i, err
 }
@@ -44,7 +55,7 @@ func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (Re
 const createRefreshToken = `-- name: CreateRefreshToken :one
 insert into refresh_tokens (user_id, token_hash, expires_at, family_id)
 values ($1, $2, $3, $4)
-returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at
+returning id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip
 `
 
 type CreateRefreshTokenParams struct {
@@ -70,6 +81,7 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 		&i.CreatedAt,
 		&i.FamilyID,
 		&i.ConsumedAt,
+		&i.ConsumedIp,
 	)
 	return i, err
 }
@@ -93,7 +105,7 @@ func (q *Queries) DeleteRefreshTokensByUser(ctx context.Context, userID uuid.UUI
 }
 
 const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
-select id, user_id, token_hash, expires_at, created_at, family_id, consumed_at from refresh_tokens where token_hash = $1
+select id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip from refresh_tokens where token_hash = $1
 `
 
 func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
@@ -107,6 +119,7 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (
 		&i.CreatedAt,
 		&i.FamilyID,
 		&i.ConsumedAt,
+		&i.ConsumedIp,
 	)
 	return i, err
 }

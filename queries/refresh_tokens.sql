@@ -11,8 +11,13 @@ returning *;
 -- hash yang SAMA cuba consume LAGI selepas ni, row dah wujud tapi
 -- consumed_at dah bukan null, so 0 rows returned di sini -> caller
 -- boleh GetRefreshTokenByHash untuk detect reuse & revoke family.
+--
+-- consumed_ip direkod supaya reuse-grace-window (auth.go) boleh semak IP
+-- request yang menang consume sama dengan IP request reuse - elak
+-- attacker yang curi token dari IP lain lolos grace window sekadar
+-- dengan race timing terhadap request pemilik sah.
 update refresh_tokens
-set consumed_at = now()
+set consumed_at = now(), consumed_ip = $2
 where token_hash = $1 and consumed_at is null
 returning *;
 
