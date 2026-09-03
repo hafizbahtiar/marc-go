@@ -180,7 +180,7 @@ func coreFromGetPostByIDRow(r sqlc.GetPostByIDRow) postCore {
 	return postCore{
 		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
 		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
-		AuthorMemberID: r.AuthorMemberID, AuthorDisplayName: r.AuthorDisplayName,
+		AuthorMemberID: r.AuthorMemberID.String, AuthorDisplayName: r.AuthorDisplayName,
 		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
 	}
 }
@@ -189,7 +189,7 @@ func coreFromListPostsRow(r sqlc.ListPostsRow) postCore {
 	return postCore{
 		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
 		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
-		AuthorMemberID: r.AuthorMemberID, AuthorDisplayName: r.AuthorDisplayName,
+		AuthorMemberID: r.AuthorMemberID.String, AuthorDisplayName: r.AuthorDisplayName,
 		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
 	}
 }

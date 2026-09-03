@@ -157,7 +157,7 @@ type GetMyRegistrationPaymentByIDRow struct {
 	GatewayRef  pgtype.Text        `json:"gateway_ref"`
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	MemberID    string             `json:"member_id"`
+	MemberID    pgtype.Text        `json:"member_id"`
 	DisplayName pgtype.Text        `json:"display_name"`
 	Email       string             `json:"email"`
 }

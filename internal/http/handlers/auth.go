@@ -192,6 +192,12 @@ type registerRequest struct {
 	// ahli sedia ada yang belum isi sekat proses bayar mereka. Kutip
 	// di sini terus supaya SEMUA ahli baharu ada nombor sejak mula.
 	Phone string `json:"phone" binding:"required,max=30"`
+	// StaffID WAJIB sejak 2026-09-02 (staff-id verification) - tiada
+	// format tertentu, cuma rentetan legap sehingga 64 aksara yang
+	// management SAHKAN secara manual (POST /members/:id/verify-staff-id)
+	// sebelum member_id sebenar dijana. Lihat spec 2026-09-02-staff-id-
+	// verification-design.md.
+	StaffID string `json:"staff_id" binding:"required,max=64"`
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
@@ -240,6 +246,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	req.Phone = normalizedPhone
 
+	req.StaffID = strings.TrimSpace(req.StaffID)
+	if req.StaffID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor staff diperlukan"})
+		return
+	}
+	if strings.Contains(req.StaffID, "/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor staff tidak boleh mengandungi '/'"})
+		return
+	}
+
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal proses pendaftaran"})
@@ -265,12 +281,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	memberID, err := generateMemberID(ctx, q)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal proses pendaftaran"})
-		return
-	}
-
 	role, err := q.GetRoleByKey(ctx, "ahli")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal proses pendaftaran"})
@@ -278,11 +288,19 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	if _, err := q.CreateProfile(ctx, sqlc.CreateProfileParams{
-		UserID:   user.ID,
-		MemberID: memberID,
+		UserID: user.ID,
+		// member_id ditangguhkan sehingga management sahkan staff_id
+		// (POST /members/:id/verify-staff-id, Task 5) - generateMemberID
+		// dipanggil dalam transaksi verify itu sendiri, bukan di sini.
+		MemberID: pgtype.Text{Valid: false},
+		StaffID:  req.StaffID,
 		RoleID:   role.ID,
 		Phone:    pgtype.Text{String: req.Phone, Valid: true},
 	}); err != nil {
+		if isUniqueViolation(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "nombor staff ini sudah didaftarkan"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal proses pendaftaran"})
 		return
 	}
@@ -326,23 +344,51 @@ func notifyManagementOfPendingMember(ctx context.Context, q *sqlc.Queries, newUs
 	}
 }
 
-// generateMemberID port dari Supabase `handle_new_user()`: format
-// MARC{YYYY}/{MM}/{seq 4-digit}, ikut timezone Asia/Kuala_Lumpur.
-func generateMemberID(ctx context.Context, q *sqlc.Queries) (string, error) {
+// memberIDCode returns the {code} segment for a newly-generated
+// member_id, and the sequence key to draw from if the role needs a
+// number (empty key means no sequence is drawn — currently only
+// "superadmin"). Adding a future role (e.g. "penaung") is one entry
+// here, per docs/superpowers/specs/2026-09-03-member-id-format-redesign-design.md.
+func memberIDCode(ctx context.Context, q *sqlc.Queries, roleKey string) (string, error) {
+	switch roleKey {
+	case "superadmin":
+		return "SA", nil
+	case "tester":
+		seq, err := q.NextSequence(ctx, "member_seq:tester")
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("T%d", seq), nil
+	// case "penaung": // future role, not yet created — same pattern as "tester":
+	//     seq, err := q.NextSequence(ctx, "member_seq:penaung")
+	//     if err != nil { return "", err }
+	//     return fmt.Sprintf("P%d", seq), nil
+	default:
+		seq, err := q.NextSequence(ctx, "member_seq:ahli")
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%04d", seq), nil
+	}
+}
+
+// generateMemberID - format MARC-{staffID}/{tahun}-{kod}, ikut
+// timezone Asia/Kuala_Lumpur. Gantikan format lama
+// MARC{YYYY}/{MM}/{seq 4-digit} (tiada dash, sequence bulanan) - lihat
+// docs/superpowers/specs/2026-09-03-member-id-format-redesign-design.md.
+func generateMemberID(ctx context.Context, q *sqlc.Queries, staffID string, roleKey string) (string, error) {
 	loc, err := time.LoadLocation("Asia/Kuala_Lumpur")
 	if err != nil {
 		loc = time.FixedZone("MYT", 8*60*60)
 	}
-	now := time.Now().In(loc)
-	year := now.Format("2006")
-	month := now.Format("01")
+	year := time.Now().In(loc).Format("2006")
 
-	seq, err := q.NextSequence(ctx, fmt.Sprintf("auth:%s:%s", year, month))
+	code, err := memberIDCode(ctx, q, roleKey)
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("MARC%s/%s/%04d", year, month, seq), nil
+	return fmt.Sprintf("MARC-%s/%s-%s", staffID, year, code), nil
 }
 
 type loginRequest struct {
@@ -675,6 +721,18 @@ func verificationHTMLPage(message string) string {
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// uniqueViolationConstraint - macam isUniqueViolation tapi turut pulang
+// nama constraint yang dilanggar, supaya caller boleh bezakan MANA
+// constraint (cth "profiles_staff_id_key" vs "profiles_member_id_key")
+// dilanggar, bukan cuma "ada unique violation".
+func uniqueViolationConstraint(err error) (string, bool) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr.ConstraintName, true
+	}
+	return "", false
 }
 
 type passwordResetRequestBody struct {

@@ -80,7 +80,7 @@ func (h *PaymentsHandler) RegistrationReceipt(c *gin.Context) {
 		displayName = *n
 	}
 	pdfBytes, err := receipt.GenerateFeePDF(receipt.FeePayment{
-		MemberID:    row.MemberID,
+		MemberID:    row.MemberID.String,
 		PayerName:   displayName,
 		PayerEmail:  row.Email,
 		AmountCents: int64(row.AmountCents),
@@ -145,7 +145,7 @@ func (h *PaymentsHandler) ActivityReceipt(c *gin.Context) {
 		displayName = *n
 	}
 	pdfBytes, err := receipt.GenerateFeePDF(receipt.FeePayment{
-		MemberID:    row.MemberID,
+		MemberID:    row.MemberID.String,
 		PayerName:   displayName,
 		PayerEmail:  row.Email,
 		AmountCents: int64(row.FeeCents),
@@ -203,7 +203,7 @@ func (h *PaymentsHandler) DonationReceipt(c *gin.Context) {
 	memberID := ""
 	profile, err := h.queries.GetProfileByUserID(ctx, userID)
 	if err == nil {
-		memberID = profile.MemberID
+		memberID = profile.MemberID.String
 	}
 
 	pdfBytes, err := receipt.GeneratePDF(receipt.Donation{
@@ -298,6 +298,11 @@ func (h *PaymentsHandler) Mine(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat sejarah bayaran"})
 		return
 	}
+	profile, err := h.queries.GetProfileByUserID(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat sejarah bayaran"})
+		return
+	}
 
 	registrationFee := make([]registrationPaymentItem, 0, len(regRows))
 	for _, r := range regRows {
@@ -338,11 +343,38 @@ func (h *PaymentsHandler) Mine(c *gin.Context) {
 		})
 	}
 
+	// outstanding_registration_fee - flag Flutter guna utk paparkan CTA
+	// "bayar yuran pendaftaran". Ahli tak perlu bayar kalau dia staff-
+	// exempt (staffFeeExempt, profile.go - staff ID dah disahkan ATAU
+	// nombor staff sebenar dah diisi, jadi pengesahan nanti PASTI
+	// kecualikan dia; Task 8) ATAU dah ada satu bayaran 'succeeded'
+	// dalam senarai di atas (tak query semula - scan senarai yang dah
+	// difetch).
+	//
+	// Semakan `!staffFeeExempt` sengaja BUKAN sekadar
+	// `!profile.StaffIDVerifiedAt.Valid` (v1, Opus verify 2026-09-03):
+	// setiap ahli pending baharu bermula belum disahkan, jadi versi lama
+	// papar banner "bayar sekarang" kepada hampir SEMUA ahli baharu
+	// walaupun tiada seorang pun daripada mereka akan terhutang yuran itu.
+	outstanding := !staffFeeExempt(profile) && !hasSucceededPayment(registrationFee)
+
 	c.JSON(http.StatusOK, gin.H{
-		"registration_fee": registrationFee,
-		"activity_fees":    activityFees,
-		"donations":        donations,
+		"registration_fee":             registrationFee,
+		"activity_fees":                activityFees,
+		"donations":                    donations,
+		"outstanding_registration_fee": outstanding,
 	})
+}
+
+// hasSucceededPayment - true kalau ada sekurang-kurangnya satu bayaran
+// 'succeeded' dalam senarai yuran pendaftaran yang diberi.
+func hasSucceededPayment(items []registrationPaymentItem) bool {
+	for _, item := range items {
+		if item.Status == "succeeded" {
+			return true
+		}
+	}
+	return false
 }
 
 const (

@@ -283,7 +283,7 @@ func (h *DonationHandler) sendReceiptEmail(ctx context.Context, d sqlc.Donation,
 			if to == nil {
 				to = &profile.Email
 			}
-			memberID = profile.MemberID
+			memberID = profile.MemberID.String
 		}
 	}
 	if to == nil {

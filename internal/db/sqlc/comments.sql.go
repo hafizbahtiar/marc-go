@@ -133,7 +133,7 @@ type ListCommentsByPostIDRow struct {
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	AuthorEmail       string             `json:"author_email"`
-	AuthorMemberID    string             `json:"author_member_id"`
+	AuthorMemberID    pgtype.Text        `json:"author_member_id"`
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
 	AuthorAvatarR2Key pgtype.Text        `json:"author_avatar_r2_key"`
 }

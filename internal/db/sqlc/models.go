@@ -276,7 +276,7 @@ type PostLike struct {
 type Profile struct {
 	ID                    uuid.UUID          `json:"id"`
 	UserID                uuid.UUID          `json:"user_id"`
-	MemberID              string             `json:"member_id"`
+	MemberID              pgtype.Text        `json:"member_id"`
 	DisplayName           pgtype.Text        `json:"display_name"`
 	Phone                 pgtype.Text        `json:"phone"`
 	RoleID                int16              `json:"role_id"`
@@ -295,6 +295,9 @@ type Profile struct {
 	IsActive              bool               `json:"is_active"`
 	DepartmentCode        pgtype.Text        `json:"department_code"`
 	Position              pgtype.Text        `json:"position"`
+	StaffID               string             `json:"staff_id"`
+	StaffIDVerifiedAt     pgtype.Timestamptz `json:"staff_id_verified_at"`
+	StaffIDVerifiedBy     pgtype.UUID        `json:"staff_id_verified_by"`
 }
 
 type RefreshToken struct {

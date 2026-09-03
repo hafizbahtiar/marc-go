@@ -98,6 +98,8 @@ type Querier interface {
 	// dan atas sebab yang SAMA -- baca-dahulu-kemudian-tulis ada jurang
 	// TOCTOU yang membenarkan dua permintaan serentak kedua-duanya lulus.
 	ConsumeTelegramLinkToken(ctx context.Context, tokenHash string) (TelegramLinkToken, error)
+	CorrectMemberID(ctx context.Context, arg CorrectMemberIDParams) (Profile, error)
+	CorrectStaffID(ctx context.Context, arg CorrectStaffIDParams) (Profile, error)
 	CountActiveRegistrations(ctx context.Context, activityID uuid.UUID) (int64, error)
 	CountActivitySessions(ctx context.Context, activityID uuid.UUID) (int64, error)
 	// Had 3 alamat/ahli disemak app-layer (bukan constraint DB, "3" ialah
@@ -686,6 +688,7 @@ type Querier interface {
 	UpdateRegistrationPaymentStatusByPaymentRef(ctx context.Context, arg UpdateRegistrationPaymentStatusByPaymentRefParams) (ActivityRegistration, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (int64, error)
+	VerifyStaffID(ctx context.Context, arg VerifyStaffIDParams) (Profile, error)
 }
 
 var _ Querier = (*Queries)(nil)

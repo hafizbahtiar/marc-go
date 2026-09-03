@@ -56,10 +56,18 @@ func seedMember(t *testing.T, ctx context.Context, pool *pgxpool.Pool, roleKey, 
 		email).Scan(&userID); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
+	// staff_id is NOT NULL as of 20260902100000_add_staff_id.sql. This
+	// helper seeds members that are meant to be immediately usable
+	// ("already good to go") by the wider pre-existing test suite, none
+	// of which exercise the staff-id verification gate itself (that's
+	// covered separately by createTestPendingProfile/createTestApprovedProfile
+	// in staff_id_query_live_test.go) - so mint a synthetic staff_id from
+	// user_id, matching the migration's own backfill convention
+	// (staff_id = user_id::text), and mark it verified immediately.
 	if _, err := pool.Exec(ctx,
-		`insert into profiles (user_id, member_id, role_id, status)
-		 values ($1, $2, (select id from roles where key = $3), $4)`,
-		userID, "MARC/"+uuid.NewString()[:8], roleKey, status); err != nil {
+		`insert into profiles (user_id, member_id, staff_id, staff_id_verified_at, role_id, status)
+		 values ($1, $2, $3, now(), (select id from roles where key = $4), $5)`,
+		userID, "MARC/"+uuid.NewString()[:8], userID.String(), roleKey, status); err != nil {
 		t.Fatalf("seed profile: %v", err)
 	}
 	return userID
@@ -186,98 +194,55 @@ func TestApproveBerulangTidakCiptaCatatanKedua(t *testing.T) {
 	}
 }
 
-// Gate bayaran sedia ada mesti kekal berkuat kuasa bila bypass_payment
-// TIDAK dihantar - ahli belum bayar tak boleh diluluskan.
-func TestApproveTanpaBayaranDitolak(t *testing.T) {
-	pool, ctx := statusTestPool(t)
-	manager := seedMember(t, ctx, pool, "manager", "approved")
-	target := seedMember(t, ctx, pool, "ahli", "pending")
-
-	rec := callSetStatus(t, pool, manager, target, "approve")
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, mahu 400 (body: %s)", rec.Code, rec.Body.String())
-	}
-	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
-		t.Fatalf("gate ditolak tapi menulis %d catatan audit", len(logs))
-	}
-}
-
-// Supervisor/manager (rank < admin) TAK boleh langkau bayaran walaupun
-// mereka management - bypass mesti terhad kepada admin/superadmin sahaja.
-func TestApproveBypassPaymentDitolakUntukManager(t *testing.T) {
-	pool, ctx := statusTestPool(t)
-	manager := seedMember(t, ctx, pool, "manager", "approved")
-	target := seedMember(t, ctx, pool, "ahli", "pending")
-
-	rec := callSetStatusWithBody(t, pool, manager, target, "approve",
-		`{"bypass_payment":true,"bypass_reason":"dah bayar tunai"}`)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, mahu 403 (body: %s)", rec.Code, rec.Body.String())
-	}
-	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
-		t.Fatalf("bypass ditolak tapi menulis %d catatan audit", len(logs))
-	}
-
-	var status string
-	if err := pool.QueryRow(ctx, `select status from profiles where user_id = $1`, target).Scan(&status); err != nil {
-		t.Fatal(err)
-	}
-	if status != "pending" {
-		t.Errorf("status berubah kepada %q walaupun bypass ditolak", status)
-	}
-}
-
-// Admin/superadmin cuba bypass tanpa nota mesti ditolak - nota wajib
-// untuk jejak audit ahli lama->digital.
-func TestApproveBypassPaymentPerluNota(t *testing.T) {
-	pool, ctx := statusTestPool(t)
-	admin := seedMember(t, ctx, pool, "admin", "approved")
-	target := seedMember(t, ctx, pool, "ahli", "pending")
-
-	rec := callSetStatusWithBody(t, pool, admin, target, "approve", `{"bypass_payment":true}`)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, mahu 400 (body: %s)", rec.Code, rec.Body.String())
-	}
-	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
-		t.Fatalf("bypass tanpa nota ditolak tapi menulis %d catatan audit", len(logs))
-	}
-}
-
-// Laluan penuh berjaya: admin bypass ahli yang belum bayar, dengan nota.
-// Audit mesti rekod payment_bypassed + bypass_reason.
-func TestApproveBypassPaymentBerjayaUntukAdmin(t *testing.T) {
-	pool, ctx := statusTestPool(t)
-	admin := seedMember(t, ctx, pool, "admin", "approved")
-	target := seedMember(t, ctx, pool, "ahli", "pending")
-
-	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
-		`{"bypass_payment":true,"bypass_reason":"ahli lama, dah bayar tunai sebelum sistem digital"}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, mahu 200 (body: %s)", rec.Code, rec.Body.String())
-	}
-
-	logs := auditRowsFor(t, ctx, pool, target)
-	if len(logs) != 1 {
-		t.Fatalf("mahu 1 catatan audit, dapat %d", len(logs))
-	}
-	newVals := logs[0]["new"].(map[string]any)
-	if newVals["status"] != "approved" {
-		t.Errorf("status = %v, mahu approved", newVals["status"])
-	}
-	if newVals["payment_bypassed"] != true {
-		t.Errorf("payment_bypassed = %v, mahu true", newVals["payment_bypassed"])
-	}
-	if newVals["bypass_reason"] != "ahli lama, dah bayar tunai sebelum sistem digital" {
-		t.Errorf("bypass_reason = %v, tak dirakam betul", newVals["bypass_reason"])
-	}
-	if newVals["actor_user_id"] != admin.String() {
-		t.Errorf("actor_user_id = %v, mahu %s", newVals["actor_user_id"], admin)
-	}
-}
+// Task 8 (staff-id verification) makes staff verification a hard
+// prerequisite for ANY approval, and forces req.BypassPayment=false
+// whenever the target is staff-exempt (see setMemberStatus). seedMember
+// (above) sets staff_id_verified_at = now() for every profile it seeds,
+// so every target these bypass/payment-gate tests used is staffExempt
+// by construction - meaning the (a)-(d) sub-gate block they exercised
+// (payment-gate 403 for manager, bypass requiring a note, bypass
+// recording payment_bypassed=true, pending-bill blocking bypass) is now
+// unreachable through this handler for any caller, exactly like the
+// "non-exempt member" test the plan's Task 8 explicitly declined to
+// write (see the NOTE below TestApproveMemberManagerCannotForgeBypassAuditOnExemptMember).
+// Four tests that asserted on that now-dead path were removed here:
+// TestApproveTanpaBayaranDitolak (400 for unpaid, no-bypass approval),
+// TestApproveBypassPaymentDitolakUntukManager (403 for manager bypass),
+// TestApproveBypassPaymentPerluNota (400 for bypass without a note), and
+// TestApproveBypassPaymentBerjayaUntukAdmin (audit records
+// payment_bypassed=true/bypass_reason for a successful admin bypass).
+// TestApproveBypassPaymentBerjayaUntukSuperadmin was also removed - it
+// only ever asserted 200, which now holds vacuously for any
+// staff-verified target regardless of rank, so it no longer tests what
+// its name claims. Their coverage intent lives on in
+// TestApproveMemberRequiresStaffVerified (this file) and
+// TestApproveMemberManagerCannotForgeBypassAuditOnExemptMember (this
+// file) - the exempt path is what every caller actually hits now. If a
+// future "general member" (non-staff) type reintroduces a real
+// non-exempt path (spec's flagged out-of-scope idea), recreate these
+// against that concrete code, seeding an UNVERIFIED-but-still-approvable
+// target - not possible today, since staffExempt is defined as
+// target.StaffIDVerifiedAt.Valid and the hard gate above requires it.
 
 // Ahli yang DAH bayar (baris 'succeeded' wujud) tak patut direkod sebagai
 // "payment_bypassed" walaupun admin hantar bypass_payment=true - bypass
 // tak relevan bila bayaran sebenar dah berjaya (Opus verify LOW#1).
+//
+// NOTA (Opus verify 2026-09-03): sejak Task 8, target ni staff-exempt
+// (seedMember isi staff_id_verified_at = now()), jadi assertion di bawah
+// kini dipenuhi melalui cawangan exempt - yang PAKSA req.BypassPayment =
+// false - bukan melalui cawangan "dah bayar" yang namanya sebut. Versi
+// "betul-betul dah bayar TAPI tak exempt" TIDAK boleh disediakan tanpa
+// memalsukan keadaan yang mustahil dalam produksi: gate keras dalam
+// setMemberStatus tolak (400) mana-mana approval untuk ahli yang
+// staff_id_verified_at-nya null, dan `staffExempt` ditakrif TEPAT sebagai
+// medan itu - jadi tiada baris boleh serentak "boleh diluluskan" dan
+// "bukan exempt" hari ini. Ujian ni dikekalkan sebagai regression guard
+// untuk invariannya yang sebenar (audit TAK PERNAH catat
+// payment_bypassed untuk ahli yang duitnya memang dah masuk), dan patut
+// ditulis semula terhadap kod sebenar kalau jenis "ahli am" (bukan staff)
+// yang disebut di luar skop spec wujud nanti - sama seperti blok ujian
+// yang dibuang di atas.
 func TestApproveBypassPaymentDiabaikanBilaSudahBayar(t *testing.T) {
 	pool, ctx := statusTestPool(t)
 	admin := seedMember(t, ctx, pool, "admin", "approved")
@@ -300,57 +265,15 @@ func TestApproveBypassPaymentDiabaikanBilaSudahBayar(t *testing.T) {
 	}
 }
 
-// Bil ToyyibPay 'pending' dengan gateway_ref (bil hidup, boleh dibayar
-// bila-bila masa) mesti sekat bypass - kalau tidak ahli boleh bayar bil
-// tu lepas diluluskan dan terima 2 pengesahan bayaran (Opus verify
-// MEDIUM).
-func TestApproveBypassPaymentDitolakBilaAdaBilPending(t *testing.T) {
-	pool, ctx := statusTestPool(t)
-	admin := seedMember(t, ctx, pool, "admin", "approved")
-	target := seedMember(t, ctx, pool, "ahli", "pending")
-
-	if _, err := pool.Exec(ctx,
-		`insert into registration_payments (user_id, amount_cents, currency, gateway, gateway_ref, status)
-		 values ($1, 1000, 'myr', 'toyyibpay', $2, 'pending')`,
-		target, "bill-"+uuid.NewString()); err != nil {
-		t.Fatalf("seed bil pending: %v", err)
-	}
-
-	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
-		`{"bypass_payment":true,"bypass_reason":"dah bayar tunai"}`)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, mahu 409 (body: %s)", rec.Code, rec.Body.String())
-	}
-	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
-		t.Fatalf("bypass ditolak tapi menulis %d catatan audit", len(logs))
-	}
-}
-
-// Baris 'pending' TANPA gateway_ref (createBill berjaya cipta bil di
-// ToyyibPay tapi SetRegistrationPaymentGatewayRef gagal selepas itu -
-// "TETINGKAP BAKI" dlm registration_payment.go Checkout) MESTI turut
-// sekat bypass - bil sebenar tetap wujud di ToyyibPay walaupun ref tak
-// sempat disimpan, jadi tapisan `gateway_ref is not null` TAK boleh
-// dipakai di sini (beza drpd ListPendingRegistrationPaymentsOlderThan,
-// Opus verify susulan).
-func TestApproveBypassPaymentDitolakBilaAdaBarisPendingTanpaRef(t *testing.T) {
-	pool, ctx := statusTestPool(t)
-	admin := seedMember(t, ctx, pool, "admin", "approved")
-	target := seedMember(t, ctx, pool, "ahli", "pending")
-
-	if _, err := pool.Exec(ctx,
-		`insert into registration_payments (user_id, amount_cents, currency, gateway, status)
-		 values ($1, 1000, 'myr', 'toyyibpay', 'pending')`,
-		target); err != nil {
-		t.Fatalf("seed baris pending tanpa ref: %v", err)
-	}
-
-	rec := callSetStatusWithBody(t, pool, admin, target, "approve",
-		`{"bypass_payment":true,"bypass_reason":"dah bayar tunai"}`)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, mahu 409 (body: %s)", rec.Code, rec.Body.String())
-	}
-}
+// TestApproveBypassPaymentDitolakBilaAdaBilPending and
+// TestApproveBypassPaymentDitolakBilaAdaBarisPendingTanpaRef (409 for a
+// pending ToyyibPay bill blocking bypass) were removed for the same
+// Task 8 reason as the block of tests documented above this function's
+// former neighbors: seedMember's target is always staff-exempt, so the
+// hard block on (d) HasPendingRegistrationPayment no longer applies to
+// it (staffExempt downgrades that check to a log-only warning - see
+// setMemberStatus). That warning path isn't covered by a live_test here
+// since it only writes a log line, not an observable side effect.
 
 // Body cacat (bypass_payment jenis string bukan bool) mesti pulang 400
 // jelas, bukan senyap jadi false lalu terus approve (Opus verify LOW#2).
@@ -378,19 +301,86 @@ func TestApproveBodyBypassPaymentJenisSalahDitolak(t *testing.T) {
 	}
 }
 
-// Superadmin (rank tertinggi) mesti lulus semakan IsAtLeastRole("admin")
-// yang sama macam admin - bukan cuma tier admin literal.
-func TestApproveBypassPaymentBerjayaUntukSuperadmin(t *testing.T) {
-	pool, ctx := statusTestPool(t)
-	superadmin := seedMember(t, ctx, pool, "superadmin", "approved")
-	target := seedMember(t, ctx, pool, "ahli", "pending")
+// TestApproveBypassPaymentBerjayaUntukSuperadmin (superadmin bypass
+// succeeds) was removed - it only ever asserted 200, which now holds
+// vacuously for any staff-exempt target regardless of the caller's rank
+// (see the Task 8 comment block above), so it stopped testing what its
+// name claims: IsAtLeastRole("admin") passing for the superadmin tier.
 
-	rec := callSetStatusWithBody(t, pool, superadmin, target, "approve",
-		`{"bypass_payment":true,"bypass_reason":"migrasi ahli lama"}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, mahu 200 (body: %s)", rec.Code, rec.Body.String())
+// Ahli yang nombor staff BELUM disahkan tak boleh diluluskan langsung -
+// gate keras ni jalan SEBELUM blok bayaran/exempt, walau ahli dah bayar
+// (Task 8, staff-id verification).
+func TestApproveMemberRequiresStaffVerified(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	manager := createTestApprovedProfile(t, ctx, pool, "manager")
+	target := createTestPendingProfile(t, ctx, pool) // staff_id_verified_at NULL
+
+	rec := callSetStatus(t, pool, manager, target, "approve")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 unverified staff, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if logs := auditRowsFor(t, ctx, pool, target); len(logs) != 0 {
+		t.Fatalf("gate ditolak tapi menulis %d catatan audit", len(logs))
 	}
 }
+
+// Ahli yang staff disahkan mesti diluluskan walau TIADA bayaran
+// 'succeeded' langsung - pengesahan staff sendiri mencukupi utk exempt
+// gate yuran (Task 8).
+func TestApproveMemberStaffVerifiedExemptsFeeEvenWithoutPayment(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	manager := createTestApprovedProfile(t, ctx, pool, "manager")
+	target := createTestPendingProfile(t, ctx, pool)
+	verifyStaffIDDirect(t, ctx, pool, target, manager)
+
+	rec := callSetStatus(t, pool, manager, target, "approve")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 - staff verified exempts fee, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// v1 bug ini test guard: manager (rank 60, TAK dibenarkan bypass yuran -
+// itu gate rank admin/80) hantar bypass_payment=true pada ahli yang
+// SUDAH staff-exempt. Kelulusan mesti tetap 200 (exemption sendiri
+// mencukupi), TAPI rekod audit TIDAK BOLEH tunjuk payment_bypassed=true -
+// manager tu tak pernah betul-betul guna kuasa bypass yang dia sebenarnya
+// tiada (Task 8).
+func TestApproveMemberManagerCannotForgeBypassAuditOnExemptMember(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	manager := createTestApprovedProfile(t, ctx, pool, "manager")
+	target := createTestPendingProfile(t, ctx, pool)
+	verifyStaffIDDirect(t, ctx, pool, target, manager)
+
+	rec := callSetStatusWithBody(t, pool, manager, target, "approve",
+		`{"bypass_payment": true, "bypass_reason": ""}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (exempt regardless of the bogus bypass flag), got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	logs := auditRowsFor(t, ctx, pool, target)
+	if len(logs) != 1 {
+		t.Fatalf("mahu 1 catatan audit, dapat %d", len(logs))
+	}
+	newVals := logs[0]["new"].(map[string]any)
+	if _, ok := newVals["payment_bypassed"]; ok {
+		t.Errorf("audit record must not show payment_bypassed for a staff-exempt approval, got: %v", newVals)
+	}
+}
+
+// NOTE (Opus verify round 2, carried over from the plan): there is
+// deliberately NO test here named something like "non-exempt member
+// still requires admin for bypass". Since the hard staff-verification
+// gate (first check in the `status == "approved"` branch) returns 400
+// before the payment-gate block runs at all, `staffExempt` is ALWAYS
+// true by the time that block executes - the `else` branch (existing
+// HasSucceededRegistrationPayment/BypassPayment/bypass_reason logic) is
+// unreachable through this handler today, by construction, for every
+// caller. A test asserting "200" while unable to construct a real
+// non-exempt-but-approvable member is not a regression test - it is
+// confirmation of the same exempt path already covered by the two tests
+// above. If a future "general member" type (non-staff, spec's flagged
+// out-of-scope idea) reintroduces a real non-exempt path, add the test
+// then, against that concrete code, not against a hypothetical one now.
 
 // Reject mesti membatalkan refresh token DALAM transaksi yang sama.
 func TestRejectDiauditDanBatalkanToken(t *testing.T) {

@@ -12,6 +12,138 @@ simpanan. Modul aktiviti (backend penuh) siap - jurangnya direkod di bawah.
 
 ---
 
+## Verifikasi Staff ID - SPEC v2 + PLAN v2 SIAP 2026-09-02, kod SEDANG dibina
+
+Keperluan pemilik produk: nombor staff (medan DB/API kini `staff_id`,
+dinamakan semula drpd draf awal `staff_number` supaya konsisten dgn
+`member_id` sedia ada) jadi medan WAJIB semasa daftar, disahkan
+(verify) oleh manager rank>=60 (BUKAN supervisor, BUKAN tester), nombor
+ahli (`member_id`) ditangguh sampai staff disahkan, ahli yang staff-nya
+disahkan **exempt sepenuhnya** drpd yuran pendaftaran ToyyibPay, DAN
+admin/superadmin rank>=80 boleh betulkan `staff_id` bila-bila masa
+(termasuk lepas verified - keperluan susulan utk ahli sedia ada yang
+dibackfill guna `user_id` sbg placeholder). Payment history
+(`/me/payments`) turut dapat medan `outstanding_registration_fee`
+baharu.
+
+Spec: [`docs/superpowers/specs/2026-09-02-staff-id-verification-design.md`](./docs/superpowers/specs/2026-09-02-staff-id-verification-design.md).
+Plan (14 task, TDD): [`docs/superpowers/plans/2026-09-02-staff-id-verification.md`](./docs/superpowers/plans/2026-09-02-staff-id-verification.md).
+
+⚠️ **Kesan logik dicatat dalam spec**: sebab staff verified jadi syarat
+WAJIB approve DAN exempt yuran serentak, laluan bayar ToyyibPay jadi
+tak relevan untuk SEMUA ahli baharu lepas ciri ni (bukan bug - keputusan
+produk eksplisit).
+
+**Opus verify pusingan 1 (2026-09-02) - SIAP, v1 dibetulkan jadi v2.**
+Beberapa bug KRITIKAL dijumpai dan DIBAIKI dlm spec+plan (kod belum
+ditulis lagi, jadi "dibaiki" bermaksud dokumen dikemas kini, bukan
+commit kod): route/`:id` guna `profiles.id` yg tak wujud (patut
+`user_id`, padan `GetProfileByUserID`); gate exempt yuran v1 boleh
+tersalah rekod audit "bypass digunakan" oleh manager yg sebenarnya
+tiada kuasa bypass (`req.BypassPayment` kini DIPAKSA `false` bila
+staff exempt, SEBELUM audit); backfill v1 auto-exempt ahli
+pending/rejected sedia ada (kini HANYA ahli `approved` auto-verified);
+`member_id` jadi nullable pecahkan >20 tapak kod Go (`billTo` ToyyibPay
+antaranya) - kini Task 2 berasingan utk audit+baiki semua tapak;
+Flutter akan crash pada `member_id: null` - kini Task 10 berasingan.
+Pusingan verifikasi KEDUA (terhadap dokumen v2) sedang dijalankan.
+
+- [x] **Opus verify pusingan 2 (v2) SIAP 2026-09-02** - SEMUA penemuan
+      pusingan 1 disahkan DIBAIKI dgn betul (bukan cuma perkataan) di
+      dokumen v2, termasuk dua yg paling rumit: fix `req.BypassPayment
+      = false` MEMANG tutup lubang audit-forgery (`req` dihantar
+      by-value, audit dibaca lepas blok yuran), dan logik
+      transaksi/rollback Task 5 selamat drpd race (`WithTx` wujud
+      sebenar, `NextSequence` satu upsert jadual jadi rollback betul-
+      betul buang sequence, `ErrNoRows` cuma bermaksud pemenang lain
+      dah commit - bukan baca lapuk). 5 isu kecil tambahan ditemui +
+      DIBAIKI terus dlm plan: tapak `.MemberID` yg tertinggal (Task 2),
+      sketch handler Task 5 guna API yg tak wujud (`authFromContext`
+      dsb - dibetulkan ke `middleware.UserID`/`authz.IsAtLeastRole`
+      dgn error return/`audit.Record` dlm transaksi), override staff
+      number pada profile yg dah verified kini 409 (bukan senyap
+      diabaikan), audit pembetulan (Task 6) kini rekod nilai LAMA
+      jugak, ujian tautologi Task 8 dibuang ganti nota penjelasan.
+- [x] **Backend Task 1-9 DIBINA 2026-09-02/03** - kod SIAP, staged
+      (`git add`), BELUM commit. `go build`/`go vet`/`gofmt -l`/
+      `go test ./...` bersih (disahkan terhadap DB Postgres sebenar
+      sekali gus, bukan cuma test yg di-skip). **2 isu dicatat utk
+      Opus verify akhir**: (1) satu ujian Task 3 (`staff_id_query_live_test.go`)
+      guna literal `"EMP-9999"` yg tak selamat dijalankan berulang atas
+      DB tak-segar; (2) Task 8 buang 7 ujian sedia ada (`TestApprove
+      BypassPayment*`) sebab kod sub-gate yuran (`else` branch, gate
+      rank admin utk bypass) jadi kod mati kekal - sengaja per reka
+      bentuk, tapi bermakna sub-gate tu kini SIFAR liputan ujian.
+- [x] **Opus verify akhir (kod) SIAP 2026-09-03 - 6 penemuan DIBAIKI**
+      (backend, belum commit; `go build`/`go vet`/`gofmt`/`go test ./...`
+      + suite live handler bersih, dijalankan 3 kali berturut atas DB
+      yang sama tanpa dibuang):
+      - HIGH `VerifyStaffID` tiada semakan hierarki rank - manager boleh
+        cap akaun rank LEBIH TINGGI yg masih pending dgn `staff_id`
+        pilihan dia + jana `member_id` untuknya. Ditambah `caller.RoleRank
+        <= target.RoleRank` -> 403 (padanan `CorrectStaffID`/
+        `CorrectMemberID`), + 2 ujian live (repro disahkan: tanpa guard,
+        manager berjaya jana `MARC-EMP-xxxx/2026-SA`).
+      - MED `staff_id` kini DITIER macam `email` - ahli biasa dapat
+        `null` untuk ahli lain dlm `GET /members`/`GET /members/:id`
+        (nombor staff sendiri kekal nampak). ⚠️ **Perubahan JSON**:
+        `staff_id` jadi nullable pada dua respons itu - Flutter Task 11
+        kena baca `String?`. `staff_id_verified_at` kekal Tier 1.
+      - MED `outstanding_registration_fee` songsang utk kes biasa -
+        setiap ahli pending baharu nampak banner "bayar sekarang" walau
+        dia PASTI exempt. Kini guna `staffFeeExempt()` (profile.go):
+        exempt bila dah verified ATAU `staff_id` ialah nombor sebenar
+        (bukan placeholder `user_id`). Baris placeholder pra-migrasi
+        kekal `true`.
+      - LOW-MED `GET /me` kini pulangkan `staff_id` +
+        `staff_id_verified_at` - ahli pending tak boleh panggil
+        `/members*`, jadi sebelum ni dia langsung tak nampak nombor
+        staff sendiri atau status pengesahannya.
+      - LOW 3 literal `staff_id` hardcoded dlm ujian
+        (`EMP-9999`/`EMP-REAL-000x`) ditukar ke `"EMP-"+uuid` - suite
+        kini idempoten atas DB ujian yg tak dibuang (isu (1) yg dicatat
+        di atas ditutup).
+      - LOW `TestApproveBypassPaymentDiabaikanBilaSudahBayar` kini lulus
+        melalui cawangan exempt, bukan cawangan "dah bayar". Setup
+        bukan-exempt TIDAK disediakan: mustahil dlm produksi (gate keras
+        approve = `staff_id_verified_at` bukan null, dan `staffExempt`
+        ialah medan yg SAMA) - nota penjelasan ditambah pada ujian itu,
+        bukan senario palsu.
+- [ ] Flutter Task 10-13 belum dibina (+ `staff_id` nullable, lihat
+      nota MED di atas).
+
+## Format nombor ahli baharu (2026-09-03) ✅
+
+Susulan terus drpd ciri Verifikasi Staff ID. Format `member_id` BAHARU
+(untuk pendaftaran akan datang sahaja - ahli sedia ada TAK disentuh):
+`MARC-{staff_id}/{tahun}-{kod}` (cth `MARC-0110/2026-0001`). `{kod}`:
+4-digit sequence GLOBAL (tak reset ikut tahun) utk ahli biasa,
+`T{n}`/`P{n}` (sequence global berasingan) utk `tester`/`penaung`
+(role masa depan), `SA` (literal, tiada nombor - polisi "1 superadmin
+je" TAK dikuatkuasakan kod) utk `superadmin`. Admin/superadmin
+(rank>=80) boleh terus edit `member_id` bila-bila via
+`PATCH /members/:id/member-id` - HANYA utk betulkan yg SUDAH wujud,
+409 kalau target belum ada member_id (elak pintas gate verifikasi).
+
+Spec: [`docs/superpowers/specs/2026-09-03-member-id-format-redesign-design.md`](./docs/superpowers/specs/2026-09-03-member-id-format-redesign-design.md).
+Plan (4 task, TDD): [`docs/superpowers/plans/2026-09-03-member-id-format-redesign.md`](./docs/superpowers/plans/2026-09-03-member-id-format-redesign.md).
+
+Dibuat (backend Tasks 1-4):
+- `generateMemberID` format baharu + sequence `member_seq:ahli` /
+  `member_seq:tester`; superadmin literal `SA`; role tak dikenali jatuh
+  ke laluan 4-digit. Guard placeholder staff_id (defense-in-depth) +
+  unique-violation dibezakan `profiles_staff_id_key` vs
+  `profiles_member_id_key`.
+- Tolak `/` pada `staff_id` (register, verify override, correct).
+- `CorrectStaffID` dikeraskan: self-lockout 400 + rank `<=` 403.
+- `PATCH /members/:id/member-id` (`CorrectMemberID`) - gate admin,
+  self-lockout, rank, 409 NULL vs 409 duplicate, audit
+  `EntityMemberIDCorrection`. Tiada perubahan Flutter (member_id
+  kekal string legap).
+
+Opus verify pusingan 1+2 (2026-09-03) pada spec/plan SIAP sebelum kod
+dibina - lihat git history dokumen v2.
+
 ## Integrasi Telegram - fasa 2 (notifikasi) + fasa 3 (2FA) belum dibina
 
 **Fasa 1 (binding akaun) SIAP 2026-08-22** - spec:

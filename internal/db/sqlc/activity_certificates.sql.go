@@ -198,10 +198,10 @@ order by coalesce(pr.display_name, pr.member_id)
 `
 
 type ListEligibleForCertificateRow struct {
-	RegistrationID uuid.UUID `json:"registration_id"`
-	UserID         uuid.UUID `json:"user_id"`
-	DisplayName    string    `json:"display_name"`
-	Attended       int64     `json:"attended"`
+	RegistrationID uuid.UUID   `json:"registration_id"`
+	UserID         uuid.UUID   `json:"user_id"`
+	DisplayName    pgtype.Text `json:"display_name"`
+	Attended       int64       `json:"attended"`
 }
 
 // Server mengira sendiri siapa layak - management tidak menyenaraikan.

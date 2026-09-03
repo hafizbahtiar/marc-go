@@ -138,13 +138,19 @@ func (h *ActivityRegistrationPaymentHandler) Checkout(c *gin.Context) {
 	}
 
 	// billTo WAJIB oleh ToyyibPay (lihat toyyibpay.go) - fallback ke
-	// member_id kalau display_name kosong.
+	// member_id kalau display_name kosong. member_id kini boleh NULL
+	// (ahli belum disahkan staff number), jadi email jadi fallback
+	// ketiga supaya billTo tak pernah kosong (padan
+	// RegistrationPaymentHandler.Checkout).
 	billTo := ""
 	if profile.DisplayName.Valid {
 		billTo = profile.DisplayName.String
 	}
+	if billTo == "" && profile.MemberID.Valid {
+		billTo = profile.MemberID.String
+	}
 	if billTo == "" {
-		billTo = profile.MemberID
+		billTo = profile.Email
 	}
 
 	// billPhone JUGA WAJIB - padanan pola RegistrationPaymentHandler.Checkout
@@ -410,7 +416,7 @@ func (h *ActivityRegistrationPaymentHandler) Webhook(c *gin.Context) {
 			// PDF dijana DI SINI (caller) - lihat komen padanan di
 			// RegistrationPaymentHandler.Webhook.
 			pdfBytes, perr := receipt.GenerateFeePDF(receipt.FeePayment{
-				MemberID:           profile.MemberID,
+				MemberID:           profile.MemberID.String,
 				PayerName:          displayName,
 				PayerEmail:         profile.Email,
 				AmountCents:        amountCents,

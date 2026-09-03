@@ -191,6 +191,9 @@ func NewRouter(
 	approved.GET("/members/:id", profileHandler.GetMemberDetail)
 	approved.POST("/members/:id/approve", profileHandler.ApproveMember)
 	approved.POST("/members/:id/reject", profileHandler.RejectMember)
+	approved.POST("/members/:id/verify-staff-id", profileHandler.VerifyStaffID)
+	approved.PATCH("/members/:id/staff-id", profileHandler.CorrectStaffID)
+	approved.PATCH("/members/:id/member-id", profileHandler.CorrectMemberID)
 	approved.POST("/members/:id/cancel-registration-payment", profileHandler.CancelMemberRegistrationPayment)
 	approved.PATCH("/members/:id/role", profileHandler.UpdateMemberRole)
 	// Status AKTIF/TAK AKTIF keahlian - BERASINGAN drpd approve/reject

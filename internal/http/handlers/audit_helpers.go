@@ -46,7 +46,9 @@ func auditActor(c *gin.Context, q *sqlc.Queries) audit.Actor {
 		UserAgent: c.Request.UserAgent(),
 	}
 	if profile, err := q.GetProfileByUserID(c.Request.Context(), userID); err == nil {
-		actor.MemberID = profile.MemberID
+		if profile.MemberID.Valid {
+			actor.MemberID = profile.MemberID.String
+		}
 		actor.RoleKey = profile.RoleKey
 	}
 	return actor

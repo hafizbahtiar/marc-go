@@ -47,7 +47,7 @@ func NewProfileHandler(pool *pgxpool.Pool, emailClient *email.Client, r2 *storag
 }
 
 type profileResponse struct {
-	MemberID      string  `json:"member_id"`
+	MemberID      *string `json:"member_id"`
 	Email         string  `json:"email"`
 	EmailVerified bool    `json:"email_verified"`
 	Status        string  `json:"status"`
@@ -89,6 +89,17 @@ type profileResponse struct {
 	DepartmentCode *string `json:"department_code"`
 	DepartmentName *string `json:"department_name"`
 	Position       *string `json:"position"`
+
+	// StaffID/StaffIDVerifiedAt - nama medan sama macam memberResponse/
+	// memberDetailResponse. Ditambah 2026-09-03 (Opus verify): ahli
+	// `pending` cuma boleh panggil /me (endpoint /members* di bawah
+	// RequireApprovedStatus), jadi tanpa medan ni dia langsung tiada cara
+	// nampak nombor staff dia sendiri atau sama ada ia dah disahkan -
+	// sedangkan pengesahan itulah gate kelulusan dia. Data caller SENDIRI,
+	// jadi tiada tiering di sini (beza drpd memberResponse).
+	// VerifiedAt null = belum disahkan.
+	StaffID           string  `json:"staff_id"`
+	StaffIDVerifiedAt *string `json:"staff_id_verified_at"`
 }
 
 // Me setara `myProfileProvider` di Flutter - profil user semasa. Sengaja
@@ -116,7 +127,7 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, profileResponse{
-		MemberID:                  row.MemberID,
+		MemberID:                  textToPtr(row.MemberID),
 		Email:                     row.Email,
 		EmailVerified:             row.EmailVerified,
 		Status:                    row.Status,
@@ -138,6 +149,8 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		DepartmentCode:            textToPtr(row.DepartmentCode),
 		DepartmentName:            textToPtr(row.DepartmentName),
 		Position:                  textToPtr(row.Position),
+		StaffID:                   row.StaffID,
+		StaffIDVerifiedAt:         formatTimeNullable(row.StaffIDVerifiedAt),
 	})
 }
 
@@ -393,7 +406,7 @@ func textToAny(t pgtype.Text) any {
 
 type memberResponse struct {
 	UserID      string  `json:"user_id"`
-	MemberID    string  `json:"member_id"`
+	MemberID    *string `json:"member_id"`
 	DisplayName *string `json:"display_name"`
 
 	// Nullable: emel ahli LAIN cuma didedahkan kepada management. Sejak
@@ -436,6 +449,20 @@ type memberResponse struct {
 	DepartmentCode *string `json:"department_code"`
 	DepartmentName *string `json:"department_name"`
 	Position       *string `json:"position"`
+
+	// StaffID - nombor staff SEBENAR ahli (nombor pekerja majikan), jadi
+	// ia ditier macam Email/RegistrationPaymentStatus di atas dan BUKAN
+	// macam MemberID: cuma management (+ baris caller sendiri) dapat nilai
+	// sebenar, ahli biasa dapat `null` (Opus verify 2026-09-03 - sebelum
+	// ni setiap ahli approved boleh kikis nombor staff semua orang melalui
+	// GET /members).
+	//
+	// StaffIDVerifiedAt kekal terbuka kepada semua viewer yang boleh
+	// nampak baris ni: ia cuma STATUS pengesahan (sudah/belum), bukan
+	// nombor itu sendiri, dan management perlu nampak status tu terus dari
+	// barisan kelulusan (Task 7). null = belum disahkan.
+	StaffID           *string `json:"staff_id"`
+	StaffIDVerifiedAt *string `json:"staff_id_verified_at"`
 }
 
 // Members setara `membersProvider` di Flutter - gantian RLS
@@ -496,6 +523,12 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 		if !isManagement {
 			paymentStatus = ""
 		}
+		// Padanan pola Email juga - nombor staff SENDIRI kekal nampak,
+		// nombor staff orang lain cuma untuk management.
+		staffID := row.StaffID
+		if !isManagement && row.UserID != userID {
+			staffID = ""
+		}
 		members[i] = h.toMemberResponse(ctx, memberRow{
 			UserID: row.UserID, MemberID: row.MemberID, DisplayName: row.DisplayName,
 			Email: email, RoleKey: row.RoleKey, RoleName: row.RoleName,
@@ -503,6 +536,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 			AvatarKey: row.AvatarR2Key, RegistrationPaymentStatus: paymentStatus,
 			IsActive: row.IsActive, DepartmentCode: row.DepartmentCode,
 			DepartmentName: row.DepartmentName, Position: row.Position,
+			StaffID: staffID, StaffIDVerifiedAt: row.StaffIDVerifiedAt,
 		})
 	}
 	c.JSON(http.StatusOK, members)
@@ -516,7 +550,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 type memberDetailResponse struct {
 	// Tier 1 - sesiapa dlm skop visibleRankCeiling.
 	UserID         string  `json:"user_id"`
-	MemberID       string  `json:"member_id"`
+	MemberID       *string `json:"member_id"`
 	DisplayName    *string `json:"display_name"`
 	AvatarURL      *string `json:"avatar_url"`
 	RoleKey        string  `json:"role_key"`
@@ -528,11 +562,22 @@ type memberDetailResponse struct {
 	DepartmentCode *string `json:"department_code"`
 	DepartmentName *string `json:"department_name"`
 	Position       *string `json:"position"`
+	// StaffIDVerifiedAt - Tier 1 (padanan memberResponse, Task 7): STATUS
+	// pengesahan staff (sudah/belum) bukan data sensitif macam emel/
+	// telefon, dan management perlu nampak status tu dari senarai. Nombor
+	// staff SENDIRI pula Tier 2 di bawah.
+	StaffIDVerifiedAt *string `json:"staff_id_verified_at"`
 
 	// Tier 2 - caller.RoleCategory == authz.CategoryManagement sahaja.
 	Email                     *string `json:"email"`
 	Phone                     *string `json:"phone"`
 	RegistrationPaymentStatus *string `json:"registration_payment_status"`
+	// StaffID - Tier 2, bukan Tier 1 (Opus verify 2026-09-03): nombor
+	// staff ialah nombor pekerja majikan, jadi ia ditier macam Email/
+	// Phone. Ahli nampak nombor staff SENDIRI melalui GET /me (yang
+	// memulangkan staff_id + staff_id_verified_at), bukan melalui
+	// endpoint ni.
+	StaffID *string `json:"staff_id"`
 
 	// Tier 3 - caller.RoleKey == "superadmin" sahaja.
 	EmergencyContactName  *string           `json:"emergency_contact_name"`
@@ -610,25 +655,28 @@ func (h *ProfileHandler) GetMemberDetail(c *gin.Context) {
 	}
 
 	res := memberDetailResponse{
-		UserID:         target.UserID.String(),
-		MemberID:       target.MemberID,
-		DisplayName:    textToPtr(target.DisplayName),
-		AvatarURL:      avatarURLFor(ctx, h.r2, target.AvatarR2Key),
-		RoleKey:        target.RoleKey,
-		RoleName:       target.RoleName,
-		RoleRank:       target.RoleRank,
-		Category:       target.RoleCategory,
-		Status:         target.Status,
-		IsActive:       target.IsActive,
-		DepartmentCode: textToPtr(target.DepartmentCode),
-		DepartmentName: textToPtr(target.DepartmentName),
-		Position:       textToPtr(target.Position),
+		UserID:            target.UserID.String(),
+		MemberID:          textToPtr(target.MemberID),
+		DisplayName:       textToPtr(target.DisplayName),
+		AvatarURL:         avatarURLFor(ctx, h.r2, target.AvatarR2Key),
+		RoleKey:           target.RoleKey,
+		RoleName:          target.RoleName,
+		RoleRank:          target.RoleRank,
+		Category:          target.RoleCategory,
+		Status:            target.Status,
+		IsActive:          target.IsActive,
+		DepartmentCode:    textToPtr(target.DepartmentCode),
+		DepartmentName:    textToPtr(target.DepartmentName),
+		Position:          textToPtr(target.Position),
+		StaffIDVerifiedAt: formatTimeNullable(target.StaffIDVerifiedAt),
 	}
 
 	if caller.RoleCategory == authz.CategoryManagement {
 		email := target.Email
 		res.Email = &email
 		res.Phone = textToPtr(target.Phone)
+		staffID := target.StaffID
+		res.StaffID = &staffID
 
 		// Padanan pola Me() - status bayaran cuma wujud kalau ahli PERNAH
 		// cuba bayar (pgx.ErrNoRows = tak pernah, bukan ralat pelayan).
@@ -704,7 +752,7 @@ func visibleRankCeiling(roles []sqlc.Role, viewerRank int32) int32 {
 // compile dengan senyap.
 type memberRow struct {
 	UserID                    uuid.UUID
-	MemberID                  string
+	MemberID                  pgtype.Text
 	DisplayName               pgtype.Text
 	Email                     string // kosong = sembunyikan medan
 	RoleKey                   string
@@ -718,6 +766,8 @@ type memberRow struct {
 	DepartmentCode            pgtype.Text
 	DepartmentName            pgtype.Text
 	Position                  pgtype.Text
+	StaffID                   string // kosong = sembunyikan medan (padanan Email)
+	StaffIDVerifiedAt         pgtype.Timestamptz
 }
 
 func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memberResponse {
@@ -729,9 +779,13 @@ func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memb
 	if m.RegistrationPaymentStatus != "" {
 		paymentStatusPtr = &m.RegistrationPaymentStatus
 	}
+	var staffIDPtr *string
+	if m.StaffID != "" {
+		staffIDPtr = &m.StaffID
+	}
 	return memberResponse{
 		UserID:                    m.UserID.String(),
-		MemberID:                  m.MemberID,
+		MemberID:                  textToPtr(m.MemberID),
 		DisplayName:               textToPtr(m.DisplayName),
 		Email:                     emailPtr,
 		RoleKey:                   m.RoleKey,
@@ -745,6 +799,8 @@ func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memb
 		DepartmentCode:            textToPtr(m.DepartmentCode),
 		DepartmentName:            textToPtr(m.DepartmentName),
 		Position:                  textToPtr(m.Position),
+		StaffID:                   staffIDPtr,
+		StaffIDVerifiedAt:         formatTimeNullable(m.StaffIDVerifiedAt),
 	}
 }
 
@@ -890,6 +946,8 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		Email: target.Email, RoleKey: newRole.Key, RoleName: newRole.Name,
 		RoleRank: newRole.Rank, Category: newRole.Category, Status: updated.Status,
 		AvatarKey: updated.AvatarR2Key, IsActive: updated.IsActive,
+		DepartmentCode: updated.DepartmentCode, Position: updated.Position,
+		StaffID: updated.StaffID, StaffIDVerifiedAt: updated.StaffIDVerifiedAt,
 	}))
 }
 
@@ -1247,60 +1305,113 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 	// Diletak SEBELUM tx.Begin sengaja: kalau tak lulus, tiada transaksi
 	// untuk dibuka langsung.
 	if status == "approved" {
-		// Semak bayaran SEBENAR dulu, tak kira flag bypass - kalau ahli
-		// dah bayar (online, atau padanan lain), langkau tak relevan
-		// langsung. Ni sengaja ditulis SEBELUM cawangan bypass (Opus
-		// verify: admin yang tersilap hantar bypass_payment=true untuk
-		// ahli yang DAH bayar tak patut buat audit rekod
-		// "payment_bypassed" palsu bagi yuran yang sebenarnya dikutip).
-		paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+		// Gate keras: nombor staff MESTI disahkan sebelum ahli boleh
+		// diluluskan langsung - tiada bypass utk semakan ni (beza drpd
+		// gate bayaran di bawah, yang admin boleh langkau). Diletak
+		// SEBELUM blok bayaran/exempt di bawah supaya `staffExempt`
+		// (ditakrif seterusnya) SENTIASA true pada titik itu.
+		if !target.StaffIDVerifiedAt.Valid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "nombor staff ahli ni belum disahkan - sahkan nombor staff dulu sebelum meluluskan"})
 			return
 		}
-		if paid {
-			req.BypassPayment = false
-		} else if req.BypassPayment {
-			// Langkau bayaran - hanya admin/superadmin (rank >= "admin"),
-			// BUKAN supervisor/manager. IsAtLeastRole (bukan IsManagement)
-			// sengaja dipakai di sini supaya tier di bawah admin tak boleh
-			// langkau gate kewangan ni.
-			isAdminUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "admin")
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
-				return
-			}
-			if !isAdminUp {
-				c.JSON(http.StatusForbidden, gin.H{"error": "cuma admin/superadmin boleh langkau bayaran yuran"})
-				return
-			}
-			if strings.TrimSpace(req.BypassReason) == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "nota diperlukan untuk langkau bayaran yuran"})
-				return
-			}
 
-			// Baris pembayaran 'pending' yang masih boleh diselesaikan
-			// bila-bila masa (Opus verify: MEDIUM, dan verify susulan -
-			// TANPA tapisan gateway_ref, lihat komen query) - kalau baris
-			// begini wujud, ahli boleh bayar lepas diluluskan dan webhook
-			// tandakan 'succeeded', jadi terima 2 pengesahan bayaran
-			// (tunai + bil online lama) tanpa refund path. Blok sehingga
-			// baris lama diselesaikan (webhook/pautan manual) atau tamat
-			// tempoh (registrationsweep + billExpiryDate ToyyibPay).
+		// staffExempt sentiasa true di sini (gate keras di atas dah pulang
+		// awal kalau tidak) - dikekalkan sbg pemboleh ubah bernama eksplisit
+		// (bukan di-inline) sebab ia titik pelanjutan utk kemungkinan jenis
+		// "ahli am" (bukan staff) yang disebut di luar skop dlm spec - bila
+		// itu wujud, staffExempt TAK LAGI sentiasa true, dan cawangan else
+		// di bawah (kod bayaran/bypass sedia ada, tak berubah) akan jadi
+		// boleh dicapai lagi.
+		staffExempt := target.StaffIDVerifiedAt.Valid
+		if staffExempt {
+			// Exempt sepenuhnya drpd gate bayaran. PAKSA flag bypass ke
+			// false EKSPLISIT di sini - walau caller (cth manager rank 60,
+			// yang TAK dibenarkan bypass admin) hantar bypass_payment=true,
+			// JANGAN biar ia sampai ke rekod audit di bawah sbg seolah-olah
+			// kuasa bypass admin betul-betul digunakan. Exemption ni datang
+			// drpd staff disahkan, BUKAN drpd kuasa admin - audit mesti
+			// mencerminkan sebab sebenar (v1 bug: audit palsu direkod bila
+			// blok bayaran seluruhnya dilangkau tanpa paksaan ni).
+			req.BypassPayment = false
+
+			// (d) HasPendingRegistrationPayment SAHAJA yang tetap disemak
+			// walau staffExempt - kes tepi: ahli ada bil ToyyibPay pending
+			// (cth cuba bayar dulu sblm staff disahkan), staff disahkan,
+			// lepas tu diluluskan. Tiada block keras di sini (jangan sekat
+			// approval staff-exempt semata sebab bil pending yg IRRELEVANT
+			// kepada exemption dia) - cuma log amaran supaya staff ada
+			// jejak utk refund manual kalau bil tu lepas ni tiba-tiba
+			// 'succeeded' (webhook lewat). (a)/(b)/(c) di atas TIDAK
+			// relevan lagi sbg staffExempt dah paksa BypassPayment=false.
 			hasPendingBill, err := h.queries.HasPendingRegistrationPayment(ctx, targetID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
 				return
 			}
 			if hasPendingBill {
-				c.JSON(http.StatusConflict, gin.H{
-					"error": "ahli ada bil pendaftaran online yang belum selesai - selesaikan/tamatkan bil tu dulu sebelum langkau bayaran, kalau tidak ahli boleh bayar dua kali",
-				})
-				return
+				log.Printf("approve ahli staff-exempt (target=%s) ada bil pendaftaran pending - semak manual kalau bil ni jadi succeeded lepas ni", targetID)
 			}
 		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
-			return
+			// ...KOD SEDIA ADA (a)-(d) TAK BERUBAH LANGSUNG - unreachable
+			// hari ini sbg gate keras di atas dah pastikan staffExempt
+			// sentiasa true, tapi dikekalkan utk laluan bukan-staff akan
+			// datang (lihat komen staffExempt di atas).
+
+			// Semak bayaran SEBENAR dulu, tak kira flag bypass - kalau ahli
+			// dah bayar (online, atau padanan lain), langkau tak relevan
+			// langsung. Ni sengaja ditulis SEBELUM cawangan bypass (Opus
+			// verify: admin yang tersilap hantar bypass_payment=true untuk
+			// ahli yang DAH bayar tak patut buat audit rekod
+			// "payment_bypassed" palsu bagi yuran yang sebenarnya dikutip).
+			paid, err := h.queries.HasSucceededRegistrationPayment(ctx, targetID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+				return
+			}
+			if paid {
+				req.BypassPayment = false
+			} else if req.BypassPayment {
+				// Langkau bayaran - hanya admin/superadmin (rank >= "admin"),
+				// BUKAN supervisor/manager. IsAtLeastRole (bukan IsManagement)
+				// sengaja dipakai di sini supaya tier di bawah admin tak boleh
+				// langkau gate kewangan ni.
+				isAdminUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "admin")
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+					return
+				}
+				if !isAdminUp {
+					c.JSON(http.StatusForbidden, gin.H{"error": "cuma admin/superadmin boleh langkau bayaran yuran"})
+					return
+				}
+				if strings.TrimSpace(req.BypassReason) == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "nota diperlukan untuk langkau bayaran yuran"})
+					return
+				}
+
+				// Baris pembayaran 'pending' yang masih boleh diselesaikan
+				// bila-bila masa (Opus verify: MEDIUM, dan verify susulan -
+				// TANPA tapisan gateway_ref, lihat komen query) - kalau baris
+				// begini wujud, ahli boleh bayar lepas diluluskan dan webhook
+				// tandakan 'succeeded', jadi terima 2 pengesahan bayaran
+				// (tunai + bil online lama) tanpa refund path. Blok sehingga
+				// baris lama diselesaikan (webhook/pautan manual) atau tamat
+				// tempoh (registrationsweep + billExpiryDate ToyyibPay).
+				hasPendingBill, err := h.queries.HasPendingRegistrationPayment(ctx, targetID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status ahli"})
+					return
+				}
+				if hasPendingBill {
+					c.JSON(http.StatusConflict, gin.H{
+						"error": "ahli ada bil pendaftaran online yang belum selesai - selesaikan/tamatkan bil tu dulu sebelum langkau bayaran, kalau tidak ahli boleh bayar dua kali",
+					})
+					return
+				}
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "ahli belum bayar yuran pendaftaran"})
+				return
+			}
 		}
 	}
 
@@ -1409,6 +1520,488 @@ func (h *ProfileHandler) setMemberStatus(c *gin.Context, status string, req appr
 		Status:     updated.Status,
 		ApprovedBy: nullableUUIDString(updated.ApprovedBy),
 		ApprovedAt: formatTimeNullable(updated.ApprovedAt),
+	})
+}
+
+// staffFeeExempt - ahli ni dikecualikan (atau PASTI akan dikecualikan)
+// daripada yuran pendaftaran? Dua cabang:
+//
+//   - `staff_id_verified_at` dah diisi - pengecualian SEDANG berkuat kuasa.
+//     Ini `staffExempt` yang sama dalam setMemberStatus (Task 8).
+//   - Belum disahkan TAPI `staff_id` ialah nombor staff SEBENAR (bukan
+//     placeholder `user_id::text` yang migrasi isi untuk baris lama) -
+//     satu-satunya jalan ahli ni boleh diluluskan ialah melalui
+//     VerifyStaffID (gate keras dalam setMemberStatus), dan detik itu
+//     berlaku dia jadi exempt. Jadi dia TAK PERNAH terhutang yuran.
+//
+// Guna untuk flag `outstanding_registration_fee` (GET /me/payments):
+// tanpa cabang kedua, setiap ahli pending baharu nampak banner "bayar
+// yuran" untuk yuran yang dia takkan pernah perlu bayar - dan kalau dia
+// betul-betul bayar, duit tu masuk tanpa laluan refund yang jelas (lihat
+// amaran bil pending dalam setMemberStatus). Baris lama pra-migrasi
+// (staff_id placeholder, belum disahkan) TIDAK exempt - mereka daftar
+// bawah rejim yuran lama dan memang boleh terhutang.
+//
+// setMemberStatus SENGAJA kekal guna `target.StaffIDVerifiedAt.Valid`
+// terus, BUKAN fungsi ni: gate kelulusan mesti kekal pada pengesahan
+// SEBENAR ("akan disahkan" bukan alasan untuk luluskan sesiapa).
+func staffFeeExempt(p sqlc.GetProfileByUserIDRow) bool {
+	if p.StaffIDVerifiedAt.Valid {
+		return true
+	}
+	return p.StaffID != "" && p.StaffID != p.UserID.String()
+}
+
+type verifyStaffIDRequest struct {
+	// StaffID - override pilihan. TAK dibenarkan kalau ahli DAH disahkan
+	// (lihat VerifyStaffID) - guna PATCH /members/:id/staff-id (Task 6)
+	// untuk betulkan nombor staff selepas pengesahan pertama.
+	StaffID *string `json:"staff_id"`
+}
+
+type verifyStaffIDResponse struct {
+	UserID     string  `json:"user_id"`
+	MemberID   string  `json:"member_id"`
+	VerifiedAt *string `json:"verified_at"`
+}
+
+// VerifyStaffID - POST /members/:id/verify-staff-id. Manager KE ATAS
+// sahaja mengesahkan nombor staff yang ahli isi semasa daftar
+// (POST /auth/register, Task 4) dan menjana member_id (format
+// MARC-{staff_id}/{tahun}-{kod}) buat kali pertama - ahli tak dapat
+// member_id sehingga langkah ni selesai. Baris sedia ada yang dah
+// ada member_id format lama dibiarkan; VerifyStaffID tak tulis semula
+// nilai yang dah wujud.
+//
+// Idempoten: panggilan kedua pulang 200 dengan keadaan sedia ada TANPA
+// menulis catatan audit baharu - selagi caller TAK cuba hantar
+// `staff_id` override sekali gus (lihat cawangan 409 di bawah).
+func (h *ProfileHandler) VerifyStaffID(c *gin.Context) {
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	isManagerUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "manager")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan nombor staff"})
+		return
+	}
+	if !isManagerUp {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma manager ke atas boleh sahkan nombor staff"})
+		return
+	}
+
+	targetID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
+		return
+	}
+
+	// Elak self-lockout - padanan setMemberStatus/UpdateMemberRole/
+	// UpdateMemberActive.
+	if targetID == callerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak boleh sahkan nombor staff akaun sendiri"})
+		return
+	}
+
+	caller, err := h.queries.GetProfileByUserID(ctx, callerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan nombor staff"})
+		return
+	}
+
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+	// Semakan hierarki rank - padanan UpdateMemberRole/UpdateMemberActive/
+	// CorrectStaffID/CorrectMemberID. Pengesahan ni MENULIS pada baris
+	// target (staff_id override + member_id dijana + ahli jadi fee-exempt),
+	// jadi ia tertakluk peraturan sama: jangan benarkan caller sentuh ahli
+	// setaraf/lebih tinggi. Tanpa ni, manager boleh cap akaun rank lebih
+	// tinggi yang masih pending dengan nombor staff pilihan dia sendiri.
+	// Diletak SEBELUM semakan status/body supaya tiada maklumat keadaan
+	// target bocor kepada caller yang memang tak layak.
+	if caller.RoleRank <= target.RoleRank {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh edit ahli setaraf/lebih tinggi drpd anda"})
+		return
+	}
+	if target.Status == "rejected" {
+		c.JSON(http.StatusConflict, gin.H{"error": "ahli ni dah ditolak"})
+		return
+	}
+
+	// Body ni pilihan sepenuhnya (padanan ApproveMember) - semak `err`
+	// terus terhadap io.EOF supaya body cacat pulang 400 jelas, bukan
+	// senyap diabaikan.
+	var req verifyStaffIDRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": friendlyBindError(err)})
+		return
+	}
+
+	if target.StaffIDVerifiedAt.Valid {
+		if req.StaffID != nil {
+			// Ahli ni DAH disahkan dan caller cuba hantar override dalam
+			// panggilan yang sama - JANGAN senyap abaikan (itu akan
+			// menyembunyikan percubaan betulkan typo sebenar). Arahkan ke
+			// endpoint pembetulan khusus (Task 6) sebaliknya.
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "ahli ni dah disahkan - guna PATCH /members/:id/staff-id untuk betulkan nombor staff",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, verifyStaffIDResponse{
+			UserID:     target.UserID.String(),
+			MemberID:   target.MemberID.String,
+			VerifiedAt: formatTimeNullable(target.StaffIDVerifiedAt),
+		})
+		return
+	}
+
+	var override pgtype.Text
+	if req.StaffID != nil {
+		trimmed := strings.TrimSpace(*req.StaffID)
+		if trimmed == "" || len(trimmed) > 64 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "nombor staff tidak sah"})
+			return
+		}
+		if strings.Contains(trimmed, "/") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "nombor staff tidak boleh mengandungi '/'"})
+			return
+		}
+		override = pgtype.Text{String: trimmed, Valid: true}
+	}
+
+	effectiveStaffID := target.StaffID
+	if override.Valid {
+		effectiveStaffID = override.String
+	}
+
+	// Jangan sahkan UUID backfill sebagai nombor staff sebenar.
+	// Migrasi isi staff_id = user_id::text untuk baris sedia ada;
+	// pending/rejected kekal unverified. Kalau manager sahkan tanpa
+	// override, UUID tu jadi staff_id "rasmi", ahli jadi fee-exempt,
+	// dan approval boleh jalan. Override wajib bila staff_id masih
+	// sama dengan user_id — SAMADA member_id dah ada (pending pra-
+	// migrasi, format lama) atau masih NULL. JANGAN sempitkan syarat
+	// ni kepada `!target.MemberID.Valid`: itu akan benarkan UUID
+	// disahkan sebagai nombor staff untuk baris pending pra-migrasi.
+	if !override.Valid && target.StaffID == target.UserID.String() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "staff_id ahli ni masih placeholder - sila isi nombor staff sebenar semasa sahkan",
+		})
+		return
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan nombor staff"})
+		return
+	}
+	defer tx.Rollback(ctx) // no-op selepas Commit berjaya, padanan setMemberStatus
+	qtx := h.queries.WithTx(tx)
+
+	var newMemberID pgtype.Text
+	if !target.MemberID.Valid {
+		generated, err := generateMemberID(ctx, qtx, effectiveStaffID, target.RoleKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana nombor ahli"})
+			return
+		}
+		newMemberID = pgtype.Text{String: generated, Valid: true}
+	}
+
+	updated, err := qtx.VerifyStaffID(ctx, sqlc.VerifyStaffIDParams{
+		StaffID:    override,
+		VerifiedBy: pgtype.UUID{Bytes: callerID, Valid: true},
+		MemberID:   newMemberID,
+		UserID:     targetID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Perlumbaan: permintaan lain sahkan ahli ni dulu antara bacaan kita
+		// di atas dan UPDATE ni (VerifyStaffID sekat `staff_id_verified_at
+		// is null` dalam WHERE) - UPDATE kita padan sifar baris sebaik
+		// pemenang commit. Rollback (via defer) balikkan SEPENUHNYA
+		// termasuk kenaikan sequence generateMemberID (NextSequence ialah
+		// upsert jadual, bukan nextval telanjang), kemudian baca keadaan
+		// SEBENAR pemenang melalui querier bukan-tx (tx kita takkan commit).
+		refreshed, rErr := h.queries.GetProfileByUserID(ctx, targetID)
+		if rErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan nombor staff"})
+			return
+		}
+		c.JSON(http.StatusOK, verifyStaffIDResponse{
+			UserID:     refreshed.UserID.String(),
+			MemberID:   refreshed.MemberID.String,
+			VerifiedAt: formatTimeNullable(refreshed.StaffIDVerifiedAt),
+		})
+		return
+	} else if constraint, ok := uniqueViolationConstraint(err); ok {
+		switch constraint {
+		case "profiles_staff_id_key":
+			c.JSON(http.StatusConflict, gin.H{"error": "nombor staff ini sudah digunakan"})
+		case "profiles_member_id_key":
+			c.JSON(http.StatusConflict, gin.H{"error": "nombor ahli yang dijana berlanggar dengan rekod sedia ada - cuba sahkan semula"})
+		default:
+			c.JSON(http.StatusConflict, gin.H{"error": "konflik data - cuba semula"})
+		}
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan nombor staff"})
+		return
+	}
+
+	// Pengesahan nombor staff + penjanaan member_id ialah keputusan
+	// pentadbiran (padanan setMemberStatus) - siapa sahkan, bila, dan
+	// nombor ahli yang dijana mesti dapat dijawab kemudian.
+	actor := auditActor(c, qtx)
+	newFields := mergeAuditFields(
+		map[string]any{
+			"member_id":            updated.MemberID.String,
+			"staff_id_verified_at": formatTime(updated.StaffIDVerifiedAt),
+			"staff_id_verified_by": callerID.String(),
+		},
+		actorAuditFields(actor),
+	)
+	if override.Valid {
+		newFields["staff_id"] = override.String
+	}
+	if err := audit.Record(ctx, qtx, audit.Entry{
+		EntityType: audit.EntityStaffIDVerification,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      actor,
+		Old:        map[string]any{"staff_id_verified_at": nil, "member_id": textToAny(target.MemberID)},
+		New:        newFields,
+	}); err != nil {
+		log.Printf("audit sahkan nombor staff: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan nombor staff"})
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan nombor staff"})
+		return
+	}
+
+	c.JSON(http.StatusOK, verifyStaffIDResponse{
+		UserID:     updated.UserID.String(),
+		MemberID:   updated.MemberID.String,
+		VerifiedAt: formatTimeNullable(updated.StaffIDVerifiedAt),
+	})
+}
+
+type correctStaffIDRequest struct {
+	StaffID string `json:"staff_id"`
+}
+
+type correctStaffIDResponse struct {
+	UserID  string `json:"user_id"`
+	StaffID string `json:"staff_id"`
+}
+
+// CorrectStaffID - PATCH /members/:id/staff-id (Task 6). Admin/superadmin
+// SAHAJA (rank >= "admin") - lebih ketat drpd VerifyStaffID (manager ke
+// atas) sebab ni pembetulan nombor staff SELEPAS pengesahan pertama
+// (biasanya typo), bukan pengesahan asal. Sengaja TIDAK dalam transaksi
+// - satu kemas kini tunggal, tiada penjanaan member_id atau interaksi
+// jadual lain untuk digabungkan (beza drpd VerifyStaffID).
+//
+// Membetulkan staff_id TIDAK boleh un-verify ahli - staff_id_verified_at/
+// staff_id_verified_by dibiar tak disentuh (lihat query CorrectStaffID).
+func (h *ProfileHandler) CorrectStaffID(c *gin.Context) {
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	isAdminUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "admin")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor staff"})
+		return
+	}
+	if !isAdminUp {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma admin ke atas boleh betulkan nombor staff"})
+		return
+	}
+
+	targetID, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	if targetID == callerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak boleh betulkan nombor staff akaun sendiri"})
+		return
+	}
+
+	caller, err := h.queries.GetProfileByUserID(ctx, callerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor staff"})
+		return
+	}
+
+	// Pre-image - nilai staff_id LAMA untuk catatan audit di bawah, sekali
+	// gus jadi asas semakan rank di bawah.
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+	if caller.RoleRank <= target.RoleRank {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh edit ahli setaraf/lebih tinggi drpd anda"})
+		return
+	}
+
+	var req correctStaffIDRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	trimmed := strings.TrimSpace(req.StaffID)
+	if trimmed == "" || len(trimmed) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor staff tidak sah"})
+		return
+	}
+	if strings.Contains(trimmed, "/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor staff tidak boleh mengandungi '/'"})
+		return
+	}
+
+	updated, err := h.queries.CorrectStaffID(ctx, sqlc.CorrectStaffIDParams{
+		StaffID: trimmed,
+		UserID:  targetID,
+	})
+	if isUniqueViolation(err) {
+		c.JSON(http.StatusConflict, gin.H{"error": "nombor staff ini sudah digunakan"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor staff"})
+		return
+	}
+
+	actor := auditActor(c, h.queries)
+	if err := audit.Record(ctx, h.queries, audit.Entry{
+		EntityType: audit.EntityStaffIDCorrection,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      actor,
+		Old:        map[string]any{"staff_id": target.StaffID},
+		New: mergeAuditFields(
+			map[string]any{"staff_id": updated.StaffID},
+			actorAuditFields(actor),
+		),
+	}); err != nil {
+		log.Printf("audit betulkan nombor staff: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor staff"})
+		return
+	}
+
+	c.JSON(http.StatusOK, correctStaffIDResponse{
+		UserID:  updated.UserID.String(),
+		StaffID: updated.StaffID,
+	})
+}
+
+type correctMemberIDRequest struct {
+	MemberID string `json:"member_id"`
+}
+
+type correctMemberIDResponse struct {
+	UserID   string `json:"user_id"`
+	MemberID string `json:"member_id"`
+}
+
+// CorrectMemberID - PATCH /members/:id/member-id (format nombor ahli
+// baharu, Task 4). Admin/superadmin SAHAJA (rank >= "admin"), padan
+// CorrectStaffID. HANYA betulkan member_id yang SUDAH wujud - query
+// sekat `member_id is not null`, jadi ahli belum verify (NULL) pulang
+// 409, bukan laluan pintas gate verifikasi.
+func (h *ProfileHandler) CorrectMemberID(c *gin.Context) {
+	ctx := c.Request.Context()
+	callerID := middleware.UserID(c)
+
+	isAdminUp, err := authz.IsAtLeastRole(ctx, h.queries, callerID, "admin")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor ahli"})
+		return
+	}
+	if !isAdminUp {
+		c.JSON(http.StatusForbidden, gin.H{"error": "cuma admin ke atas boleh betulkan nombor ahli"})
+		return
+	}
+
+	targetID, ok := parseUUIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	if targetID == callerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak boleh betulkan nombor ahli akaun sendiri"})
+		return
+	}
+
+	caller, err := h.queries.GetProfileByUserID(ctx, callerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor ahli"})
+		return
+	}
+
+	target, err := h.queries.GetProfileByUserID(ctx, targetID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ahli tidak dijumpai"})
+		return
+	}
+	if caller.RoleRank <= target.RoleRank {
+		c.JSON(http.StatusForbidden, gin.H{"error": "tidak boleh edit ahli setaraf/lebih tinggi drpd anda"})
+		return
+	}
+
+	var req correctMemberIDRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	trimmed := strings.TrimSpace(req.MemberID)
+	if trimmed == "" || len(trimmed) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nombor ahli tidak sah"})
+		return
+	}
+
+	updated, err := h.queries.CorrectMemberID(ctx, sqlc.CorrectMemberIDParams{
+		MemberID: pgtype.Text{String: trimmed, Valid: true},
+		UserID:   targetID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "ahli ni belum ada nombor ahli - sahkan nombor staff dulu (`POST /members/:id/verify-staff-id`)",
+		})
+		return
+	} else if isUniqueViolation(err) {
+		c.JSON(http.StatusConflict, gin.H{"error": "nombor ahli ini sudah digunakan ahli lain"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor ahli"})
+		return
+	}
+
+	actor := auditActor(c, h.queries)
+	if err := audit.Record(ctx, h.queries, audit.Entry{
+		EntityType: audit.EntityMemberIDCorrection,
+		EntityID:   targetID,
+		Action:     audit.ActionUpdate,
+		Actor:      actor,
+		Old:        map[string]any{"member_id": target.MemberID.String},
+		New: mergeAuditFields(
+			map[string]any{"member_id": updated.MemberID.String},
+			actorAuditFields(actor),
+		),
+	}); err != nil {
+		log.Printf("audit betulkan nombor ahli: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal betulkan nombor ahli"})
+		return
+	}
+
+	c.JSON(http.StatusOK, correctMemberIDResponse{
+		UserID:   updated.UserID.String(),
+		MemberID: updated.MemberID.String,
 	})
 }
 

@@ -1,6 +1,6 @@
 -- name: CreateProfile :one
-insert into profiles (user_id, member_id, role_id, phone)
-values ($1, $2, $3, $4)
+insert into profiles (user_id, member_id, staff_id, role_id, phone)
+values ($1, $2, $3, $4, $5)
 returning *;
 
 -- name: GetProfileByUserID :one
@@ -138,6 +138,29 @@ returning *;
 update profiles
 set status = 'rejected', approved_by = $2, approved_at = now()
 where user_id = $1 and status <> 'rejected'
+returning *;
+
+-- name: VerifyStaffID :one
+update profiles
+set staff_id = coalesce(sqlc.narg('staff_id'), staff_id),
+    staff_id_verified_at = now(),
+    staff_id_verified_by = @verified_by,
+    member_id = coalesce(member_id, @member_id)
+where user_id = @user_id
+  and staff_id_verified_at is null
+returning *;
+
+-- name: CorrectStaffID :one
+update profiles
+set staff_id = @staff_id
+where user_id = @user_id
+returning *;
+
+-- name: CorrectMemberID :one
+update profiles
+set member_id = @member_id
+where user_id = @user_id
+  and member_id is not null
 returning *;
 
 -- name: ListManagementUserIDs :many

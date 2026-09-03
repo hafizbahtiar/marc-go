@@ -181,7 +181,7 @@ di-generate sebagai `github.com/google/uuid.UUID` (bukan default
 |---|---|
 | `users` | akaun (email lowercase-unique, password_hash) |
 | `roles` | `tester`(5)/`ahli`(10)/`supervisor`(50)/`manager`(60)/`admin`(80)/`superadmin`(100); lajur `rank` yang memacu keterlihatan & hierarki edit |
-| `profiles` | member_id (`MARC{YYYY}/{MM}/{0000}`), display_name, phone, `avatar_r2_key`, role_id, email_verified, status (`pending`/`approved`/`rejected`), approved_by/at, `telegram_chat_id`/`telegram_username`/`telegram_linked_at` (Integrasi Telegram Fasa 1) |
+| `profiles` | member_id (**nullable** - diisu hanya lepas `staff_id` disahkan: format baharu `MARC-{staff_id}/{tahun}-{kod}`, format lama `MARC{YYYY}/{MM}/{seq}` kekal untuk baris sedia ada), display_name, phone, `avatar_r2_key`, role_id, email_verified, status (`pending`/`approved`/`rejected`), approved_by/at, `telegram_chat_id`/`telegram_username`/`telegram_linked_at` (Integrasi Telegram Fasa 1), `staff_id` (text, not null, unique, max 64 aksara, `/` ditolak kerana pemisah struktur `member_id`), `staff_id_verified_at`/`staff_id_verified_by` (nullable - disahkan oleh management rank >= manager; rasional penuh: `docs/superpowers/specs/2026-09-02-staff-id-verification-design.md` + `docs/superpowers/specs/2026-09-03-member-id-format-redesign-design.md`) |
 | `sequences` | counter generic - jana `member_id` DAN `serial` sijil secara atomic |
 | `refresh_tokens` | SHA-256 hash + family_id. Single-use via `consumed_at` |
 | `email_verification_tokens` | hash token pengesahan (TTL 1 jam) |
