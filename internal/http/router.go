@@ -125,7 +125,10 @@ func NewRouter(
 	authGroup.POST("/password-reset/confirm", passwordResetCORS, passwordResetRateLimiter, authHandler.ConfirmPasswordReset)
 	authGroup.OPTIONS("/password-reset/confirm", passwordResetCORS)
 
-	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
+	queries := sqlc.New(pool)
+	requireAuth := middleware.RequireAuth(jwtSvc, queries)
+
+	protectedAuthGroup := r.Group("/auth", requireAuth, middleware.RequireApprovedStatus(queries))
 	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
 
 	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client, registrationFeeCents, paymentGateways["toyyibpay"])
@@ -144,7 +147,7 @@ func NewRouter(
 	// yang berjaya cipta baris baharu.
 	accountDeletionRateLimiter := rateLimiter.Limit("account-deletion-request", rate.Every(3*time.Second), 10)
 
-	protected := r.Group("/", middleware.RequireAuth(jwtSvc))
+	protected := r.Group("/", requireAuth)
 	protected.GET("/me", profileHandler.Me)
 	protected.PATCH("/me", profileUpdateRateLimiter, profileHandler.UpdateMe)
 	protected.POST("/me/deletion-request", accountDeletionRateLimiter, profileHandler.RequestAccountDeletion)
@@ -183,7 +186,7 @@ func NewRouter(
 	// approved (Stage 11) - /members, /device-tokens, dan approve/reject
 	// sendiri perlu status=approved. /me sengaja TAK di sini (lihat
 	// RequireApprovedStatus).
-	approved := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
+	approved := r.Group("/", requireAuth, middleware.RequireApprovedStatus(queries))
 	approved.GET("/members", profileHandler.Members)
 	// Profil SATU ahli (view-only, tiered) - laluan dua segmen, tiada
 	// pertembungan dgn /members (satu segmen) atau tindakan tiga segmen
@@ -282,7 +285,7 @@ func NewRouter(
 	postCreateRateLimiter := rateLimiter.Limit("post-create", rate.Every(3*time.Second), 10)
 	commentCreateRateLimiter := rateLimiter.Limit("comment-create", rate.Every(3*time.Second), 10)
 
-	verified := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)), middleware.RequireVerifiedEmail(sqlc.New(pool)))
+	verified := r.Group("/", requireAuth, middleware.RequireApprovedStatus(queries), middleware.RequireVerifiedEmail(queries))
 	verified.GET("/posts", postHandler.List)
 	verified.POST("/posts", postCreateRateLimiter, postHandler.Create)
 	verified.GET("/posts/:id", postHandler.Get)
@@ -378,7 +381,7 @@ func NewRouter(
 	// (cmd/api/main.go), tiada perubahan di sini.
 	donationHandler := handlers.NewDonationHandler(pool, paymentGateways, emailClient)
 	donationRateLimiter := rateLimiter.Limit("donation", rate.Every(6*time.Second), 5)
-	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), middleware.BlockTesterWrites(sqlc.New(pool)), donationHandler.Checkout)
+	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc, queries), middleware.BlockTesterWrites(sqlc.New(pool)), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
 
 	// Yuran pendaftaran ahli (Stage 12, ToyyibPay, SEKALI BAYAR - bukan

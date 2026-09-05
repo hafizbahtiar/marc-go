@@ -64,3 +64,18 @@ delete from refresh_tokens where family_id = $1 and user_id = $2;
 -- Bulk revoke ikut family_id (id sesi dalam GET /me/sessions).
 -- Ownership dalam query: family milik ahli lain diabaikan senyap.
 delete from refresh_tokens where user_id = $1 and family_id = any(sqlc.arg('ids')::uuid[]);
+
+-- name: HasActiveRefreshTokenFamily :one
+-- Family "hidup" = ada sekurang-kurangnya SATU baris belum luput
+-- (sama tapisan ListActiveRefreshTokensByUser). consumed_at SENGAJA
+-- tak ditapis: rotate meninggalkan baris consumed, sibling baru
+-- belum sempat masuk — menapis consumed akan 401 race semasa refresh
+-- dan trigger reuse-detection yang revoke family sendiri.
+--
+-- Lepas DELETE family (revoke / logout-all / tukar password), exists
+-- = false → RequireAuth tolak access JWT serta-merta, bukan tunggu
+-- TTL 15 minit.
+select exists(
+  select 1 from refresh_tokens
+  where user_id = $1 and family_id = $2 and expires_at > now()
+);

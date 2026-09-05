@@ -295,6 +295,16 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserIDByTelegramChatID(ctx context.Context, telegramChatID pgtype.Int8) (uuid.UUID, error)
+	// Family "hidup" = ada sekurang-kurangnya SATU baris belum luput
+	// (sama tapisan ListActiveRefreshTokensByUser). consumed_at SENGAJA
+	// tak ditapis: rotate meninggalkan baris consumed, sibling baru
+	// belum sempat masuk — menapis consumed akan 401 race semasa refresh
+	// dan trigger reuse-detection yang revoke family sendiri.
+	//
+	// Lepas DELETE family (revoke / logout-all / tukar password), exists
+	// = false → RequireAuth tolak access JWT serta-merta, bukan tunggu
+	// TTL 15 minit.
+	HasActiveRefreshTokenFamily(ctx context.Context, arg HasActiveRefreshTokenFamilyParams) (bool, error)
 	// Baris 'pending' MANA-MANA PUN - SENGAJA TANPA tapisan `gateway_ref is
 	// not null` (Opus verify 2026-08-24: tak macam
 	// ListPendingRegistrationPaymentsOlderThan, baris `gateway_ref` NULL di
