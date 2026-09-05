@@ -243,7 +243,7 @@ type GetMyActivityFeeByIDRow struct {
 	Title         string             `json:"title"`
 	FeeCents      int32              `json:"fee_cents"`
 	Currency      string             `json:"currency"`
-	MemberID      string             `json:"member_id"`
+	MemberID      pgtype.Text        `json:"member_id"`
 	DisplayName   pgtype.Text        `json:"display_name"`
 	Email         string             `json:"email"`
 }
@@ -590,7 +590,7 @@ type ListRegistrationsByActivityRow struct {
 	FeeCentsPaid       pgtype.Int4        `json:"fee_cents_paid"`
 	RegisteredAt       pgtype.Timestamptz `json:"registered_at"`
 	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
-	MemberID           string             `json:"member_id"`
+	MemberID           pgtype.Text        `json:"member_id"`
 	DisplayName        pgtype.Text        `json:"display_name"`
 	AvatarR2Key        pgtype.Text        `json:"avatar_r2_key"`
 	AttendedSessionIds []uuid.UUID        `json:"attended_session_ids"`

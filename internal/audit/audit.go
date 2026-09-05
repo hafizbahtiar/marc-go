@@ -45,6 +45,21 @@ const (
 	// account deletion"). v1: rekod permintaan sahaja, staff tindak manual
 	// via DB terus - tiada auto-purge lagi.
 	EntityAccountDeletionRequest = "account_deletion_request"
+	// Pengesahan nombor staff (Task 5, staff-id verification) - direkod
+	// berasingan drpd EntityProfile sebab ni satu peristiwa pentadbiran
+	// tersendiri (siapa sahkan, bila, member_id yang dijana), bukan
+	// sekadar kemas kini profil biasa.
+	EntityStaffIDVerification = "staff_id_verification"
+	// Pembetulan nombor staff selepas pengesahan (Task 6) - admin/superadmin
+	// sahaja, berasingan drpd EntityStaffIDVerification sebab ni bukan
+	// pengesahan PERTAMA (yang turut menjana member_id) tapi pembetulan
+	// nilai sedia ada (cth typo) tanpa sentuh member_id/verified_at.
+	EntityStaffIDCorrection = "staff_id_correction"
+	// Pembetulan nombor ahli yang DAH dijana (format nombor ahli baharu,
+	// Task 4) - admin/superadmin sahaja. BERASINGAN drpd
+	// EntityStaffIDVerification sebab ni edit nilai sedia ada, BUKAN
+	// laluan assign member_id pertama (yang akan pintas gate verify).
+	EntityMemberIDCorrection = "member_id_correction"
 )
 
 const (

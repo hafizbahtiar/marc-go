@@ -212,8 +212,13 @@ func issueCertificatesTx(
 		// Semakan pra-terbang. Nama yang tidak boleh dicetak akan menjadi
 		// deretan titik dalam PDF, dan fasa 2 tidak boleh membetulkannya -
 		// lebih baik gagal sebelum apa-apa baris wujud.
-		if !certificate.EncodableName(cand.DisplayName) {
-			return nil, fmt.Errorf("%w: RecipientName %q", errUnprintableCertificateField, cand.DisplayName)
+		// cand.DisplayName ialah coalesce(display_name, member_id) di DB
+		// - kini boleh NULL (kedua-dua sumber boleh kosong untuk ahli
+		// belum disahkan staff number). Layan macam medan paparan
+		// nullable lain: fallback ke rentetan kosong.
+		recipientName := cand.DisplayName.String
+		if !certificate.EncodableName(recipientName) {
+			return nil, fmt.Errorf("%w: RecipientName %q", errUnprintableCertificateField, recipientName)
 		}
 
 		token, err := newCheckinToken()
@@ -235,7 +240,7 @@ func issueCertificatesTx(
 			UserID:        cand.UserID,
 			Serial:        serial,
 			VerifyToken:   token,
-			RecipientName: cand.DisplayName,
+			RecipientName: recipientName,
 			ActivityTitle: activity.Title,
 			ActivityDate:  pgDate(activity.StartsAt.Time),
 		})

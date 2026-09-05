@@ -175,3 +175,77 @@ func TestMinePaymentsMengekalkanDuaSenaraiSediaAda(t *testing.T) {
 		}
 	}
 }
+
+// Task 9 (staff-id verification plan) - `outstanding_registration_fee`
+// pada GET /me/payments. Guna statusTestPool (bukan activityTestPool)
+// dan createTestPendingProfile/createTestApprovedProfile
+// (staff_id_query_live_test.go) sebab helper-helper itu seed staff_id
+// secara eksplisit - seedMember (profile_status_live_test.go) tak isi
+// staff_id dan akan gagal not-null constraint pada DB yang dah
+// dimigrasi penuh.
+
+func mePaymentsOutstandingFee(t *testing.T, body map[string]any) bool {
+	t.Helper()
+	raw, ok := body["outstanding_registration_fee"]
+	if !ok {
+		t.Fatal("respons TIADA kunci \"outstanding_registration_fee\"")
+	}
+	v, ok := raw.(bool)
+	if !ok {
+		t.Fatalf("\"outstanding_registration_fee\" bukan bool: %T", raw)
+	}
+	return v
+}
+
+// Baris lama PRA-MIGRASI (staff_id = user_id::text, placeholder yang
+// migrasi isi) belum berada atas laluan staff langsung - mereka daftar
+// bawah rejim yuran lama, jadi mereka MEMANG boleh terhutang.
+func TestMinePaymentsOutstandingFeeTrueUntukBarisPlaceholderBelumBayar(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+
+	var member uuid.UUID
+	emailAddr := "outstanding-placeholder-" + uuid.NewString() + "@test.local"
+	if err := pool.QueryRow(ctx,
+		`insert into users (email, password_hash) values ($1, 'x') returning id`,
+		emailAddr).Scan(&member); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`insert into profiles (user_id, staff_id, role_id, status)
+		 values ($1, $2, (select id from roles where key = 'ahli'), 'pending')`,
+		member, member.String()); err != nil {
+		t.Fatalf("seed profil placeholder: %v", err)
+	}
+
+	body := minePayments(t, pool, member)
+	if !mePaymentsOutstandingFee(t, body) {
+		t.Fatal("mahu true untuk baris placeholder yang belum disahkan & belum bayar")
+	}
+}
+
+// Ahli pending BAHARU (staff_id sebenar diisi semasa daftar) belum
+// disahkan, tapi satu-satunya jalan dia boleh diluluskan ialah melalui
+// pengesahan staff - yang mengecualikan dia. Jadi dia TAK PERNAH
+// terhutang, dan banner "bayar yuran" tak patut muncul (Opus verify
+// 2026-09-03; v1 pulangkan true di sini untuk hampir SEMUA ahli baharu).
+func TestMinePaymentsOutstandingFeeFalseUntukAhliPendingBerstaffID(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	member := createTestPendingProfile(t, ctx, pool)
+
+	body := minePayments(t, pool, member)
+	if mePaymentsOutstandingFee(t, body) {
+		t.Fatal("mahu false untuk ahli pending yang dah ada nombor staff sebenar")
+	}
+}
+
+func TestMinePaymentsOutstandingFeeFalseSelepasDisahkanStaff(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	manager := createTestApprovedProfile(t, ctx, pool, "manager")
+	member := createTestPendingProfile(t, ctx, pool)
+	verifyStaffIDDirect(t, ctx, pool, member, manager)
+
+	body := minePayments(t, pool, member)
+	if mePaymentsOutstandingFee(t, body) {
+		t.Fatal("mahu false selepas staff ID disahkan (pengecualian automatik, Task 8)")
+	}
+}

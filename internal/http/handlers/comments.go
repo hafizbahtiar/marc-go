@@ -133,7 +133,7 @@ func (h *CommentHandler) authorOf(ctx context.Context, userID uuid.UUID) authorR
 		return author
 	}
 	author.UserID = userID.String()
-	author.MemberID = profile.MemberID
+	author.MemberID = profile.MemberID.String
 	if profile.DisplayName.Valid {
 		s := profile.DisplayName.String
 		author.DisplayName = &s
@@ -230,7 +230,7 @@ func (h *CommentHandler) List(c *gin.Context) {
 			EditedAt:        formatTimeNullable(r.EditedAt),
 			Author: authorResponse{
 				UserID:      r.AuthorID.String(),
-				MemberID:    r.AuthorMemberID,
+				MemberID:    r.AuthorMemberID.String,
 				DisplayName: displayName,
 				AvatarURL:   avatarURLFor(ctx, h.r2, r.AuthorAvatarR2Key),
 			},

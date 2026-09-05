@@ -402,7 +402,7 @@ func (h *AttendanceHandler) memberOf(ctx context.Context, userID uuid.UUID) memb
 		log.Printf("baca profil %s untuk respons kehadiran: %v", userID, err)
 		return memberSummary{}
 	}
-	return memberSummary{DisplayName: profile.DisplayName.String, MemberID: profile.MemberID}
+	return memberSummary{DisplayName: profile.DisplayName.String, MemberID: profile.MemberID.String}
 }
 
 // Unmark - DELETE /activities/:id/sessions/:sid/attendance/:rid.

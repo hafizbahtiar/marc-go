@@ -121,15 +121,20 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 	}
 
 	// billTo WAJIB oleh ToyyibPay (disahkan sandbox - lihat
-	// toyyibpay.go) - fallback ke member_id kalau display_name kosong,
-	// tak pernah kosong dua-dua sebab member_id sentiasa diisi semasa
-	// daftar.
+	// toyyibpay.go) - fallback ke member_id kalau display_name kosong.
+	// member_id sendiri kini boleh NULL (ahli belum disahkan staff
+	// number - lihat migrasi staff_number), jadi tambah email sebagai
+	// fallback ketiga supaya billTo tak pernah kosong dua-dua/tiga-tiga
+	// dan createBill tak tolak dgn ralat "billTo parameter is empty".
 	billTo := ""
 	if profile.DisplayName.Valid {
 		billTo = profile.DisplayName.String
 	}
+	if billTo == "" && profile.MemberID.Valid {
+		billTo = profile.MemberID.String
+	}
 	if billTo == "" {
-		billTo = profile.MemberID
+		billTo = profile.Email
 	}
 
 	// billPhone JUGA WAJIB oleh ToyyibPay (disahkan LIVE di staging
@@ -184,7 +189,7 @@ func (h *RegistrationPaymentHandler) Checkout(c *gin.Context) {
 
 	metadata := map[string]string{
 		"description":       "Yuran pendaftaran ahli MARC",
-		"reference":         profile.MemberID,
+		"reference":         profile.MemberID.String,
 		"billTo":            billTo,
 		"billEmail":         profile.Email,
 		"billPhone":         billPhone,
@@ -422,7 +427,7 @@ func (h *RegistrationPaymentHandler) Webhook(c *gin.Context) {
 				// kegagalan: `receiptmail.Send` tetap hantar emel versi
 				// HTML sahaja tanpa lampiran, bukan skip terus.
 				pdfBytes, perr := receipt.GenerateFeePDF(receipt.FeePayment{
-					MemberID:           profile.MemberID,
+					MemberID:           profile.MemberID.String,
 					PayerName:          displayName,
 					PayerEmail:         profile.Email,
 					AmountCents:        amountCents,

@@ -16,7 +16,7 @@ const approveProfile = `-- name: ApproveProfile :one
 update profiles
 set status = 'approved', approved_by = $2, approved_at = now()
 where user_id = $1 and status <> 'approved'
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type ApproveProfileParams struct {
@@ -49,6 +49,9 @@ func (q *Queries) ApproveProfile(ctx context.Context, arg ApproveProfileParams) 
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
@@ -64,15 +67,105 @@ func (q *Queries) ClearTelegramLink(ctx context.Context, userID uuid.UUID) error
 	return err
 }
 
+const correctMemberID = `-- name: CorrectMemberID :one
+update profiles
+set member_id = $1
+where user_id = $2
+  and member_id is not null
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+`
+
+type CorrectMemberIDParams struct {
+	MemberID pgtype.Text `json:"member_id"`
+	UserID   uuid.UUID   `json:"user_id"`
+}
+
+func (q *Queries) CorrectMemberID(ctx context.Context, arg CorrectMemberIDParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, correctMemberID, arg.MemberID, arg.UserID)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
+		&i.EmergencyContactName,
+		&i.EmergencyContactPhone,
+		&i.HealthNotes,
+		&i.IsActive,
+		&i.DepartmentCode,
+		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
+	)
+	return i, err
+}
+
+const correctStaffID = `-- name: CorrectStaffID :one
+update profiles
+set staff_id = $1
+where user_id = $2
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+`
+
+type CorrectStaffIDParams struct {
+	StaffID string    `json:"staff_id"`
+	UserID  uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) CorrectStaffID(ctx context.Context, arg CorrectStaffIDParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, correctStaffID, arg.StaffID, arg.UserID)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
+		&i.EmergencyContactName,
+		&i.EmergencyContactPhone,
+		&i.HealthNotes,
+		&i.IsActive,
+		&i.DepartmentCode,
+		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
+	)
+	return i, err
+}
+
 const createProfile = `-- name: CreateProfile :one
-insert into profiles (user_id, member_id, role_id, phone)
-values ($1, $2, $3, $4)
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+insert into profiles (user_id, member_id, staff_id, role_id, phone)
+values ($1, $2, $3, $4, $5)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type CreateProfileParams struct {
 	UserID   uuid.UUID   `json:"user_id"`
-	MemberID string      `json:"member_id"`
+	MemberID pgtype.Text `json:"member_id"`
+	StaffID  string      `json:"staff_id"`
 	RoleID   int16       `json:"role_id"`
 	Phone    pgtype.Text `json:"phone"`
 }
@@ -81,6 +174,7 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 	row := q.db.QueryRow(ctx, createProfile,
 		arg.UserID,
 		arg.MemberID,
+		arg.StaffID,
 		arg.RoleID,
 		arg.Phone,
 	)
@@ -107,6 +201,9 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
@@ -124,7 +221,7 @@ func (q *Queries) GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position, p.staff_id, p.staff_id_verified_at, p.staff_id_verified_by,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
@@ -141,7 +238,7 @@ where p.user_id = $1
 type GetProfileByUserIDRow struct {
 	ID                    uuid.UUID          `json:"id"`
 	UserID                uuid.UUID          `json:"user_id"`
-	MemberID              string             `json:"member_id"`
+	MemberID              pgtype.Text        `json:"member_id"`
 	DisplayName           pgtype.Text        `json:"display_name"`
 	Phone                 pgtype.Text        `json:"phone"`
 	RoleID                int16              `json:"role_id"`
@@ -160,6 +257,9 @@ type GetProfileByUserIDRow struct {
 	IsActive              bool               `json:"is_active"`
 	DepartmentCode        pgtype.Text        `json:"department_code"`
 	Position              pgtype.Text        `json:"position"`
+	StaffID               string             `json:"staff_id"`
+	StaffIDVerifiedAt     pgtype.Timestamptz `json:"staff_id_verified_at"`
+	StaffIDVerifiedBy     pgtype.UUID        `json:"staff_id_verified_by"`
 	Email                 string             `json:"email"`
 	RoleKey               string             `json:"role_key"`
 	RoleName              string             `json:"role_name"`
@@ -193,6 +293,9 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (Get
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 		&i.Email,
 		&i.RoleKey,
 		&i.RoleName,
@@ -311,7 +414,7 @@ func (q *Queries) ListManagementUserIDs(ctx context.Context, category string) ([
 
 const listVisibleProfiles = `-- name: ListVisibleProfiles :many
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position, p.staff_id, p.staff_id_verified_at, p.staff_id_verified_by,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
@@ -359,7 +462,7 @@ type ListVisibleProfilesParams struct {
 type ListVisibleProfilesRow struct {
 	ID                        uuid.UUID          `json:"id"`
 	UserID                    uuid.UUID          `json:"user_id"`
-	MemberID                  string             `json:"member_id"`
+	MemberID                  pgtype.Text        `json:"member_id"`
 	DisplayName               pgtype.Text        `json:"display_name"`
 	Phone                     pgtype.Text        `json:"phone"`
 	RoleID                    int16              `json:"role_id"`
@@ -378,6 +481,9 @@ type ListVisibleProfilesRow struct {
 	IsActive                  bool               `json:"is_active"`
 	DepartmentCode            pgtype.Text        `json:"department_code"`
 	Position                  pgtype.Text        `json:"position"`
+	StaffID                   string             `json:"staff_id"`
+	StaffIDVerifiedAt         pgtype.Timestamptz `json:"staff_id_verified_at"`
+	StaffIDVerifiedBy         pgtype.UUID        `json:"staff_id_verified_by"`
 	Email                     string             `json:"email"`
 	RoleKey                   string             `json:"role_key"`
 	RoleName                  string             `json:"role_name"`
@@ -434,6 +540,9 @@ func (q *Queries) ListVisibleProfiles(ctx context.Context, arg ListVisibleProfil
 			&i.IsActive,
 			&i.DepartmentCode,
 			&i.Position,
+			&i.StaffID,
+			&i.StaffIDVerifiedAt,
+			&i.StaffIDVerifiedBy,
 			&i.Email,
 			&i.RoleKey,
 			&i.RoleName,
@@ -465,7 +574,7 @@ const rejectProfile = `-- name: RejectProfile :one
 update profiles
 set status = 'rejected', approved_by = $2, approved_at = now()
 where user_id = $1 and status <> 'rejected'
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type RejectProfileParams struct {
@@ -498,6 +607,9 @@ func (q *Queries) RejectProfile(ctx context.Context, arg RejectProfileParams) (P
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
@@ -528,7 +640,7 @@ set
   emergency_contact_phone = coalesce($5::text, emergency_contact_phone),
   health_notes = coalesce($6::text, health_notes)
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type UpdateProfileParams struct {
@@ -572,6 +684,9 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
@@ -580,7 +695,7 @@ const updateProfileActive = `-- name: UpdateProfileActive :one
 update profiles
 set is_active = $2
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type UpdateProfileActiveParams struct {
@@ -615,6 +730,9 @@ func (q *Queries) UpdateProfileActive(ctx context.Context, arg UpdateProfileActi
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
@@ -622,7 +740,7 @@ func (q *Queries) UpdateProfileActive(ctx context.Context, arg UpdateProfileActi
 const updateProfileAvatar = `-- name: UpdateProfileAvatar :one
 update profiles set avatar_r2_key = $2::text
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type UpdateProfileAvatarParams struct {
@@ -655,6 +773,9 @@ func (q *Queries) UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvat
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
@@ -664,7 +785,7 @@ update profiles
 set department_code = $1::text,
   position = $2::text
 where user_id = $3
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type UpdateProfileDepartmentParams struct {
@@ -702,6 +823,9 @@ func (q *Queries) UpdateProfileDepartment(ctx context.Context, arg UpdateProfile
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
@@ -710,7 +834,7 @@ const updateProfileRole = `-- name: UpdateProfileRole :one
 update profiles
 set role_id = $2
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
 `
 
 type UpdateProfileRoleParams struct {
@@ -743,6 +867,64 @@ func (q *Queries) UpdateProfileRole(ctx context.Context, arg UpdateProfileRolePa
 		&i.IsActive,
 		&i.DepartmentCode,
 		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
+	)
+	return i, err
+}
+
+const verifyStaffID = `-- name: VerifyStaffID :one
+update profiles
+set staff_id = coalesce($1, staff_id),
+    staff_id_verified_at = now(),
+    staff_id_verified_by = $2,
+    member_id = coalesce(member_id, $3)
+where user_id = $4
+  and staff_id_verified_at is null
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+`
+
+type VerifyStaffIDParams struct {
+	StaffID    pgtype.Text `json:"staff_id"`
+	VerifiedBy pgtype.UUID `json:"verified_by"`
+	MemberID   pgtype.Text `json:"member_id"`
+	UserID     uuid.UUID   `json:"user_id"`
+}
+
+func (q *Queries) VerifyStaffID(ctx context.Context, arg VerifyStaffIDParams) (Profile, error) {
+	row := q.db.QueryRow(ctx, verifyStaffID,
+		arg.StaffID,
+		arg.VerifiedBy,
+		arg.MemberID,
+		arg.UserID,
+	)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberID,
+		&i.DisplayName,
+		&i.Phone,
+		&i.RoleID,
+		&i.EmailVerified,
+		&i.CreatedAt,
+		&i.Status,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.AvatarR2Key,
+		&i.TelegramChatID,
+		&i.TelegramUsername,
+		&i.TelegramLinkedAt,
+		&i.EmergencyContactName,
+		&i.EmergencyContactPhone,
+		&i.HealthNotes,
+		&i.IsActive,
+		&i.DepartmentCode,
+		&i.Position,
+		&i.StaffID,
+		&i.StaffIDVerifiedAt,
+		&i.StaffIDVerifiedBy,
 	)
 	return i, err
 }
