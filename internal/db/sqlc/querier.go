@@ -378,6 +378,9 @@ type Querier interface {
 	// Fasa 2 penerbitan menyambung dari sini. Baris tanpa r2_key ialah kerja
 	// yang belum siap, bukan ralat.
 	ListCertificatesPendingFile(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error)
+	// Tiga komen terbaharu setiap post, top-level sahaja. Feed gunakan ini
+	// sebagai preview; laluan detail masih memuatkan thread penuh.
+	ListCommentPreviewsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]ListCommentPreviewsByPostIDsRow, error)
 	// Flat list, semua comment (top-level + reply) untuk satu post. Client
 	// bina tree guna parent_comment_id.
 	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)

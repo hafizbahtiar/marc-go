@@ -34,16 +34,17 @@ type authorResponse struct {
 }
 
 type postResponse struct {
-	ID           string         `json:"id"`
-	Type         string         `json:"type"`
-	Content      string         `json:"content"`
-	CreatedAt    string         `json:"created_at"`
-	EditedAt     *string        `json:"edited_at"`
-	Author       authorResponse `json:"author"`
-	Images       []string       `json:"images"`
-	LikeCount    int64          `json:"like_count"`
-	CommentCount int64          `json:"comment_count"`
-	LikedByMe    bool           `json:"liked_by_me"`
+	ID              string            `json:"id"`
+	Type            string            `json:"type"`
+	Content         string            `json:"content"`
+	CreatedAt       string            `json:"created_at"`
+	EditedAt        *string           `json:"edited_at"`
+	Author          authorResponse    `json:"author"`
+	Images          []string          `json:"images"`
+	LikeCount       int64             `json:"like_count"`
+	CommentCount    int64             `json:"comment_count"`
+	CommentPreviews []commentResponse `json:"comment_previews"`
+	LikedByMe       bool              `json:"liked_by_me"`
 }
 
 type commentResponse struct {
@@ -195,7 +196,8 @@ func coreFromListPostsRow(r sqlc.ListPostsRow) postCore {
 }
 
 // buildPostResponses batch semua data tambahan (like count, comment count,
-// liked-by-me, images) untuk senarai post sekali gus - elak N+1 query.
+// comment preview, liked-by-me, images) untuk senarai post sekali gus -
+// elak N+1 query.
 func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID, cores []postCore) ([]postResponse, error) {
 	if len(cores) == 0 {
 		return []postResponse{}, nil
@@ -222,6 +224,58 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 	commentCountByPost := make(map[uuid.UUID]int64, len(commentCounts))
 	for _, cc := range commentCounts {
 		commentCountByPost[cc.PostID] = cc.CommentCount
+	}
+
+	previewRows, err := h.queries.ListCommentPreviewsByPostIDs(ctx, postIDs)
+	if err != nil {
+		return nil, err
+	}
+	previewIDs := make([]uuid.UUID, len(previewRows))
+	for i, row := range previewRows {
+		previewIDs[i] = row.ID
+	}
+	previewLikeCounts := make(map[uuid.UUID]int64, len(previewRows))
+	previewLikedByMe := make(map[uuid.UUID]bool, len(previewRows))
+	if len(previewIDs) > 0 {
+		previewLikes, err := h.queries.CountCommentLikesByCommentIDs(ctx, previewIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range previewLikes {
+			previewLikeCounts[item.CommentID] = item.LikeCount
+		}
+		likedComments, err := h.queries.CommentsLikedByUser(ctx, sqlc.CommentsLikedByUserParams{
+			UserID: viewerID, CommentIds: previewIDs,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range likedComments {
+			previewLikedByMe[id] = true
+		}
+	}
+	previewsByPost := make(map[uuid.UUID][]commentResponse, len(postIDs))
+	for _, row := range previewRows {
+		var displayName *string
+		if row.AuthorDisplayName.Valid {
+			name := row.AuthorDisplayName.String
+			displayName = &name
+		}
+		previewsByPost[row.PostID] = append(previewsByPost[row.PostID], commentResponse{
+			ID:              row.ID.String(),
+			ParentCommentID: nullableUUIDString(row.ParentCommentID),
+			Content:         row.Content,
+			CreatedAt:       formatTime(row.CreatedAt),
+			EditedAt:        formatTimeNullable(row.EditedAt),
+			Author: authorResponse{
+				UserID:      row.AuthorID.String(),
+				MemberID:    row.AuthorMemberID.String,
+				DisplayName: displayName,
+				AvatarURL:   avatarURLFor(ctx, h.r2, row.AuthorAvatarR2Key),
+			},
+			LikeCount: previewLikeCounts[row.ID],
+			LikedByMe: previewLikedByMe[row.ID],
+		})
 	}
 
 	likedPostIDs, err := h.queries.PostsLikedByUser(ctx, sqlc.PostsLikedByUserParams{
@@ -264,6 +318,10 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 		if images == nil {
 			images = []string{}
 		}
+		commentPreviews := previewsByPost[c.ID]
+		if commentPreviews == nil {
+			commentPreviews = []commentResponse{}
+		}
 		responses[i] = postResponse{
 			ID:        c.ID.String(),
 			Type:      c.Type,
@@ -276,10 +334,11 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 				DisplayName: displayName,
 				AvatarURL:   avatarURLFor(ctx, h.r2, c.AuthorAvatarR2Key),
 			},
-			Images:       images,
-			LikeCount:    likeCountByPost[c.ID],
-			CommentCount: commentCountByPost[c.ID],
-			LikedByMe:    likedByMe[c.ID],
+			Images:          images,
+			LikeCount:       likeCountByPost[c.ID],
+			CommentCount:    commentCountByPost[c.ID],
+			CommentPreviews: commentPreviews,
+			LikedByMe:       likedByMe[c.ID],
 		}
 	}
 
