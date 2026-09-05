@@ -23,7 +23,7 @@ const dashboardTestFeeCents = 1000
 
 // TestDashboardOpenActivitiesKecualikanYangSudahDidaftar - open_activities
 // senaraikan aktiviti terbitan yang pemanggil BELUM daftar; sebaik sahaja
-// dia daftar, ia berpindah ke upcoming_registrations.
+// dia daftar, ia hilang daripada senarai itu.
 func TestDashboardOpenActivitiesKecualikanYangSudahDidaftar(t *testing.T) {
 	pool := activityTestPool(t)
 	ctx := context.Background()
@@ -61,14 +61,12 @@ func TestDashboardOpenActivitiesKecualikanYangSudahDidaftar(t *testing.T) {
 	if mengandungiAktiviti(selepas, "open_activities", activityID) {
 		t.Errorf("open_activities masih mengandungi aktiviti yang sudah didaftar")
 	}
-	if !mengandungiAktiviti(selepas, "upcoming_registrations", activityID) {
-		t.Errorf("upcoming_registrations sepatutnya mengandungi pendaftaran baharu")
-	}
 }
 
-// mengandungiAktiviti - kedua-dua senarai membawa id aktiviti, tetapi di
-// bawah kunci berbeza: open_activities guna `id`, upcoming_registrations
-// guna `activity_id` (`id` di sana ialah id PENDAFTARAN).
+// mengandungiAktiviti - `open_activities` membawa id aktiviti di bawah
+// kunci `id`. (Senarai `upcoming_registrations` dibuang daripada endpoint
+// ini apabila skrin Utama berhenti memaparkannya; `/my-activities` kekal
+// tempat kanonik untuk pendaftaran sendiri.)
 func mengandungiAktiviti(body map[string]any, senarai string, activityID uuid.UUID) bool {
 	member, ok := body["member"].(map[string]any)
 	if !ok {
@@ -78,10 +76,7 @@ func mengandungiAktiviti(body map[string]any, senarai string, activityID uuid.UU
 	if !ok {
 		return false
 	}
-	kunci := "id"
-	if senarai == "upcoming_registrations" {
-		kunci = "activity_id"
-	}
+	const kunci = "id"
 	for _, raw := range items {
 		item, ok := raw.(map[string]any)
 		if ok && item[kunci] == activityID.String() {
@@ -134,9 +129,16 @@ func TestDashboardAhliBiasaDapatBlokMemberTanpaAdmin(t *testing.T) {
 	if !ok {
 		t.Fatalf("member bukan objek: %v", body["member"])
 	}
-	for _, key := range []string{"unread_notifications", "certificates_total", "total_members"} {
+	for _, key := range []string{"certificates_total", "total_members"} {
 		if _, ada := member[key]; !ada {
 			t.Errorf("member tiada medan %q", key)
+		}
+	}
+	// Dibuang apabila skrin Utama berhenti memaparkannya - kekal
+	// ditegaskan supaya ia tidak menyelinap balik sebagai muatan mati.
+	for _, key := range []string{"unread_notifications", "upcoming_registrations"} {
+		if _, ada := member[key]; ada {
+			t.Errorf("member masih bawa medan %q yang sepatutnya dibuang", key)
 		}
 	}
 	membership, ok := member["membership"].(map[string]any)

@@ -53,23 +53,18 @@ type membershipBlock struct {
 	OutstandingRegistrationFeeCents *int64 `json:"outstanding_registration_fee_cents"`
 }
 
+// Kiraan notifikasi belum baca dan senarai "aktiviti saya" SENGAJA
+// tiada di sini: skrin Utama tidak lagi memaparkan kedua-duanya
+// (notifikasi ialah tab bottom-nav dengan lencananya sendiri, dan
+// "aktiviti saya" mencerminkan tab Aktiviti / `/my-activities`).
+// Endpoint ini berhenti mengiranya sekali - `upcoming_registrations`
+// membawa satu subquery per baris, jadi ia bukan sekadar medan mati
+// dalam JSON tetapi kerja pangkalan data yang tiada sesiapa baca.
 type memberBlock struct {
-	Membership            membershipBlock            `json:"membership"`
-	UnreadNotifications   int64                      `json:"unread_notifications"`
-	CertificatesTotal     int64                      `json:"certificates_total"`
-	TotalMembers          int64                      `json:"total_members"`
-	UpcomingRegistrations []upcomingRegistrationItem `json:"upcoming_registrations"`
-	OpenActivities        []openActivityItem         `json:"open_activities"`
-}
-
-type upcomingRegistrationItem struct {
-	ID            uuid.UUID `json:"id"`
-	ActivityID    uuid.UUID `json:"activity_id"`
-	Title         string    `json:"title"`
-	StartsAt      time.Time `json:"starts_at"`
-	EndsAt        time.Time `json:"ends_at"`
-	CategoryName  string    `json:"category_name"`
-	PaymentStatus string    `json:"payment_status"`
+	Membership        membershipBlock    `json:"membership"`
+	CertificatesTotal int64              `json:"certificates_total"`
+	TotalMembers      int64              `json:"total_members"`
+	OpenActivities    []openActivityItem `json:"open_activities"`
 }
 
 type openActivityItem struct {
@@ -309,22 +304,12 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat dashboard"})
 		return
 	}
-	unread, err := h.queries.CountUnreadNotifications(ctx, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat dashboard"})
-		return
-	}
 	certs, err := h.queries.CountMyCertificates(ctx, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat dashboard"})
 		return
 	}
 	totalMembers, err := h.queries.CountApprovedMembers(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat dashboard"})
-		return
-	}
-	regRows, err := h.queries.ListMyUpcomingRegistrations(ctx, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat dashboard"})
 		return
@@ -343,18 +328,6 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 	// make(..., 0, n) BUKAN var nil - slice nil menyiri sebagai `null`,
 	// dan client Flutter mengharapkan array (senarai kosong = tiada
 	// aktiviti, bukan medan hilang).
-	upcoming := make([]upcomingRegistrationItem, 0, len(regRows))
-	for _, r := range regRows {
-		upcoming = append(upcoming, upcomingRegistrationItem{
-			ID:            r.ID,
-			ActivityID:    r.ActivityID,
-			Title:         r.Title,
-			StartsAt:      r.StartsAt.Time,
-			EndsAt:        r.EndsAt.Time,
-			CategoryName:  r.CategoryName,
-			PaymentStatus: r.PaymentStatus,
-		})
-	}
 	open := make([]openActivityItem, 0, len(openRows))
 	for _, r := range openRows {
 		open = append(open, openActivityItem{
@@ -401,11 +374,9 @@ func (h *DashboardHandler) Get(c *gin.Context) {
 				StaffIDVerified:                 profile.StaffIDVerifiedAt.Valid,
 				OutstandingRegistrationFeeCents: outstandingFeeCents,
 			},
-			UnreadNotifications:   unread,
-			CertificatesTotal:     certs,
-			TotalMembers:          totalMembers,
-			UpcomingRegistrations: upcoming,
-			OpenActivities:        open,
+			CertificatesTotal: certs,
+			TotalMembers:      totalMembers,
+			OpenActivities:    open,
 		},
 		Admin: admin,
 	})

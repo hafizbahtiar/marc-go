@@ -1,7 +1,3 @@
--- name: CountUnreadNotifications :one
-select count(*) from notifications
-where recipient_id = $1 and read_at is null;
-
 -- name: CountMyCertificates :one
 select count(*) from activity_certificates
 where user_id = $1 and revoked_at is null;
@@ -9,22 +5,6 @@ where user_id = $1 and revoked_at is null;
 -- name: CountApprovedMembers :one
 select count(*) from profiles
 where status = 'approved' and is_active = true;
-
--- name: ListMyUpcomingRegistrations :many
--- Corak ListMyRegistrations (activity_registrations.sql:206) tetapi
--- hanya yang BELUM tamat dan dihadkan 3 - kad dashboard, bukan senarai
--- penuh (itu /my-activities).
-select r.id, r.activity_id, r.payment_status,
-  a.title, a.starts_at, a.ends_at, c.name as category_name
-from activity_registrations r
-join activities a on a.id = r.activity_id
-join activity_categories c on c.id = a.category_id
-where r.user_id = $1
-  and r.status <> 'cancelled'
-  and a.deleted_at is null
-  and a.ends_at >= now()
-order by a.starts_at asc
-limit 3;
 
 -- name: ListOpenActivitiesForMe :many
 -- Aktiviti terbitan akan datang yang pemanggil BELUM daftar. `not

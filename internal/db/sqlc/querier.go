@@ -124,7 +124,6 @@ type Querier interface {
 	// Menghalang penggantian set sesi yang akan membuang kehadiran yang sudah
 	// direkod.
 	CountSessionsWithAttendance(ctx context.Context, activityID uuid.UUID) (int64, error)
-	CountUnreadNotifications(ctx context.Context, recipientID uuid.UUID) (int64, error)
 	// `on conflict do nothing` - idempoten, ahli boleh tekan "padam akaun"
 	// berkali-kali tanpa ralat (padanan pola AddBlockedEmailDomain). Baris
 	// SEDIA ADA (bukan yang baru dicuba) yang perlu dipulangkan pada
@@ -418,10 +417,6 @@ type Querier interface {
 	// yuran SEMASA (a.fee_cents boleh berubah selepas PATCH); selepas bayar,
 	// kunci pada jumlah yang benar-benar dibayar.
 	ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyRegistrationsRow, error)
-	// Corak ListMyRegistrations (activity_registrations.sql:206) tetapi
-	// hanya yang BELUM tamat dan dihadkan 3 - kad dashboard, bukan senarai
-	// penuh (itu /my-activities).
-	ListMyUpcomingRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyUpcomingRegistrationsRow, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Aktiviti terbitan akan datang yang pemanggil BELUM daftar. `not
 	// exists` (bukan left join + is null) supaya perancang boleh berhenti
