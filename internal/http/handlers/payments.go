@@ -343,20 +343,10 @@ func (h *PaymentsHandler) Mine(c *gin.Context) {
 		})
 	}
 
-	// outstanding_registration_fee - flag Flutter guna utk paparkan CTA
-	// "bayar yuran pendaftaran". Ahli tak perlu bayar kalau dia staff-
-	// exempt (staffFeeExempt, profile.go - staff ID dah disahkan ATAU
-	// nombor staff sebenar dah diisi, jadi pengesahan nanti PASTI
-	// kecualikan dia; Task 8) ATAU dah ada satu bayaran 'succeeded'
-	// dalam senarai di atas (tak query semula - scan senarai yang dah
-	// difetch).
-	//
-	// Semakan `!staffFeeExempt` sengaja BUKAN sekadar
-	// `!profile.StaffIDVerifiedAt.Valid` (v1, Opus verify 2026-09-03):
-	// setiap ahli pending baharu bermula belum disahkan, jadi versi lama
-	// papar banner "bayar sekarang" kepada hampir SEMUA ahli baharu
-	// walaupun tiada seorang pun daripada mereka akan terhutang yuran itu.
-	outstanding := !staffFeeExempt(profile) && !hasSucceededPayment(registrationFee)
+	// outstanding_registration_fee - lihat outstandingRegistrationFee
+	// (SATU-SATUNYA tempat kira "terhutang atau tidak") - /dashboard guna
+	// fungsi yang sama, jangan tulis semula logik ni di sini.
+	outstanding := outstandingRegistrationFee(profile, regRows)
 
 	c.JSON(http.StatusOK, gin.H{
 		"registration_fee":             registrationFee,
@@ -366,15 +356,35 @@ func (h *PaymentsHandler) Mine(c *gin.Context) {
 	})
 }
 
-// hasSucceededPayment - true kalau ada sekurang-kurangnya satu bayaran
-// 'succeeded' dalam senarai yuran pendaftaran yang diberi.
-func hasSucceededPayment(items []registrationPaymentItem) bool {
-	for _, item := range items {
-		if item.Status == "succeeded" {
-			return true
+// outstandingRegistrationFee - SATU-SATUNYA tempat menentukan sama ada
+// ahli ni terhutang yuran pendaftaran. Digunakan oleh `/me/payments`
+// (medan `outstanding_registration_fee`, di atas) DAN `/dashboard`
+// (medan `membership.outstanding_registration_fee_cents`,
+// dashboard.go) - JANGAN tulis semula logik ni di tempat lain; dua
+// pengiraan berasingan akan menyimpang tanpa disedari (Task 5,
+// 2026-09-05).
+//
+// Ahli tak terhutang kalau dia staff-exempt (staffFeeExempt di bawah -
+// staff ID dah disahkan ATAU nombor staff sebenar dah diisi, jadi
+// pengesahan nanti PASTI kecualikan dia; Task 8) ATAU dah ada satu
+// bayaran 'succeeded' dalam senarai bayaran pendaftaran yang diberi
+// (tak query semula - caller scan senarai yang dah difetch).
+//
+// Semakan `staffFeeExempt` sengaja BUKAN sekadar
+// `!profile.StaffIDVerifiedAt.Valid` (v1, Opus verify 2026-09-03):
+// setiap ahli pending baharu bermula belum disahkan, jadi versi lama
+// papar banner "bayar sekarang" kepada hampir SEMUA ahli baharu
+// walaupun tiada seorang pun daripada mereka akan terhutang yuran itu.
+func outstandingRegistrationFee(profile sqlc.GetProfileByUserIDRow, regRows []sqlc.RegistrationPayment) bool {
+	if staffFeeExempt(profile) {
+		return false
+	}
+	for _, r := range regRows {
+		if r.Status == "succeeded" {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 const (

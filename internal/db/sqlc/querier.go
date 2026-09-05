@@ -12,6 +12,11 @@ import (
 )
 
 type Querier interface {
+	// attendance_rate: kehadiran direkod bagi sesi yang SUDAH TAMAT dalam
+	// bulan semasa, dibahagi pendaftaran aktif pada aktiviti sesi-sesi itu.
+	// Sesi belum tamat dikecualikan supaya kadar tidak nampak rendah palsu
+	// sepanjang bulan berjalan. Pembahagi sifar -> null (bukan 0).
+	ActivityStatsThisMonth(ctx context.Context) (ActivityStatsThisMonthRow, error)
 	// `on conflict do nothing` - idempoten, tambah domain yang dah wujud
 	// bukan ralat (padanan pola ApproveProfile `status <> 'approved'`).
 	AddBlockedEmailDomain(ctx context.Context, arg AddBlockedEmailDomainParams) (BlockedEmailDomain, error)
@@ -106,15 +111,20 @@ type Querier interface {
 	// peraturan produk boleh berubah) - dipanggil dalam transaksi yang sama
 	// sebelum INSERT, padanan cara sequences/nombor ahli dikira.
 	CountAddressesByUser(ctx context.Context, userID uuid.UUID) (int64, error)
+	CountApprovedMembers(ctx context.Context) (int64, error)
 	CountAttendanceByRegistration(ctx context.Context, registrationID uuid.UUID) (int64, error)
 	CountCommentLikesByCommentIDs(ctx context.Context, commentIds []uuid.UUID) ([]CountCommentLikesByCommentIDsRow, error)
 	CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountCommentsByPostIDsRow, error)
 	CountEmailVerificationSendsSince(ctx context.Context, arg CountEmailVerificationSendsSinceParams) (int32, error)
+	CountMyCertificates(ctx context.Context, userID uuid.UUID) (int64, error)
+	CountNewMembersThisMonth(ctx context.Context) (int64, error)
+	CountPendingMembers(ctx context.Context) (int64, error)
 	CountPostLikes(ctx context.Context, postID uuid.UUID) (int64, error)
 	CountPostLikesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]CountPostLikesByPostIDsRow, error)
 	// Menghalang penggantian set sesi yang akan membuang kehadiran yang sudah
 	// direkod.
 	CountSessionsWithAttendance(ctx context.Context, activityID uuid.UUID) (int64, error)
+	CountUnreadNotifications(ctx context.Context, recipientID uuid.UUID) (int64, error)
 	// `on conflict do nothing` - idempoten, ahli boleh tekan "padam akaun"
 	// berkali-kali tanpa ralat (padanan pola AddBlockedEmailDomain). Baris
 	// SEDIA ADA (bukan yang baru dicuba) yang perlu dipulangkan pada
@@ -408,7 +418,15 @@ type Querier interface {
 	// yuran SEMASA (a.fee_cents boleh berubah selepas PATCH); selepas bayar,
 	// kunci pada jumlah yang benar-benar dibayar.
 	ListMyRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyRegistrationsRow, error)
+	// Corak ListMyRegistrations (activity_registrations.sql:206) tetapi
+	// hanya yang BELUM tamat dan dihadkan 3 - kad dashboard, bukan senarai
+	// penuh (itu /my-activities).
+	ListMyUpcomingRegistrations(ctx context.Context, userID uuid.UUID) ([]ListMyUpcomingRegistrationsRow, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
+	// Aktiviti terbitan akan datang yang pemanggil BELUM daftar. `not
+	// exists` (bukan left join + is null) supaya perancang boleh berhenti
+	// pada padanan pertama.
+	ListOpenActivitiesForMe(ctx context.Context, userID uuid.UUID) ([]ListOpenActivitiesForMeRow, error)
 	// Gambar milik post yang DAH dipadam tapi belum pernah digilir untuk
 	// dibuang. Menangkap dua perkara: post yang dipadam SEBELUM gilir
 	// pembersihan wujud, dan mana-mana kunci yang terlepas sejak itu.
@@ -586,6 +604,9 @@ type Querier interface {
 	// Guard `gateway_ref is null` memastikan ni tak boleh menjatuhkan bayaran
 	// yang bilnya SUDAH dicipta.
 	MarkRegistrationPaymentFailed(ctx context.Context, id uuid.UUID) error
+	// Tanpa had di sini - handler yang memotong kepada 6 teratas + baris
+	// "Lain-lain", supaya jumlah keseluruhan kekal tepat.
+	MemberStatsByDepartment(ctx context.Context) ([]MemberStatsByDepartmentRow, error)
 	NextSequence(ctx context.Context, key string) (int64, error)
 	PostLikedByUser(ctx context.Context, arg PostLikedByUserParams) (bool, error)
 	// Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
@@ -628,6 +649,11 @@ type Querier interface {
 	SetTelegramLink(ctx context.Context, arg SetTelegramLinkParams) error
 	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
 	SoftDeletePost(ctx context.Context, id uuid.UUID) error
+	// fee_cents_paid = snapshot amaun yang BENAR-BENAR dibayar; sengaja
+	// BUKAN activities.fee_cents hidup (yuran boleh ditukar selepas bayar).
+	SumActivityRevenueThisMonth(ctx context.Context) (int64, error)
+	SumDonationRevenueThisMonth(ctx context.Context) (int64, error)
+	SumRegistrationRevenueThisMonth(ctx context.Context) (int64, error)
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	// Nyahtetapkan default LAMA sebelum tetapkan default BAHARU, dalam

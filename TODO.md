@@ -10,6 +10,12 @@ Stage 0–15 siap: auth custom, RBAC, posts/comments/likes, kelulusan ahli,
 push, upload R2, donation Stripe, jejak audit, pembersih storan, polisi
 simpanan. Modul aktiviti (backend penuh) siap - jurangnya direkod di bawah.
 
+`GET /dashboard` (satu bacaan agregat untuk skrin Utama app) sudah wujud
+- blok `member` untuk semua pemanggil approved, blok `admin` (termasuk
+`revenue_this_month`, derma dihadkan superadmin sahaja) untuk rank
+>= admin. Spec + kontrak penuh:
+[`docs/superpowers/specs/2026-09-05-dashboard-home-design.md`](./docs/superpowers/specs/2026-09-05-dashboard-home-design.md).
+
 ---
 
 ## Verifikasi Staff ID - SPEC v2 + PLAN v2 SIAP 2026-09-02, kod SEDANG dibina

@@ -184,7 +184,7 @@ func TestMinePaymentsMengekalkanDuaSenaraiSediaAda(t *testing.T) {
 // staff_id dan akan gagal not-null constraint pada DB yang dah
 // dimigrasi penuh.
 
-func outstandingRegistrationFee(t *testing.T, body map[string]any) bool {
+func mePaymentsOutstandingFee(t *testing.T, body map[string]any) bool {
 	t.Helper()
 	raw, ok := body["outstanding_registration_fee"]
 	if !ok {
@@ -218,7 +218,7 @@ func TestMinePaymentsOutstandingFeeTrueUntukBarisPlaceholderBelumBayar(t *testin
 	}
 
 	body := minePayments(t, pool, member)
-	if !outstandingRegistrationFee(t, body) {
+	if !mePaymentsOutstandingFee(t, body) {
 		t.Fatal("mahu true untuk baris placeholder yang belum disahkan & belum bayar")
 	}
 }
@@ -233,7 +233,7 @@ func TestMinePaymentsOutstandingFeeFalseUntukAhliPendingBerstaffID(t *testing.T)
 	member := createTestPendingProfile(t, ctx, pool)
 
 	body := minePayments(t, pool, member)
-	if outstandingRegistrationFee(t, body) {
+	if mePaymentsOutstandingFee(t, body) {
 		t.Fatal("mahu false untuk ahli pending yang dah ada nombor staff sebenar")
 	}
 }
@@ -245,7 +245,7 @@ func TestMinePaymentsOutstandingFeeFalseSelepasDisahkanStaff(t *testing.T) {
 	verifyStaffIDDirect(t, ctx, pool, member, manager)
 
 	body := minePayments(t, pool, member)
-	if outstandingRegistrationFee(t, body) {
+	if mePaymentsOutstandingFee(t, body) {
 		t.Fatal("mahu false selepas staff ID disahkan (pengecualian automatik, Task 8)")
 	}
 }

@@ -254,6 +254,12 @@ func NewRouter(
 	protected.GET("/me/payments/activity/:id/receipt", receiptRateLimiter, paymentsHandler.ActivityReceipt)
 	protected.GET("/me/payments/donation/:id/receipt", receiptRateLimiter, paymentsHandler.DonationReceipt)
 
+	// Bacaan agregat skrin Utama app - kumpulan `approved` (bukan
+	// `verified`): mengira notifikasi sendiri tidak mendedahkan
+	// kandungan, dan client memapar skrin "sahkan emel" sebelum sempat
+	// memanggil endpoint ini.
+	approved.GET("/dashboard", handlers.NewDashboardHandler(pool, registrationFeeCents).Get)
+
 	approved.GET("/roles", profileHandler.ListRoles)
 	approved.POST("/device-tokens", deviceTokenHandler.Upsert)
 	approved.DELETE("/device-tokens/:id", deviceTokenHandler.Delete)
