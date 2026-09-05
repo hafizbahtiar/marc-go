@@ -40,7 +40,7 @@ func TestGenerateMemberID_OrdinaryMemberSequenceAdvances(t *testing.T) {
 		t.Fatalf("expected 4-digit zero-padded suffix, got: %s", id1)
 	}
 
-	// SAME staffID — proves the sequence, not just the embedded
+	// SAME staffID - proves the sequence, not just the embedded
 	// staff_id, is what makes the second call distinct.
 	id2, err := generateMemberID(ctx, q, "0110", "ahli")
 	if err != nil {
@@ -63,7 +63,7 @@ func TestGenerateMemberID_TesterGetsNumberedTCode(t *testing.T) {
 		t.Fatalf("expected T<n> suffix, got: %s", id1)
 	}
 
-	// SAME staffID — proves the tester sequence advances independently.
+	// SAME staffID - proves the tester sequence advances independently.
 	id2, err := generateMemberID(ctx, q, "0200", "tester")
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestGenerateMemberID_TesterGetsNumberedTCode(t *testing.T) {
 
 func TestGenerateMemberID_AhliAndTesterSequencesAreIndependent(t *testing.T) {
 	// Proves member_seq:ahli and member_seq:tester are genuinely
-	// separate counters, not the same key reused — interleave calls
+	// separate counters, not the same key reused - interleave calls
 	// and confirm neither role's numbering is disturbed by the other.
 	pool, ctx := statusTestPool(t)
 	q := sqlc.New(pool)
@@ -117,7 +117,7 @@ func TestGenerateMemberID_SuperadminGetsLiteralSACode(t *testing.T) {
 
 	// Calling it again for the SAME staff_id must still yield "SA"
 	// with no sequence drawn (no NextSequence key for "superadmin" at
-	// all) — per the spec's Q2 decision (superadmin uniqueness is a
+	// all) - per the spec's Q2 decision (superadmin uniqueness is a
 	// policy, not enforced in code, so repeated calls are idempotent
 	// in shape even though real code only calls this once per profile).
 	id2, err := generateMemberID(ctx, q, "0300", "superadmin")

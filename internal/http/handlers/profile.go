@@ -1683,7 +1683,7 @@ func (h *ProfileHandler) VerifyStaffID(c *gin.Context) {
 	// pending/rejected kekal unverified. Kalau manager sahkan tanpa
 	// override, UUID tu jadi staff_id "rasmi", ahli jadi fee-exempt,
 	// dan approval boleh jalan. Override wajib bila staff_id masih
-	// sama dengan user_id — SAMADA member_id dah ada (pending pra-
+	// sama dengan user_id - SAMADA member_id dah ada (pending pra-
 	// migrasi, format lama) atau masih NULL. JANGAN sempitkan syarat
 	// ni kepada `!target.MemberID.Valid`: itu akan benarkan UUID
 	// disahkan sebagai nombor staff untuk baris pending pra-migrasi.

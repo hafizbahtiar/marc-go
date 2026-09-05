@@ -298,7 +298,7 @@ type Querier interface {
 	// Family "hidup" = ada sekurang-kurangnya SATU baris belum luput
 	// (sama tapisan ListActiveRefreshTokensByUser). consumed_at SENGAJA
 	// tak ditapis: rotate meninggalkan baris consumed, sibling baru
-	// belum sempat masuk — menapis consumed akan 401 race semasa refresh
+	// belum sempat masuk - menapis consumed akan 401 race semasa refresh
 	// dan trigger reuse-detection yang revoke family sendiri.
 	//
 	// Lepas DELETE family (revoke / logout-all / tukar password), exists

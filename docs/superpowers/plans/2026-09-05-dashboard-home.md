@@ -19,7 +19,7 @@
 - Nama medan JSON: **snake_case**.
 - Ambang role blok admin: `admin` (rank 80) ke atas. Guna `authz.IsAtLeastRole(ctx, q, userID, "admin")`, jangan bandingkan rank secara manual.
 - Derma: `donation_cents` diisi **hanya** untuk `superadmin`; `null` untuk admin, dan `total_cents` tidak termasuk derma dalam kes itu.
-- Amaun bayaran sentiasa dibaca daripada snapshot pada baris bayaran (`registration_payments.amount_cents`, `activity_registrations.fee_cents_paid`, `donations.amount_cents`) — **jangan** baca `activities.fee_cents` hidup.
+- Amaun bayaran sentiasa dibaca daripada snapshot pada baris bayaran (`registration_payments.amount_cents`, `activity_registrations.fee_cents_paid`, `donations.amount_cents`) - **jangan** baca `activities.fee_cents` hidup.
 - "Bulan semasa" = bulan kalendar `now()` pada server. Tiada parameter julat tarikh.
 - Selepas mengedit `queries/*.sql`, jalankan `sqlc generate` sebelum kod Go yang menggunakannya boleh dikompil.
 - Ujian live Go dilangkau kecuali `HANDLER_TEST_DB` (atau `ACTIVITY_TEST_DB`) ditetapkan. Tetapkannya sebelum menjalankan ujian task Go, kalau tidak "PASS" bermakna "dilangkau".
@@ -28,7 +28,7 @@
 
 ## Struktur fail
 
-**marc_go — cipta:**
+**marc_go - cipta:**
 
 | Fail | Tanggungjawab |
 |---|---|
@@ -36,14 +36,14 @@
 | `internal/http/handlers/dashboard.go` | handler + jenis respons JSON |
 | `internal/http/handlers/dashboard_live_test.go` | ujian live end-to-end handler |
 
-**marc_go — ubah:**
+**marc_go - ubah:**
 
 | Fail | Perubahan |
 |---|---|
 | `internal/http/router.go` | daftar `approved.GET("/dashboard", …)` |
 | `TODO.md` | catat ciri baharu |
 
-**marc_flutter — cipta:**
+**marc_flutter - cipta:**
 
 | Fail | Tanggungjawab |
 |---|---|
@@ -57,7 +57,7 @@
 | `test/features/dashboard/dashboard_page_test.dart` | ujian widget |
 | `test/app/nav_shell_test.dart` | ujian pengikat nav/router |
 
-**marc_flutter — ubah:**
+**marc_flutter - ubah:**
 
 | Fail | Perubahan |
 |---|---|
@@ -68,7 +68,7 @@
 
 ---
 
-# BAHAGIAN A — marc_go
+# BAHAGIAN A - marc_go
 
 ### Task 1: Endpoint `/dashboard` dengan blok `member` asas
 
@@ -212,7 +212,7 @@ cd /Users/hafiz/Developments/marc_go
 export HANDLER_TEST_DB="postgres://…"   # DSN DB ujian tempatan
 go test ./internal/http/handlers/ -run TestDashboard -v
 ```
-Expected: GAGAL kompil — `undefined: NewDashboardHandler`. Kalau outputnya `SKIP`, `HANDLER_TEST_DB` tidak ditetapkan — betulkan sebelum meneruskan, ujian yang dilangkau tidak membuktikan apa-apa.
+Expected: GAGAL kompil - `undefined: NewDashboardHandler`. Kalau outputnya `SKIP`, `HANDLER_TEST_DB` tidak ditetapkan - betulkan sebelum meneruskan, ujian yang dilangkau tidak membuktikan apa-apa.
 
 - [ ] **Step 5: Tulis handler minimum**
 
@@ -329,7 +329,7 @@ Dalam `internal/http/router.go`, dalam kumpulan `approved` (berhampiran `approve
 	approved.GET("/dashboard", handlers.NewDashboardHandler(pool).Get)
 ```
 
-- [ ] **Step 8: Ujian gate — ahli pending kena 403**
+- [ ] **Step 8: Ujian gate - ahli pending kena 403**
 
 `callDashboard` memanggil handler TERUS, jadi ia memintas middleware dan
 tidak boleh membuktikan apa-apa tentang 403. Gate itu datang daripada
@@ -362,7 +362,7 @@ func TestDashboardAhliPendingDitolak(t *testing.T) {
 Tambah import `"marc/internal/http/middleware"` dan `"marc/internal/db/sqlc"`
 pada fail ujian. Sahkan tandatangan sebenar `middleware.RequireApprovedStatus`
 (`router.go:186` menunjukkan ia mengambil `sqlc.New(pool)`) dan nama kunci
-context yang dibaca `middleware.UserID` — kalau bukan `"userID"`, padankan.
+context yang dibaca `middleware.UserID` - kalau bukan `"userID"`, padankan.
 
 Run: `go test ./internal/http/handlers/ -run TestDashboardAhliPendingDitolak -v`
 Expected: PASS.
@@ -460,12 +460,12 @@ func mengandungiAktiviti(body map[string]any, senarai string, activityID uuid.UU
 }
 ```
 
-Semak lajur wajib `activity_registrations` dahulu (`\d activity_registrations`) — kalau ada lajur NOT NULL tanpa default (cth `checkin_token`), tambah pada INSERT ujian, atau guna `seedRegistration` kalau helper begitu sudah wujud dalam pakej ujian.
+Semak lajur wajib `activity_registrations` dahulu (`\d activity_registrations`) - kalau ada lajur NOT NULL tanpa default (cth `checkin_token`), tambah pada INSERT ujian, atau guna `seedRegistration` kalau helper begitu sudah wujud dalam pakej ujian.
 
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `go test ./internal/http/handlers/ -run TestDashboardOpenActivities -v`
-Expected: GAGAL — `open_activities sepatutnya mengandungi aktiviti yang belum didaftar` (medan belum wujud).
+Expected: GAGAL - `open_activities sepatutnya mengandungi aktiviti yang belum didaftar` (medan belum wujud).
 
 - [ ] **Step 3: Tambah query**
 
@@ -590,7 +590,7 @@ Dalam `Get`, selepas kiraan sedia ada:
 	}
 ```
 
-dan hantar kedua-duanya dalam `memberBlock`. Padankan jenis dengan struct sqlc yang dijana (`StartsAt` mungkin `pgtype.Timestamptz` — kalau ya, tukar medan JSON kepada `time.Time` dengan `.Time` atau ikut corak penukaran yang digunakan `activities.go`).
+dan hantar kedua-duanya dalam `memberBlock`. Padankan jenis dengan struct sqlc yang dijana (`StartsAt` mungkin `pgtype.Timestamptz` - kalau ya, tukar medan JSON kepada `time.Time` dengan `.Time` atau ikut corak penukaran yang digunakan `activities.go`).
 
 - [ ] **Step 6: Jalankan ujian, sahkan ia LULUS**
 
@@ -607,7 +607,7 @@ git add queries/dashboard.sql internal/db/sqlc/ \
 
 ---
 
-### Task 3: Blok `admin` — gate role + pending, statistik ahli & aktiviti
+### Task 3: Blok `admin` - gate role + pending, statistik ahli & aktiviti
 
 Deliverable: pemanggil rank >= 80 menerima statistik organisasi; semua yang lain terus menerima `admin: null`.
 
@@ -674,7 +674,7 @@ func TestDashboardPendingApprovalsKiraAhliPending(t *testing.T) {
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `go test ./internal/http/handlers/ -run "TestDashboardBlokAdmin|TestDashboardPendingApprovals" -v`
-Expected: GAGAL — `admin ada = false, mahu true untuk role "admin"`.
+Expected: GAGAL - `admin ada = false, mahu true untuk role "admin"`.
 
 - [ ] **Step 3: Tambah query**
 
@@ -724,7 +724,7 @@ select
   ) as attendance_rate;
 ```
 
-Sahkan nama lajur sebenar sebelum jalankan: `\d departments` (`code`/`name`), `\d profiles` (`department_code`, `approved_at`, `active`), `\d activity_attendances` (`session_id`), `\d activity_sessions` (`ends_at`, `activity_id`), `\d activity_registrations` (`registered_at`). Betulkan query kepada nama sebenar — jangan biarkan tekaan masuk.
+Sahkan nama lajur sebenar sebelum jalankan: `\d departments` (`code`/`name`), `\d profiles` (`department_code`, `approved_at`, `active`), `\d activity_attendances` (`session_id`), `\d activity_sessions` (`ends_at`, `activity_id`), `\d activity_registrations` (`registered_at`). Betulkan query kepada nama sebenar - jangan biarkan tekaan masuk.
 
 - [ ] **Step 4: Jana kod sqlc**
 
@@ -938,7 +938,7 @@ func TestDashboardKutipanAbaikanBayaranGagal(t *testing.T) {
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `go test ./internal/http/handlers/ -run "TestDashboardDerma|TestDashboardKutipan" -v`
-Expected: GAGAL dengan panik penegasan jenis pada `revenue_this_month` (medan belum wujud) — itu kegagalan yang betul untuk peringkat ini.
+Expected: GAGAL dengan panik penegasan jenis pada `revenue_this_month` (medan belum wujud) - itu kegagalan yang betul untuk peringkat ini.
 
 - [ ] **Step 3: Tambah query**
 
@@ -963,7 +963,7 @@ from donations
 where status = 'succeeded' and created_at >= date_trunc('month', now());
 ```
 
-Sahkan nilai sebenar `activity_registrations.payment_status` untuk "sudah bayar" (`\d activity_registrations`, atau baca `ListMyActivityPayments`) — kalau ia `'succeeded'` dan bukan `'paid'`, betulkan.
+Sahkan nilai sebenar `activity_registrations.payment_status` untuk "sudah bayar" (`\d activity_registrations`, atau baca `ListMyActivityPayments`) - kalau ia `'succeeded'` dan bukan `'paid'`, betulkan.
 
 - [ ] **Step 4: Jana kod sqlc**
 
@@ -1035,7 +1035,7 @@ Expected: PASS untuk semua ujian dashboard.
 - [ ] **Step 7: Jalankan suite penuh**
 
 Run: `go build ./... && go vet ./... && go test ./...`
-Expected: tiada regresi. Ujian yang memerlukan DB akan dilangkau melainkan DSN ditetapkan — jalankan sekurang-kurangnya `./internal/http/handlers/` dengan DSN ditetapkan.
+Expected: tiada regresi. Ujian yang memerlukan DB akan dilangkau melainkan DSN ditetapkan - jalankan sekurang-kurangnya `./internal/http/handlers/` dengan DSN ditetapkan.
 
 - [ ] **Step 8: Kemas kini TODO.md dan stage**
 
@@ -1062,13 +1062,13 @@ mengikut urutannya. Langkah 1 di bawah kekal sebagai semakan pengesahan.
 - Modify: `marc_go/internal/http/handlers/dashboard_live_test.go`
 
 **Interfaces:**
-- Consumes: helper yuran tertunggak yang dihasilkan kerja Staff ID (cari dalam `payments.go` / `registration_payment.go` selepas ia mendarat — nama sebenar belum wujud pada tarikh pelan ini).
+- Consumes: helper yuran tertunggak yang dihasilkan kerja Staff ID (cari dalam `payments.go` / `registration_payment.go` selepas ia mendarat - nama sebenar belum wujud pada tarikh pelan ini).
 - Produces: medan `OutstandingRegistrationFeeCents *int64` pada `membershipBlock`.
 
 - [ ] **Step 1: Cari helper sebenar**
 
 Run: `cd /Users/hafiz/Developments/marc_go && grep -rn "outstanding_registration_fee\|OutstandingRegistrationFee" internal/ | head`
-Expected: sekurang-kurangnya satu padanan dalam kod bukan-ujian. **Kalau tiada padanan, kerja Staff ID belum mendarat — berhenti dan laporkan.**
+Expected: sekurang-kurangnya satu padanan dalam kod bukan-ujian. **Kalau tiada padanan, kerja Staff ID belum mendarat - berhenti dan laporkan.**
 
 - [ ] **Step 2: Tulis ujian yang gagal**
 
@@ -1097,11 +1097,11 @@ Padankan nama kunci `dariPayments` dengan yang benar-benar dipulangkan `/me/paym
 - [ ] **Step 3: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `go test ./internal/http/handlers/ -run TestDashboardYuranTertunggak -v`
-Expected: GAGAL — `dashboard = <nil>, /me/payments = <angka>`.
+Expected: GAGAL - `dashboard = <nil>, /me/payments = <angka>`.
 
 - [ ] **Step 4: Guna semula helper itu**
 
-Tambah `OutstandingRegistrationFeeCents *int64 \`json:"outstanding_registration_fee_cents"\`` pada `membershipBlock`, dan isikannya dengan **memanggil helper yang sama** yang digunakan `/me/payments`. Jangan salin logiknya, jangan tulis query baharu — dua tempat yang mengira "berhutang atau tidak" secara berasingan akan menyimpang, dan itulah tepat-tepat yang ujian di atas menghalang.
+Tambah `OutstandingRegistrationFeeCents *int64 \`json:"outstanding_registration_fee_cents"\`` pada `membershipBlock`, dan isikannya dengan **memanggil helper yang sama** yang digunakan `/me/payments`. Jangan salin logiknya, jangan tulis query baharu - dua tempat yang mengira "berhutang atau tidak" secara berasingan akan menyimpang, dan itulah tepat-tepat yang ujian di atas menghalang.
 
 - [ ] **Step 5: Jalankan ujian, sahkan ia LULUS**
 
@@ -1116,7 +1116,7 @@ git add internal/http/handlers/dashboard.go internal/http/handlers/dashboard_liv
 
 ---
 
-# BAHAGIAN B — marc_flutter
+# BAHAGIAN B - marc_flutter
 
 ### Task 6: Model dashboard + penghuraian defensif
 
@@ -1252,7 +1252,7 @@ void main() {
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `cd /Users/hafiz/Developments/marc_flutter && flutter test test/features/dashboard/dashboard_models_test.dart`
-Expected: GAGAL — `Target of URI doesn't exist: 'package:marc/features/dashboard/dashboard_models.dart'`.
+Expected: GAGAL - `Target of URI doesn't exist: 'package:marc/features/dashboard/dashboard_models.dart'`.
 
 - [ ] **Step 3: Tulis model**
 
@@ -1499,7 +1499,7 @@ class ActivityStats {
   final int registrationsThisMonth;
 
   /// 0..1, atau null bila pembahagi sifar (tiada sesi tamat bulan ini).
-  /// Null BUKAN sama dengan 0 - kad papar "—", bukan "0%".
+  /// Null BUKAN sama dengan 0 - kad papar "-", bukan "0%".
   final double? attendanceRate;
 
   factory ActivityStats.fromJson(Map<String, dynamic> json) => ActivityStats(
@@ -1577,7 +1577,7 @@ Deliverable: `dashboardProvider` yang tidak pernah memanggil `/dashboard` untuk 
 
 **Interfaces:**
 - Consumes: `DashboardData` (Task 6); `dioProvider` (`lib/core/api_client.dart`); `myProfileProvider` (`lib/features/profile/profile_providers.dart`).
-- Produces: `dashboardProvider` (`FutureProvider<DashboardData?>` — `null` bermakna "belum layak memanggil", bukan ralat); `EmailNotVerifiedView({required Future<void> Function() onRefresh})`.
+- Produces: `dashboardProvider` (`FutureProvider<DashboardData?>` - `null` bermakna "belum layak memanggil", bukan ralat); `EmailNotVerifiedView({required Future<void> Function() onRefresh})`.
 
 - [ ] **Step 1: Ekstrak widget emel dahulu (refactor tulen)**
 
@@ -1595,7 +1595,7 @@ Kemas kini `feed_page.dart` untuk mengimport dan menggunakannya.
 - [ ] **Step 2: Sahkan refactor tidak mengubah apa-apa**
 
 Run: `flutter analyze lib && flutter test`
-Expected: analisis bersih; semua ujian sedia ada masih lulus. Refactor tulen — kalau ada ujian gagal, tingkah laku berubah; betulkan sebelum meneruskan.
+Expected: analisis bersih; semua ujian sedia ada masih lulus. Refactor tulen - kalau ada ujian gagal, tingkah laku berubah; betulkan sebelum meneruskan.
 
 - [ ] **Step 3: Tulis ujian provider yang gagal**
 
@@ -1680,12 +1680,12 @@ void main() {
 }
 ```
 
-Cipta juga `test/support/profile_fixtures.dart` dengan dua pemalar `Profile` (`approvedProfile`, `pendingProfile`) — salin bentuk pemalar `_member` dalam `test/features/notifications/notifications_page_test.dart:48-64` dan padankan dengan medan sebenar kelas `Profile`. Fixture diletak dalam `test/support/` supaya Task 8-9 boleh guna semula.
+Cipta juga `test/support/profile_fixtures.dart` dengan dua pemalar `Profile` (`approvedProfile`, `pendingProfile`) - salin bentuk pemalar `_member` dalam `test/features/notifications/notifications_page_test.dart:48-64` dan padankan dengan medan sebenar kelas `Profile`. Fixture diletak dalam `test/support/` supaya Task 8-9 boleh guna semula.
 
 - [ ] **Step 4: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `flutter test test/features/dashboard/dashboard_provider_test.dart`
-Expected: GAGAL — URI `dashboard_providers.dart` tidak wujud.
+Expected: GAGAL - URI `dashboard_providers.dart` tidak wujud.
 
 - [ ] **Step 5: Tulis provider**
 
@@ -1734,7 +1734,7 @@ git add lib/features/dashboard/dashboard_providers.dart \
 
 ---
 
-### Task 8: `DashboardPage` — gate, keadaan loading/ralat, kad ahli
+### Task 8: `DashboardPage` - gate, keadaan loading/ralat, kad ahli
 
 Deliverable: skrin dashboard lengkap untuk ahli biasa, termasuk gate pending/emel yang dahulunya hanya ada pada Feed.
 
@@ -1800,7 +1800,7 @@ void main() {
 ```
 
 Pembantu yang mesti ada dalam fail yang sama (tulis semua ini, jangan
-rujuk silang fail ujian lain — ujian mesti berdiri sendiri):
+rujuk silang fail ujian lain - ujian mesti berdiri sendiri):
 
 ```dart
 class _FakeAdapter implements HttpClientAdapter {
@@ -1910,11 +1910,11 @@ Import yang diperlukan: `dart:convert`, `dart:typed_data`, `package:dio/dio.dart
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `flutter test test/features/dashboard/dashboard_page_test.dart`
-Expected: GAGAL — `DashboardPage` tidak wujud.
+Expected: GAGAL - `DashboardPage` tidak wujud.
 
 - [ ] **Step 3: Tulis kad ahli**
 
-Cipta `lib/features/dashboard/widgets/member_cards.dart` dengan widget awam: `MembershipCard`, `UpcomingActivitiesCard` (tajuk `'Aktiviti Saya'`), `OpenActivitiesCard`, `QuickStatsRow` (tiga petak: `'Notifikasi'`/`'Sijil'`/`'Ahli'` dengan kiraan sebagai teks), setiap satu menerima potongan model yang diperlukan sahaja (`Membership`, `List<UpcomingRegistration>`, dsb.) — **bukan** seluruh `DashboardData`, supaya setiap kad boleh diuji secara berasingan.
+Cipta `lib/features/dashboard/widgets/member_cards.dart` dengan widget awam: `MembershipCard`, `UpcomingActivitiesCard` (tajuk `'Aktiviti Saya'`), `OpenActivitiesCard`, `QuickStatsRow` (tiga petak: `'Notifikasi'`/`'Sijil'`/`'Ahli'` dengan kiraan sebagai teks), setiap satu menerima potongan model yang diperlukan sahaja (`Membership`, `List<UpcomingRegistration>`, dsb.) - **bukan** seluruh `DashboardData`, supaya setiap kad boleh diuji secara berasingan.
 
 `MembershipCard` memapar butang bayar bila `membership.outstandingFeeCents != null`; sehingga Task 5 mendarat medan itu sentiasa null dan butang itu tidak pernah muncul. Itu betul, bukan kod mati.
 
@@ -1931,7 +1931,7 @@ Cipta `lib/features/dashboard/dashboard_page.dart`:
 
 Struktur `build`:
 
-1. `ref.watch(myProfileProvider.select(...))` mengambil rekod `(status, emailVerified, isInitialLoading)` — sama persis seperti `feed_page.dart:74-98`.
+1. `ref.watch(myProfileProvider.select(...))` mengambil rekod `(status, emailVerified, isInitialLoading)` - sama persis seperti `feed_page.dart:74-98`.
 2. `isInitialLoading` → `Scaffold(body: Center(child: CircularProgressIndicator.adaptive()))`.
    **Semakan ini WAJIB.** Tanpanya, `status` null semasa muat pertama tidak dapat dibezakan daripada null semasa ralat, dan dashboard penuh terpapar sekejap kepada ahli pending (bug sebenar 2026-08-24 pada Feed).
 3. `status != null && status != 'approved'` → `PendingStatusView` (tandatangan sebenar: `pending_status_view.dart:17-24`):
@@ -1956,17 +1956,17 @@ Struktur `build`:
       );
 ```
 
-Ini bermakna `.select` pada langkah 1 mesti turut mengambil `registrationPaymentStatus` dan `registrationFeeCents` — rekod lima medan, sama persis seperti `feed_page.dart:74-98`.
+Ini bermakna `.select` pada langkah 1 mesti turut mengambil `registrationPaymentStatus` dan `registrationFeeCents` - rekod lima medan, sama persis seperti `feed_page.dart:74-98`.
 
 4. `status == 'approved' && emailVerified == false` → `EmailNotVerifiedView(onRefresh: …)` dengan badan `onRefresh` yang sama seperti dalam `feed_page.dart:127-138`.
-5. Selain itu: `ref.watch(dashboardProvider)` dan `switch` pada `AsyncValue` —
+5. Selain itu: `ref.watch(dashboardProvider)` dan `switch` pada `AsyncValue` -
    - `loading` → skeleton berbentuk kad yang sama (`Shimmer`/placeholder kelabu), bukan spinner tengah skrin;
    - `error` → `_ErrorCard` dengan butang `'Cuba lagi'` → `ref.invalidate(dashboardProvider)`, diikuti `QuickStatsRow` dengan kiraan sifar supaya pintasan navigasi kekal boleh diketuk;
-   - `data` → `RefreshIndicator` + `ListView` kad mengikut susunan spec (blok admin dahulu bila ada — dipasang dalam Task 9 — kemudian status keahlian, aktiviti saya, aktiviti terbuka, kiraan ringkas).
+   - `data` → `RefreshIndicator` + `ListView` kad mengikut susunan spec (blok admin dahulu bila ada - dipasang dalam Task 9 - kemudian status keahlian, aktiviti saya, aktiviti terbuka, kiraan ringkas).
 
 `dashboardProvider` menghasilkan `DashboardData?`, jadi cabang `data`
 menerima nilai yang boleh jadi null. Null di sana bermakna "ahli belum
-diluluskan" — keadaan yang gate pada langkah 3 sudah tangkap, jadi ia
+diluluskan" - keadaan yang gate pada langkah 3 sudah tangkap, jadi ia
 tidak boleh dicapai. Tulisnya sebagai `data == null ? const SizedBox.shrink() : …`
 dan **jangan** guna `!`: gate dan provider ialah dua semakan berasingan,
 dan `!` di sini akan jadi crash kalau salah satu daripadanya berubah
@@ -2036,14 +2036,14 @@ testWidgets('donation_cents berisi → tiada nota pengecualian', (tester) async 
   expect(find.textContaining('tidak termasuk derma'), findsNothing);
 });
 
-testWidgets('attendance_rate null → papar "—", bukan "0%"', (tester) async {
+testWidgets('attendance_rate null → papar "-", bukan "0%"', (tester) async {
   final dio = _dioYangMemulangkan(_payloadAdmin(attendanceRate: null));
 
   await tester.pumpWidget(_app(dio, _testRouter(), profile: approvedProfile));
   await tester.pumpAndSettle();
 
   expect(find.text('0%'), findsNothing);
-  expect(find.text('—'), findsWidgets);
+  expect(find.text('-'), findsWidgets);
 });
 ```
 
@@ -2052,16 +2052,16 @@ Tambah pembantu `_payloadAdmin({int pendingApprovals = 0, int? donationCents, do
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `flutter test test/features/dashboard/dashboard_page_test.dart`
-Expected: GAGAL — `Menunggu Kelulusan` tidak dijumpai.
+Expected: GAGAL - `Menunggu Kelulusan` tidak dijumpai.
 
 - [ ] **Step 3: Tulis AdminSection**
 
 Cipta `lib/features/dashboard/widgets/admin_section.dart` dengan empat kad:
 
-- **Menunggu Kelulusan** — kiraan; guna warna amaran (`theme.extension<AppSemanticColors>()!.warning`, corak `approval_gate.dart:59`) bila > 0; ketukan → `/members/pending`.
-- **Kutipan Bulan Ini** — `totalCents` sebagai jumlah utama, pecahan yuran pendaftaran/aktiviti di bawahnya, dan derma **hanya** bila `revenue.includesDonations`. Bila tidak, papar nota kecil `'Jumlah ini tidak termasuk derma'`. Ketukan → `/admin/payments`.
-- **Statistik Ahli** — aktif / pending / baharu bulan ini + senarai `byDepartment`. Ketukan → `/members`.
-- **Statistik Aktiviti** — akan datang, pendaftaran bulan ini, kadar kehadiran sebagai peratus; `attendanceRate == null` → `'—'`, **bukan** `'0%'`.
+- **Menunggu Kelulusan** - kiraan; guna warna amaran (`theme.extension<AppSemanticColors>()!.warning`, corak `approval_gate.dart:59`) bila > 0; ketukan → `/members/pending`.
+- **Kutipan Bulan Ini** - `totalCents` sebagai jumlah utama, pecahan yuran pendaftaran/aktiviti di bawahnya, dan derma **hanya** bila `revenue.includesDonations`. Bila tidak, papar nota kecil `'Jumlah ini tidak termasuk derma'`. Ketukan → `/admin/payments`.
+- **Statistik Ahli** - aktif / pending / baharu bulan ini + senarai `byDepartment`. Ketukan → `/members`.
+- **Statistik Aktiviti** - akan datang, pendaftaran bulan ini, kadar kehadiran sebagai peratus; `attendanceRate == null` → `'-'`, **bukan** `'0%'`.
 
 Formatkan sen kepada ringgit dengan pembantu format sedia ada kalau ada (cari `lib/shared` untuk pemformat mata wang sebelum menulis satu lagi).
 
@@ -2086,7 +2086,7 @@ git add lib/features/dashboard/ test/features/dashboard/
 
 ---
 
-### Task 10: Navigasi — 5 tab, dashboard sebagai Utama
+### Task 10: Navigasi - 5 tab, dashboard sebagai Utama
 
 Deliverable: app membuka dashboard selepas log masuk, dengan feed sebagai tab kedua; tiada laluan lama yang putus.
 
@@ -2208,12 +2208,12 @@ void main() {
 
 Kalau `router.state` bukan API yang betul untuk versi go_router dalam
 `pubspec.lock`, guna `router.routerDelegate.currentConfiguration.uri.path`
-sebagai ganti — semak versi dahulu, jangan tukar-tukar sampai jadi.
+sebagai ganti - semak versi dahulu, jangan tukar-tukar sampai jadi.
 
 - [ ] **Step 2: Jalankan ujian, sahkan ia GAGAL**
 
 Run: `flutter test test/app/nav_shell_test.dart`
-Expected: GAGAL — mendarat pada `/feed` untuk indeks 0.
+Expected: GAGAL - mendarat pada `/feed` untuk indeks 0.
 
 - [ ] **Step 3: Kemas kini nav shell**
 
@@ -2278,11 +2278,11 @@ Dalam `router.dart`:
           // … tiga branch sedia ada, tidak berubah …
 ```
 
-Tukar `'/feed'` → `'/dashboard'` pada **baris 78** (redirect selepas log masuk) dan **baris 142** (fallback `/checkout` bila `extra` hilang). Tambah import `DashboardPage`. Route `/feed` **kekal** — jangan buang.
+Tukar `'/feed'` → `'/dashboard'` pada **baris 78** (redirect selepas log masuk) dan **baris 142** (fallback `/checkout` bila `extra` hilang). Tambah import `DashboardPage`. Route `/feed` **kekal** - jangan buang.
 
 - [ ] **Step 5: Kemas kini approval gate**
 
-Dalam `approval_gate.dart:120`, tukar `context.go('/feed')` → `context.go('/dashboard')`. Kemas kini juga komen kepala fail (baris 7-19) yang menyebut "Feed kekal tempat kanonik urusan pendaftaran/bayaran" — kini itu Dashboard.
+Dalam `approval_gate.dart:120`, tukar `context.go('/feed')` → `context.go('/dashboard')`. Kemas kini juga komen kepala fail (baris 7-19) yang menyebut "Feed kekal tempat kanonik urusan pendaftaran/bayaran" - kini itu Dashboard.
 
 - [ ] **Step 6: Jalankan ujian, sahkan ia LULUS**
 
@@ -2292,7 +2292,7 @@ Expected: PASS untuk kedua-dua ujian.
 - [ ] **Step 7: Jalankan suite penuh**
 
 Run: `flutter analyze && flutter test`
-Expected: analisis bersih, semua ujian lulus. Beri perhatian khusus kepada `test/features/posts/post_card_test.dart` dan `test/features/notifications/notifications_page_test.dart` — kedua-duanya menyebut `/feed`; kedua-duanya mendaftar route sendiri dan **sepatutnya** kekal lulus, tetapi sahkan, jangan andaikan.
+Expected: analisis bersih, semua ujian lulus. Beri perhatian khusus kepada `test/features/posts/post_card_test.dart` dan `test/features/notifications/notifications_page_test.dart` - kedua-duanya menyebut `/feed`; kedua-duanya mendaftar route sendiri dan **sepatutnya** kekal lulus, tetapi sahkan, jangan andaikan.
 
 - [ ] **Step 8: Jalankan app sebenar**
 
@@ -2325,5 +2325,5 @@ Task 6 (model)
 ```
 
 Bahagian A dan B boleh dijalankan selari. Task 10 ialah task pertama yang
-mengubah apa yang pengguna sedia ada lihat — sehingga ia mendarat,
+mengubah apa yang pengguna sedia ada lihat - sehingga ia mendarat,
 segala-galanya sebelumnya ialah kod baharu yang tidak dirujuk sesiapa.
