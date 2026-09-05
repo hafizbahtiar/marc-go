@@ -418,6 +418,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	tokens, err := h.issueTokens(c, user.ID, uuid.New())
 	if err != nil {
+		log.Printf("log masuk gagal untuk user %s: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "log masuk gagal"})
 		return
 	}
@@ -478,6 +479,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	tokens, err := h.issueTokens(c, consumed.UserID, consumed.FamilyID)
 	if err != nil {
+		log.Printf("gagal reset sesi untuk user %s: %v", consumed.UserID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
 		return
 	}
