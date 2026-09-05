@@ -372,6 +372,9 @@ func NewRouter(
 	verified.GET("/notifications", notificationHandler.List)
 	verified.POST("/notifications/:id/read", notificationHandler.MarkRead)
 	verified.POST("/notifications/read-all", notificationHandler.MarkAllRead)
+	verified.DELETE("/notifications/read", notificationHandler.DeleteRead)
+	verified.DELETE("/notifications/selected", notificationHandler.DeleteSelected)
+	verified.DELETE("/notifications/:id", notificationHandler.Delete)
 
 	// Donation (Stage 12, Stripe sahaja buat masa ni - SociaBuzz/threshold
 	// routing belum wired) - route AWAM sengaja, guna OptionalAuth supaya

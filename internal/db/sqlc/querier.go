@@ -176,6 +176,8 @@ type Querier interface {
 	DeleteDoneDeletedUploadsBefore(ctx context.Context, deletedAt pgtype.Timestamptz) (int64, error)
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
+	DeleteNotification(ctx context.Context, arg DeleteNotificationParams) error
+	DeleteNotifications(ctx context.Context, arg DeleteNotificationsParams) error
 	// Dipanggil DUA tempat, atas sebab berbeza:
 	//   request - permintaan baharu membunuh pautan lama
 	//   confirm - sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
@@ -186,6 +188,7 @@ type Querier interface {
 	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
 	// Tanpa skop user - untuk penyapu latar, bukan permintaan pengguna.
 	DeletePendingUploadByKey(ctx context.Context, r2Key string) error
+	DeleteReadNotifications(ctx context.Context, recipientID uuid.UUID) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	// Ownership dikuatkuasakan DALAM query (bukan semak dalam Go selepas
 	// fetch) - padanan GetAddressByIDAndUser. `:execrows` supaya caller

@@ -54,6 +54,43 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 	return i, err
 }
 
+const deleteNotification = `-- name: DeleteNotification :exec
+delete from notifications where id = $1 and recipient_id = $2
+`
+
+type DeleteNotificationParams struct {
+	ID          uuid.UUID `json:"id"`
+	RecipientID uuid.UUID `json:"recipient_id"`
+}
+
+func (q *Queries) DeleteNotification(ctx context.Context, arg DeleteNotificationParams) error {
+	_, err := q.db.Exec(ctx, deleteNotification, arg.ID, arg.RecipientID)
+	return err
+}
+
+const deleteNotifications = `-- name: DeleteNotifications :exec
+delete from notifications where recipient_id = $1 and id = any($2::uuid[])
+`
+
+type DeleteNotificationsParams struct {
+	RecipientID uuid.UUID   `json:"recipient_id"`
+	Column2     []uuid.UUID `json:"column_2"`
+}
+
+func (q *Queries) DeleteNotifications(ctx context.Context, arg DeleteNotificationsParams) error {
+	_, err := q.db.Exec(ctx, deleteNotifications, arg.RecipientID, arg.Column2)
+	return err
+}
+
+const deleteReadNotifications = `-- name: DeleteReadNotifications :exec
+delete from notifications where recipient_id = $1 and read_at is not null
+`
+
+func (q *Queries) DeleteReadNotifications(ctx context.Context, recipientID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteReadNotifications, recipientID)
+	return err
+}
+
 const listNotifications = `-- name: ListNotifications :many
 select id, recipient_id, actor_id, type, post_id, comment_id, read_at, created_at, activity_id, certificate_id from notifications
 where recipient_id = $1
