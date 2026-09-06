@@ -18,6 +18,16 @@ simpanan. Modul aktiviti (backend penuh) siap - jurangnya direkod di bawah.
 
 ---
 
+## Audit concurrency dan race condition
+
+- [ ] Audit semua mutation endpoint untuk lost update apabila dua pengguna mengubah rekod yang sama serentak.
+- [ ] Standardkan optimistic locking menggunakan `updated_at` atau `version` untuk profile, ahli, aktiviti, post dan template.
+- [ ] Audit semua server action dan endpoint write untuk idempotency key atau deduplication yang konsisten.
+- [ ] Audit webhook, retry, background job dan multi-replica execution untuk double processing.
+- [ ] Pastikan transaksi menggunakan row lock/conditional update yang sesuai dan tiada keputusan berdasarkan data lapuk.
+- [ ] Tambah ujian concurrency sebenar dengan `go test -race` serta ujian Postgres untuk setiap mutation kritikal.
+- [ ] Dokumentasikan mutation yang sengaja last-write-wins dan mutation yang wajib reject stale writes.
+
 ## Verifikasi Staff ID - SPEC v2 + PLAN v2 SIAP 2026-09-02, kod SEDANG dibina
 
 Keperluan pemilik produk: nombor staff (medan DB/API kini `staff_id`,

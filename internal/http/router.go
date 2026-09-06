@@ -87,6 +87,7 @@ func NewRouter(
 	r.GET("/healthz", handlers.Health)
 
 	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL, passwordResetURL)
+	legacyMemberImportHandler := handlers.NewLegacyMemberImportHandler(pool, emailClient, publicBaseURL)
 
 	// Satu factory, had bernama. Nama MESTI unik - dalam Redis ia
 	// yang mengasingkan baldi; tanpa itu login dan upload berkongsi kuota.
@@ -124,6 +125,8 @@ func NewRouter(
 	passwordResetCORS := middleware.CORS(corsAllowedOrigins, "POST, OPTIONS")
 	authGroup.POST("/password-reset/confirm", passwordResetCORS, passwordResetRateLimiter, authHandler.ConfirmPasswordReset)
 	authGroup.OPTIONS("/password-reset/confirm", passwordResetCORS)
+	authGroup.POST("/legacy-member-claim/request", authRateLimiter, legacyMemberImportHandler.RequestClaim)
+	authGroup.POST("/legacy-member-claim/complete", authRateLimiter, legacyMemberImportHandler.CompleteClaim)
 
 	queries := sqlc.New(pool)
 	requireAuth := middleware.RequireAuth(jwtSvc, queries)
@@ -228,6 +231,10 @@ func NewRouter(
 	approved.POST("/admin/departments", departmentsHandler.Create)
 	approved.PATCH("/admin/departments/:code", departmentsHandler.Update)
 	approved.DELETE("/admin/departments/:code", departmentsHandler.Delete)
+	approved.POST("/admin/legacy-member-import/dry-run", legacyMemberImportHandler.DryRun)
+	approved.GET("/admin/legacy-member-import/batches", legacyMemberImportHandler.ListBatches)
+	approved.GET("/admin/legacy-member-import/:id", legacyMemberImportHandler.GetBatch)
+	approved.POST("/admin/legacy-member-import/:id/import", legacyMemberImportHandler.Import)
 	// Baca-sahaja, manager ke atas - pemilih bahagian utk
 	// PATCH /members/:id/department (bukan skrin CRUD superadmin di atas).
 	approved.GET("/departments", departmentsHandler.ListForAssignment)
