@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -92,6 +93,7 @@ func familyAlive(c *gin.Context, q *sqlc.Queries, userID, sessionID uuid.UUID) (
 		FamilyID: sessionID,
 	})
 	if err != nil {
+		log.Printf("gagal semak refresh token family (user=%s, family=%s): %v", userID, sessionID, err)
 		return false, http.StatusInternalServerError, "gagal sahkan sesi"
 	}
 	if !alive {
