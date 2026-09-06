@@ -391,6 +391,10 @@ func NewRouter(
 	donationRateLimiter := rateLimiter.Limit("donation", rate.Every(6*time.Second), 5)
 	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc, queries), middleware.BlockTesterWrites(sqlc.New(pool)), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
+	paymentStatusHandler := handlers.NewPaymentStatusHandler(paymentGateways)
+	paymentStatusRateLimiter := rateLimiter.Limit("payment-status", rate.Every(3*time.Second), 10)
+	paymentStatusCORS := middleware.CORS(corsAllowedOrigins, "GET, OPTIONS")
+	r.GET("/payment-status/:gateway/:reference", paymentStatusCORS, paymentStatusRateLimiter, paymentStatusHandler.Check)
 
 	// Yuran pendaftaran ahli (Stage 12, ToyyibPay, SEKALI BAYAR - bukan
 	// dues berulang, bukan yuran aktiviti). Checkout duduk atas `protected`
