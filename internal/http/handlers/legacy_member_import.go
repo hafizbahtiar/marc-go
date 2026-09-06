@@ -182,7 +182,7 @@ func (h *LegacyMemberImportHandler) GetBatch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id batch tidak sah"})
 		return
 	}
-	departments, err := h.departmentCodes(c.Request.Context())
+	departments, err := h.departmentCodes(c.Request.Context(), h.pool)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak bahagian import"})
 		return
@@ -261,7 +261,7 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 	defer tx.Rollback(ctx)
 	txQueries := h.queries.WithTx(tx)
 	actor := auditActor(c, txQueries)
-	departments, err := h.departmentCodes(ctx)
+	departments, err := h.departmentCodes(ctx, h.pool)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak bahagian import"})
 		return
@@ -461,7 +461,7 @@ func (h *LegacyMemberImportHandler) CompleteClaim(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "akaun untuk rekod ini sudah wujud"})
 		return
 	}
-	departments, err := h.departmentCodes(ctx)
+	departments, err := h.departmentCodes(ctx, h.pool)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak bahagian tuntutan"})
 		return
@@ -533,7 +533,7 @@ func (h *LegacyMemberImportHandler) findClaimRow(ctx context.Context, emailAddre
 }
 
 func (h *LegacyMemberImportHandler) addDatabaseConflicts(ctx context.Context, report legacyimport.Report) (legacyimport.Report, error) {
-	departments, err := h.departmentCodes(ctx)
+	departments, err := h.departmentCodes(ctx, h.pool)
 	if err != nil {
 		return report, err
 	}
@@ -580,8 +580,17 @@ func (h *LegacyMemberImportHandler) addDatabaseConflicts(ctx context.Context, re
 	return report, nil
 }
 
-func (h *LegacyMemberImportHandler) departmentCodes(ctx context.Context) (map[string]string, error) {
-	rows, err := h.pool.Query(ctx, `select code from departments`)
+// pgxQuerier ialah bahagian yang dikongsi oleh *pgxpool.Pool dan pgx.Tx.
+// departmentCodes menerimanya supaya pemanggil di DALAM transaksi boleh
+// membaca bahagian yang baru sahaja dimasukkan tetapi belum di-commit -
+// membacanya melalui pool akan terlepas pandang dan melaporkan bahagian
+// itu masih "tidak wujud".
+type pgxQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+func (h *LegacyMemberImportHandler) departmentCodes(ctx context.Context, q pgxQuerier) (map[string]string, error) {
+	rows, err := q.Query(ctx, `select code from departments`)
 	if err != nil {
 		return nil, err
 	}
@@ -648,4 +657,364 @@ func (h *LegacyMemberImportHandler) storeReport(ctx context.Context, createdBy u
 
 func claimEmailHTML(link string) string {
 	return fmt.Sprintf(`<html><body><p>Gunakan pautan ini untuk menuntut akaun MARC anda:</p><p><a href="%s">Tuntut akaun MARC</a></p><p>Pautan ini sah selama 1 jam.</p></body></html>`, link)
+}
+
+// recomputableConflictCodes ialah kod konflik yang revalidateBatch tahu
+// hasilkan semula daripada lajur yang MEMANG tersimpan pada baris.
+//
+// Apa-apa kod di luar set ini DIKEKALKAN apa adanya. Ini bukan
+// kehati-hatian kosong: `invalid_registration_year` dikira daripada
+// "Tahun Daftar", dan lajur itu TIDAK wujud dalam
+// legacy_member_import_rows. Mengira semula secara membuta akan
+// menggugurkannya senyap, menjadikan baris rosak itu 'valid' dan layak
+// diimport. Warning juga tak dikira semula - lajur `phone` menyimpan
+// nombor yang SUDAH dinormalisasi, jadi `invalid_phone_cleared` takkan
+// terhasil semula.
+var recomputableConflictCodes = map[string]bool{
+	"missing_email":        true,
+	"invalid_email":        true,
+	"duplicate_email":      true,
+	"missing_name":         true,
+	"missing_member_id":    true,
+	"duplicate_member_id":  true,
+	"existing_member_id":   true,
+	"missing_staff_id":     true,
+	"placeholder_staff_id": true,
+	"duplicate_staff_id":   true,
+	"existing_staff_id":    true,
+	"invalid_status":       true,
+	"unknown_department":   true,
+}
+
+type revalidationRow struct {
+	id         uuid.UUID
+	status     string
+	staffID    string
+	memberID   string
+	name       string
+	email      string
+	department string
+	legacyStat string
+	preserved  []legacyimport.Conflict
+}
+
+// revalidateBatch mengira semula konflik SETIAP baris dalam batch dan
+// menyelaraskan status baris serta kiraan pada batch.
+//
+// Ia sengaja bekerja pada seluruh batch, bukan satu baris: konflik
+// pendua ialah sifat PASANGAN. Membetulkan No. ID. pada satu baris mesti
+// turut membersihkan baris lain yang sebelum ini berlanggar dengannya,
+// dan itu mustahil kalau hanya baris yang disunting dikira semula.
+//
+// Status turut dikemas kini kerana Import memilih `where status =
+// 'valid'` - tanpa langkah itu baris yang konfliknya sudah selesai akan
+// terus dilangkau secara senyap.
+func (h *LegacyMemberImportHandler) revalidateBatch(ctx context.Context, tx pgx.Tx, batchID uuid.UUID) error {
+	departments, err := h.departmentCodes(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	rows, err := tx.Query(ctx, `
+		select id, status, legacy_staff_id, member_id, display_name, email,
+		       department_code, legacy_status, conflicts
+		from legacy_member_import_rows
+		where batch_id = $1
+		order by source_row
+		for update`, batchID)
+	if err != nil {
+		return err
+	}
+	items := make([]revalidationRow, 0)
+	for rows.Next() {
+		var item revalidationRow
+		var stored json.RawMessage
+		if err := rows.Scan(&item.id, &item.status, &item.staffID, &item.memberID,
+			&item.name, &item.email, &item.department, &item.legacyStat, &stored); err != nil {
+			rows.Close()
+			return err
+		}
+		var existing []legacyimport.Conflict
+		if err := json.Unmarshal(normalizeJSONArray(stored), &existing); err != nil {
+			rows.Close()
+			return err
+		}
+		for _, conflict := range existing {
+			if !recomputableConflictCodes[conflict.Code] {
+				item.preserved = append(item.preserved, conflict)
+			}
+		}
+		items = append(items, item)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	emails := map[string]int{}
+	staffIDs := map[string]int{}
+	memberIDs := map[string]int{}
+	for i := range items {
+		if value := strings.ToLower(strings.TrimSpace(items[i].email)); value != "" {
+			emails[value]++
+		}
+		if value := legacyimport.NormalizeIdentifier(items[i].staffID); value != "" {
+			staffIDs[value]++
+		}
+		if value := strings.TrimSpace(items[i].memberID); value != "" {
+			memberIDs[value]++
+		}
+	}
+
+	validRows := 0
+	conflictRows := 0
+	for i := range items {
+		item := &items[i]
+		validated := legacyimport.Validate(legacyimport.Row{
+			LegacyStaffID:  item.staffID,
+			MemberID:       item.memberID,
+			DisplayName:    item.name,
+			Email:          item.email,
+			DepartmentCode: item.department,
+			Status:         item.legacyStat,
+		})
+		conflicts := append([]legacyimport.Conflict{}, item.preserved...)
+		conflicts = append(conflicts, validated.Conflicts...)
+
+		if canonical, ok := legacyimport.CanonicalDepartmentCode(item.department, departments); ok {
+			item.department = canonical
+		} else if unknown := legacyimport.UnknownDepartmentConflict(item.department, departments); unknown != nil {
+			conflicts = append(conflicts, *unknown)
+		}
+		if value := strings.ToLower(strings.TrimSpace(item.email)); value != "" && emails[value] > 1 {
+			conflicts = append(conflicts, legacyimport.Conflict{
+				Code: "duplicate_email", Message: "Emel muncul lebih daripada sekali dalam fail."})
+		}
+		if value := legacyimport.NormalizeIdentifier(item.staffID); value != "" && staffIDs[value] > 1 {
+			conflicts = append(conflicts, legacyimport.Conflict{
+				Code: "duplicate_staff_id", Message: "No. ID. muncul lebih daripada sekali dalam fail."})
+		}
+		if value := strings.TrimSpace(item.memberID); value != "" && memberIDs[value] > 1 {
+			conflicts = append(conflicts, legacyimport.Conflict{
+				Code: "duplicate_member_id", Message: "No. Ahli muncul lebih daripada sekali dalam fail."})
+		}
+		existingConflicts, err := h.existingAccountConflicts(ctx, item.email, item.staffID, item.memberID)
+		if err != nil {
+			return err
+		}
+		conflicts = append(conflicts, existingConflicts...)
+
+		status := item.status
+		// 'imported'/'claimed' ialah fakta sejarah - baris itu sudah
+		// menyentuh akaun sebenar, jadi jangan sesekali turunkan semula
+		// kepada 'valid'/'conflict'.
+		if status != "imported" && status != "claimed" {
+			if len(conflicts) == 0 {
+				status = "valid"
+			} else {
+				status = "conflict"
+			}
+		}
+		if len(conflicts) == 0 {
+			validRows++
+		} else {
+			conflictRows++
+		}
+
+		encoded, err := marshalJSONArray(conflicts)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			update legacy_member_import_rows
+			set conflicts = $2, status = $3, department_code = $4
+			where id = $1`, item.id, encoded, status, item.department); err != nil {
+			return err
+		}
+	}
+
+	_, err = tx.Exec(ctx, `
+		update legacy_member_import_batches
+		set valid_rows = $2, conflict_rows = $3
+		where id = $1`, batchID, validRows, conflictRows)
+	return err
+}
+
+// existingAccountConflicts menyemak perlanggaran terhadap akaun SEBENAR
+// (bukan baris lain dalam fail).
+func (h *LegacyMemberImportHandler) existingAccountConflicts(ctx context.Context, emailAddress, staffID, memberID string) ([]legacyimport.Conflict, error) {
+	var conflicts []legacyimport.Conflict
+	var existingUser *uuid.UUID
+	err := h.pool.QueryRow(ctx, `select id from users where lower(email) = lower($1)`, emailAddress).Scan(&existingUser)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		existingUser = nil
+	}
+
+	var owner *uuid.UUID
+	err = h.pool.QueryRow(ctx, `select user_id from profiles where staff_id = $1`, staffID).Scan(&owner)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil && (existingUser == nil || *owner != *existingUser) {
+		conflicts = append(conflicts, legacyimport.Conflict{
+			Code: "existing_staff_id", Message: "No. ID. sudah digunakan oleh akaun lain."})
+	}
+	err = h.pool.QueryRow(ctx, `select user_id from profiles where member_id = $1`, memberID).Scan(&owner)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil && (existingUser == nil || *owner != *existingUser) {
+		conflicts = append(conflicts, legacyimport.Conflict{
+			Code: "existing_member_id", Message: "No. Ahli sudah digunakan oleh akaun lain."})
+	}
+	return conflicts, nil
+}
+
+type updateLegacyRowRequest struct {
+	LegacyStaffID *string `json:"legacy_staff_id" binding:"omitempty,max=64"`
+}
+
+// UpdateRow membetulkan medan identiti pada satu baris staging, kemudian
+// mengira semula seluruh batch.
+func (h *LegacyMemberImportHandler) UpdateRow(c *gin.Context) {
+	if !h.requireSuperAdmin(c) {
+		return
+	}
+	rowID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id baris tidak sah"})
+		return
+	}
+	var req updateLegacyRowRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	if req.LegacyStaffID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tiada medan untuk dikemas kini"})
+		return
+	}
+	staffID := strings.TrimSpace(*req.LegacyStaffID)
+	if staffID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No. ID. tidak boleh kosong"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mula kemas kini"})
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	var batchID uuid.UUID
+	var status string
+	if err := tx.QueryRow(ctx, `
+		select batch_id, status from legacy_member_import_rows where id = $1 for update`,
+		rowID).Scan(&batchID, &status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "baris import tidak ditemui"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca baris import"})
+		return
+	}
+	// Baris yang sudah diimport/dituntut telah menyentuh akaun sebenar;
+	// menyunting No. ID. di sini hanya akan memesongkan staging daripada
+	// profil yang sudah wujud.
+	if status == "imported" || status == "claimed" {
+		c.JSON(http.StatusConflict, gin.H{"error": "baris ini sudah diimport atau dituntut"})
+		return
+	}
+	if _, err := tx.Exec(ctx,
+		`update legacy_member_import_rows set legacy_staff_id = $2 where id = $1`, rowID, staffID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini baris import"})
+		return
+	}
+	if err := h.revalidateBatch(ctx, tx, batchID); err != nil {
+		log.Printf("legacy import revalidate: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kira semula konflik import"})
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal simpan kemas kini import"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"batch_id": batchID})
+}
+
+type resolveDepartmentRequest struct {
+	From string `json:"from" binding:"required,max=200"`
+	Code string `json:"code" binding:"required,max=64"`
+	Name string `json:"name" binding:"required,max=200"`
+}
+
+// ResolveDepartment mencipta bahagian yang hilang DAN menulis semula
+// baris batch yang merujuk nilai CSV asal kepada kod baharu itu.
+//
+// Kedua-duanya perlu serentak: kod bahagian tak boleh mengandungi '/'
+// (ia memecahkan routing /admin/departments/:code), jadi nilai CSV
+// seperti "PEJ. TKPE (P) / BKP" MESTI ditukar kepada kod bersih.
+// Mencipta bahagian sahaja akan meninggalkan baris merujuk teks lama,
+// dan konflik itu kekal walaupun bahagian sudah wujud.
+func (h *LegacyMemberImportHandler) ResolveDepartment(c *gin.Context) {
+	if !h.requireSuperAdmin(c) {
+		return
+	}
+	batchID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id batch tidak sah"})
+		return
+	}
+	var req resolveDepartmentRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	from := strings.TrimSpace(req.From)
+	code := strings.TrimSpace(req.Code)
+	name := strings.TrimSpace(req.Name)
+	if from == "" || code == "" || name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nilai asal, kod dan nama bahagian diperlukan"})
+		return
+	}
+	if strings.Contains(code, "/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "kod bahagian tidak boleh mengandungi '/'"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal mula tambah bahagian"})
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		insert into departments (code, name, added_by) values ($1, $2, $3)
+		on conflict (code) do nothing`, code, name, middleware.UserID(c)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tambah bahagian"})
+		return
+	}
+	if _, err := tx.Exec(ctx, `
+		update legacy_member_import_rows
+		set department_code = $3
+		where batch_id = $1 and lower(btrim(department_code)) = lower(btrim($2))`,
+		batchID, from, code); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian baris import"})
+		return
+	}
+	if err := h.revalidateBatch(ctx, tx, batchID); err != nil {
+		log.Printf("legacy import revalidate: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kira semula konflik import"})
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan bahagian baharu"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": code, "name": name})
 }

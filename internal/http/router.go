@@ -244,6 +244,8 @@ func NewRouter(
 	approved.GET("/admin/legacy-member-import/batches", legacyMemberImportHandler.ListBatches)
 	approved.GET("/admin/legacy-member-import/:id", legacyMemberImportHandler.GetBatch)
 	approved.POST("/admin/legacy-member-import/:id/import", legacyMemberImportHandler.Import)
+	approved.POST("/admin/legacy-member-import/:id/resolve-department", legacyMemberImportHandler.ResolveDepartment)
+	approved.PATCH("/admin/legacy-member-import/rows/:id", legacyMemberImportHandler.UpdateRow)
 	// Baca-sahaja, manager ke atas - pemilih bahagian utk
 	// PATCH /members/:id/department (bukan skrin CRUD superadmin di atas).
 	approved.GET("/departments", departmentsHandler.ListForAssignment)

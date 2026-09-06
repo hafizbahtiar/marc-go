@@ -146,7 +146,7 @@ func Parse(r io.Reader) (Report, error) {
 			report.Emails[normalized.NormalizedEmail]++
 		}
 		if normalized.LegacyStaffID != "" {
-			report.StaffIDs[normalizeIdentifier(normalized.LegacyStaffID)]++
+			report.StaffIDs[NormalizeIdentifier(normalized.LegacyStaffID)]++
 		}
 		if normalized.MemberID != "" {
 			report.MemberIDs[normalized.MemberID]++
@@ -157,7 +157,7 @@ func Parse(r io.Reader) (Report, error) {
 		return row.NormalizedEmail
 	}, "duplicate_email", "Emel muncul lebih daripada sekali dalam fail.")
 	addDuplicateConflicts(report.Rows, report.StaffIDs, func(row *ValidatedRow) string {
-		return normalizeIdentifier(row.LegacyStaffID)
+		return NormalizeIdentifier(row.LegacyStaffID)
 	}, "duplicate_staff_id", "No. ID. muncul lebih daripada sekali dalam fail.")
 	addDuplicateConflicts(report.Rows, report.MemberIDs, func(row *ValidatedRow) string {
 		return row.MemberID
@@ -199,7 +199,7 @@ func Validate(row Row) ValidatedRow {
 	if strings.TrimSpace(row.LegacyStaffID) == "" {
 		add("missing_staff_id", "No. ID. diperlukan.")
 	}
-	staffID := normalizeIdentifier(row.LegacyStaffID)
+	staffID := NormalizeIdentifier(row.LegacyStaffID)
 	if staffID == "XXXX" || staffID == "MS" {
 		add("placeholder_staff_id", "No. ID. ialah placeholder dan perlu disahkan.")
 	}
@@ -285,7 +285,12 @@ func blankRecord(record []string) bool {
 	return true
 }
 
-func normalizeIdentifier(value string) string {
+// NormalizeIdentifier ialah bentuk kanonik No. ID. untuk perbandingan:
+// huruf besar, ruang dimampatkan. Dieksport supaya pengiraan semula
+// konflik (revalidateBatch) mengesan pendua dengan peraturan yang SAMA
+// seperti Parse - dua pelaksanaan yang hanyut bermakna pendua dikesan
+// semasa dry-run tetapi hilang selepas suntingan, atau sebaliknya.
+func NormalizeIdentifier(value string) string {
 	return strings.ToUpper(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
