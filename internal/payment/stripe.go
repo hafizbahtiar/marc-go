@@ -101,7 +101,7 @@ func (s *StripeGateway) CheckStatus(ctx context.Context, paymentIntentID string)
 	switch pi.Status {
 	case stripe.PaymentIntentStatusSucceeded:
 		return "succeeded", nil
-	case stripe.PaymentIntentStatusCanceled:
+	case stripe.PaymentIntentStatusCanceled, stripe.PaymentIntentStatusRequiresPaymentMethod:
 		return "failed", nil
 	default:
 		return "pending", nil
@@ -153,6 +153,8 @@ func (s *StripeGateway) VerifyWebhook(payload []byte, headers http.Header) (Webh
 	case stripe.EventTypePaymentIntentSucceeded:
 		status = "succeeded"
 	case stripe.EventTypePaymentIntentPaymentFailed:
+		status = "failed"
+	case "payment_intent.canceled":
 		status = "failed"
 	default:
 		return WebhookEvent{}, ErrIgnoredEvent

@@ -507,6 +507,11 @@ type Querier interface {
 	// gateway. Padanan skop `ListPendingActivityRegistrationsOlderThan`,
 	// yang sudah lama menapis dgn cara sama atas sebab yang sama.
 	ListPendingRegistrationPaymentsOlderThan(ctx context.Context, arg ListPendingRegistrationPaymentsOlderThanParams) ([]RegistrationPayment, error)
+	// Stripe PaymentIntent yang masih memerlukan payment method boleh kekal
+	// requires_payment_method selama-lamanya. Selepas reconcile menandakannya
+	// failed, ia keluar daripada query ini; pending yang benar-benar
+	// asynchronous terus dipantau sehingga Stripe menghantar keputusan.
+	ListPendingStripeDonationsOlderThan(ctx context.Context, arg ListPendingStripeDonationsOlderThanParams) ([]Donation, error)
 	ListPostImageKeys(ctx context.Context, postID uuid.UUID) ([]string, error)
 	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
 	// Keyset pagination atas (created_at, id) - bukan created_at je, elak

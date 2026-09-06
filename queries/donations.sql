@@ -51,6 +51,18 @@ where status = 'pending'
 order by created_at
 limit sqlc.arg('row_limit');
 
+-- name: ListPendingStripeDonationsOlderThan :many
+-- Stripe PaymentIntent yang masih memerlukan payment method boleh kekal
+-- requires_payment_method selama-lamanya. Selepas reconcile menandakannya
+-- failed, ia keluar daripada query ini; pending yang benar-benar
+-- asynchronous terus dipantau sehingga Stripe menghantar keputusan.
+select * from donations
+where gateway = 'stripe'
+  and status = 'pending'
+  and created_at < sqlc.arg('stale_before')
+order by created_at
+limit sqlc.arg('row_limit');
+
 -- name: UpdateDonationStatusByGatewayRef :one
 -- `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
 -- retry/replay (atau event lewat sampai tak ikut turutan) tak boleh

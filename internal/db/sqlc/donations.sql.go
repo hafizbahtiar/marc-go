@@ -220,6 +220,55 @@ func (q *Queries) ListPendingDonationsOlderThan(ctx context.Context, arg ListPen
 	return items, nil
 }
 
+const listPendingStripeDonationsOlderThan = `-- name: ListPendingStripeDonationsOlderThan :many
+select id, user_id, donor_name, donor_email, amount_cents, currency, gateway, gateway_ref, status, created_at from donations
+where gateway = 'stripe'
+  and status = 'pending'
+  and created_at < $1
+order by created_at
+limit $2
+`
+
+type ListPendingStripeDonationsOlderThanParams struct {
+	StaleBefore pgtype.Timestamptz `json:"stale_before"`
+	RowLimit    int32              `json:"row_limit"`
+}
+
+// Stripe PaymentIntent yang masih memerlukan payment method boleh kekal
+// requires_payment_method selama-lamanya. Selepas reconcile menandakannya
+// failed, ia keluar daripada query ini; pending yang benar-benar
+// asynchronous terus dipantau sehingga Stripe menghantar keputusan.
+func (q *Queries) ListPendingStripeDonationsOlderThan(ctx context.Context, arg ListPendingStripeDonationsOlderThanParams) ([]Donation, error) {
+	rows, err := q.db.Query(ctx, listPendingStripeDonationsOlderThan, arg.StaleBefore, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Donation
+	for rows.Next() {
+		var i Donation
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.DonorName,
+			&i.DonorEmail,
+			&i.AmountCents,
+			&i.Currency,
+			&i.Gateway,
+			&i.GatewayRef,
+			&i.Status,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateDonationStatusByGatewayRef = `-- name: UpdateDonationStatusByGatewayRef :one
 update donations
 set status = $3
