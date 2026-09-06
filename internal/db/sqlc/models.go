@@ -61,18 +61,27 @@ type ActivityCategory struct {
 }
 
 type ActivityCertificate struct {
-	ID            uuid.UUID          `json:"id"`
-	ActivityID    uuid.UUID          `json:"activity_id"`
-	UserID        uuid.UUID          `json:"user_id"`
-	Serial        string             `json:"serial"`
-	VerifyToken   string             `json:"verify_token"`
-	RecipientName string             `json:"recipient_name"`
-	ActivityTitle string             `json:"activity_title"`
-	ActivityDate  pgtype.Date        `json:"activity_date"`
-	IssuedAt      pgtype.Timestamptz `json:"issued_at"`
-	R2Key         pgtype.Text        `json:"r2_key"`
-	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
-	RevokedReason pgtype.Text        `json:"revoked_reason"`
+	ID                     uuid.UUID          `json:"id"`
+	ActivityID             uuid.UUID          `json:"activity_id"`
+	UserID                 uuid.UUID          `json:"user_id"`
+	Serial                 string             `json:"serial"`
+	VerifyToken            string             `json:"verify_token"`
+	RecipientName          string             `json:"recipient_name"`
+	ActivityTitle          string             `json:"activity_title"`
+	ActivityDate           pgtype.Date        `json:"activity_date"`
+	IssuedAt               pgtype.Timestamptz `json:"issued_at"`
+	R2Key                  pgtype.Text        `json:"r2_key"`
+	RevokedAt              pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason          pgtype.Text        `json:"revoked_reason"`
+	CategoryName           string             `json:"category_name"`
+	TemplatePrimaryColor   string             `json:"template_primary_color"`
+	TemplateSecondaryColor string             `json:"template_secondary_color"`
+	TemplateTitle          string             `json:"template_title"`
+	TemplateSubtitle       string             `json:"template_subtitle"`
+	TemplateBodyText       string             `json:"template_body_text"`
+	TemplateIssuerName     string             `json:"template_issuer_name"`
+	TemplateSignatureName  string             `json:"template_signature_name"`
+	TemplateFooterText     string             `json:"template_footer_text"`
 }
 
 type ActivityRegistration struct {
@@ -125,7 +134,7 @@ type CertificateTemplate struct {
 	IsActive       bool               `json:"is_active"`
 	PrimaryColor   string             `json:"primary_color"`
 	SecondaryColor string             `json:"secondary_color"`
-	LogoUrl        pgtype.Text        `json:"logo_url"`
+	LogoUrl        string             `json:"logo_url"`
 	Title          string             `json:"title"`
 	Subtitle       string             `json:"subtitle"`
 	BodyText       string             `json:"body_text"`

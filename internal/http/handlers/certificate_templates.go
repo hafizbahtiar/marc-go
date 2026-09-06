@@ -44,7 +44,7 @@ type certificateTemplateResponse struct {
 	IsActive       bool      `json:"is_active"`
 	PrimaryColor   string    `json:"primary_color"`
 	SecondaryColor string    `json:"secondary_color"`
-	LogoURL        *string   `json:"logo_url"`
+	LogoURL        string    `json:"logo_url"`
 	Title          string    `json:"title"`
 	Subtitle       string    `json:"subtitle"`
 	BodyText       string    `json:"body_text"`
@@ -55,15 +55,10 @@ type certificateTemplateResponse struct {
 }
 
 func toCertificateTemplateResponse(row sqlc.CertificateTemplate) certificateTemplateResponse {
-	var logo *string
-	if row.LogoUrl.Valid {
-		value := row.LogoUrl.String
-		logo = &value
-	}
 	return certificateTemplateResponse{
 		ID: row.ID, Name: row.Name, IsActive: row.IsActive,
 		PrimaryColor: row.PrimaryColor, SecondaryColor: row.SecondaryColor,
-		LogoURL: logo, Title: row.Title, Subtitle: row.Subtitle,
+		LogoURL: row.LogoUrl, Title: row.Title, Subtitle: row.Subtitle,
 		BodyText: row.BodyText, IssuerName: row.IssuerName,
 		SignatureName: row.SignatureName, FooterText: row.FooterText,
 		UpdatedAt: row.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
@@ -138,7 +133,7 @@ func (r certificateTemplateRequest) values() (sqlc.UpdateCertificateTemplatePara
 	}
 	return sqlc.UpdateCertificateTemplateParams{
 		Name: r.Name, PrimaryColor: r.PrimaryColor, SecondaryColor: r.SecondaryColor,
-		LogoUrl: pgText(strings.TrimSpace(valueOrEmpty(r.LogoURL))),
+		LogoUrl: strings.TrimSpace(valueOrEmpty(r.LogoURL)),
 		Title:   r.Title, Subtitle: r.Subtitle, BodyText: r.BodyText,
 		IssuerName: r.IssuerName, SignatureName: r.SignatureName, FooterText: r.FooterText,
 	}, ""

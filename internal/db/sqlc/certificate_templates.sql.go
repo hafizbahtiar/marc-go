@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getActiveCertificateTemplate = `-- name: GetActiveCertificateTemplate :one
@@ -164,17 +163,17 @@ returning id, name, is_active, primary_color, secondary_color, logo_url, title, 
 `
 
 type UpdateCertificateTemplateParams struct {
-	ID             uuid.UUID   `json:"id"`
-	Name           string      `json:"name"`
-	PrimaryColor   string      `json:"primary_color"`
-	SecondaryColor string      `json:"secondary_color"`
-	LogoUrl        pgtype.Text `json:"logo_url"`
-	Title          string      `json:"title"`
-	Subtitle       string      `json:"subtitle"`
-	BodyText       string      `json:"body_text"`
-	IssuerName     string      `json:"issuer_name"`
-	SignatureName  string      `json:"signature_name"`
-	FooterText     string      `json:"footer_text"`
+	ID             uuid.UUID `json:"id"`
+	Name           string    `json:"name"`
+	PrimaryColor   string    `json:"primary_color"`
+	SecondaryColor string    `json:"secondary_color"`
+	LogoUrl        string    `json:"logo_url"`
+	Title          string    `json:"title"`
+	Subtitle       string    `json:"subtitle"`
+	BodyText       string    `json:"body_text"`
+	IssuerName     string    `json:"issuer_name"`
+	SignatureName  string    `json:"signature_name"`
+	FooterText     string    `json:"footer_text"`
 }
 
 func (q *Queries) UpdateCertificateTemplate(ctx context.Context, arg UpdateCertificateTemplateParams) (CertificateTemplate, error) {

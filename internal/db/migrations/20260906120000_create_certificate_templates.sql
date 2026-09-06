@@ -3,9 +3,9 @@ create table certificate_templates (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   is_active boolean not null default false,
-  primary_color text not null default '#0f766e',
-  secondary_color text not null default '#b45309',
-  logo_url text,
+  primary_color text not null default '#E21E28',
+  secondary_color text not null default '#223145',
+  logo_url text not null default '/marc-logo-penuh.png',
   title text not null default 'Sijil Penyertaan',
   subtitle text not null default 'MARC',
   body_text text not null default 'Diberikan kepada [Nama penerima] atas penyertaan dalam aktiviti MARC.',
@@ -21,13 +21,14 @@ create unique index certificate_templates_one_active_idx
   where is_active;
 
 insert into certificate_templates (
-  name, is_active, primary_color, secondary_color, title, subtitle,
+  name, is_active, primary_color, secondary_color, logo_url, title, subtitle,
   body_text, issuer_name, signature_name, footer_text
 ) values (
   'Template MARC Standard',
   true,
-  '#0f766e',
-  '#b45309',
+  '#E21E28',
+  '#223145',
+  '/marc-logo-penuh.png',
   'Sijil Penyertaan',
   'MARC',
   'Diberikan kepada [Nama penerima] atas penyertaan dalam aktiviti MARC.',
