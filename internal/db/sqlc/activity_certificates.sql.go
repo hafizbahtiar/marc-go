@@ -15,20 +15,32 @@ import (
 const createCertificate = `-- name: CreateCertificate :one
 insert into activity_certificates (
   activity_id, user_id, serial, verify_token,
-  recipient_name, activity_title, activity_date
-) values ($1, $2, $3, $4, $5, $6, $7)
+  recipient_name, activity_title, activity_date, category_name,
+  template_primary_color, template_secondary_color, template_title,
+  template_subtitle, template_body_text, template_issuer_name,
+  template_signature_name, template_footer_text
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 on conflict (activity_id, user_id) do nothing
-returning id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason
+returning id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason, category_name, template_primary_color, template_secondary_color, template_title, template_subtitle, template_body_text, template_issuer_name, template_signature_name, template_footer_text
 `
 
 type CreateCertificateParams struct {
-	ActivityID    uuid.UUID   `json:"activity_id"`
-	UserID        uuid.UUID   `json:"user_id"`
-	Serial        string      `json:"serial"`
-	VerifyToken   string      `json:"verify_token"`
-	RecipientName string      `json:"recipient_name"`
-	ActivityTitle string      `json:"activity_title"`
-	ActivityDate  pgtype.Date `json:"activity_date"`
+	ActivityID             uuid.UUID   `json:"activity_id"`
+	UserID                 uuid.UUID   `json:"user_id"`
+	Serial                 string      `json:"serial"`
+	VerifyToken            string      `json:"verify_token"`
+	RecipientName          string      `json:"recipient_name"`
+	ActivityTitle          string      `json:"activity_title"`
+	ActivityDate           pgtype.Date `json:"activity_date"`
+	CategoryName           string      `json:"category_name"`
+	TemplatePrimaryColor   string      `json:"template_primary_color"`
+	TemplateSecondaryColor string      `json:"template_secondary_color"`
+	TemplateTitle          string      `json:"template_title"`
+	TemplateSubtitle       string      `json:"template_subtitle"`
+	TemplateBodyText       string      `json:"template_body_text"`
+	TemplateIssuerName     string      `json:"template_issuer_name"`
+	TemplateSignatureName  string      `json:"template_signature_name"`
+	TemplateFooterText     string      `json:"template_footer_text"`
 }
 
 func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificateParams) (ActivityCertificate, error) {
@@ -40,6 +52,15 @@ func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificatePa
 		arg.RecipientName,
 		arg.ActivityTitle,
 		arg.ActivityDate,
+		arg.CategoryName,
+		arg.TemplatePrimaryColor,
+		arg.TemplateSecondaryColor,
+		arg.TemplateTitle,
+		arg.TemplateSubtitle,
+		arg.TemplateBodyText,
+		arg.TemplateIssuerName,
+		arg.TemplateSignatureName,
+		arg.TemplateFooterText,
 	)
 	var i ActivityCertificate
 	err := row.Scan(
@@ -55,12 +76,21 @@ func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificatePa
 		&i.R2Key,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.CategoryName,
+		&i.TemplatePrimaryColor,
+		&i.TemplateSecondaryColor,
+		&i.TemplateTitle,
+		&i.TemplateSubtitle,
+		&i.TemplateBodyText,
+		&i.TemplateIssuerName,
+		&i.TemplateSignatureName,
+		&i.TemplateFooterText,
 	)
 	return i, err
 }
 
 const getCertificateByID = `-- name: GetCertificateByID :one
-select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason from activity_certificates where id = $1
+select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason, category_name, template_primary_color, template_secondary_color, template_title, template_subtitle, template_body_text, template_issuer_name, template_signature_name, template_footer_text from activity_certificates where id = $1
 `
 
 func (q *Queries) GetCertificateByID(ctx context.Context, id uuid.UUID) (ActivityCertificate, error) {
@@ -79,12 +109,21 @@ func (q *Queries) GetCertificateByID(ctx context.Context, id uuid.UUID) (Activit
 		&i.R2Key,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.CategoryName,
+		&i.TemplatePrimaryColor,
+		&i.TemplateSecondaryColor,
+		&i.TemplateTitle,
+		&i.TemplateSubtitle,
+		&i.TemplateBodyText,
+		&i.TemplateIssuerName,
+		&i.TemplateSignatureName,
+		&i.TemplateFooterText,
 	)
 	return i, err
 }
 
 const getCertificateByVerifyToken = `-- name: GetCertificateByVerifyToken :one
-select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason from activity_certificates where verify_token = $1
+select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason, category_name, template_primary_color, template_secondary_color, template_title, template_subtitle, template_body_text, template_issuer_name, template_signature_name, template_footer_text from activity_certificates where verify_token = $1
 `
 
 func (q *Queries) GetCertificateByVerifyToken(ctx context.Context, verifyToken string) (ActivityCertificate, error) {
@@ -103,12 +142,21 @@ func (q *Queries) GetCertificateByVerifyToken(ctx context.Context, verifyToken s
 		&i.R2Key,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.CategoryName,
+		&i.TemplatePrimaryColor,
+		&i.TemplateSecondaryColor,
+		&i.TemplateTitle,
+		&i.TemplateSubtitle,
+		&i.TemplateBodyText,
+		&i.TemplateIssuerName,
+		&i.TemplateSignatureName,
+		&i.TemplateFooterText,
 	)
 	return i, err
 }
 
 const listCertificatesByActivity = `-- name: ListCertificatesByActivity :many
-select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason from activity_certificates where activity_id = $1 order by serial
+select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason, category_name, template_primary_color, template_secondary_color, template_title, template_subtitle, template_body_text, template_issuer_name, template_signature_name, template_footer_text from activity_certificates where activity_id = $1 order by serial
 `
 
 func (q *Queries) ListCertificatesByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error) {
@@ -133,6 +181,15 @@ func (q *Queries) ListCertificatesByActivity(ctx context.Context, activityID uui
 			&i.R2Key,
 			&i.RevokedAt,
 			&i.RevokedReason,
+			&i.CategoryName,
+			&i.TemplatePrimaryColor,
+			&i.TemplateSecondaryColor,
+			&i.TemplateTitle,
+			&i.TemplateSubtitle,
+			&i.TemplateBodyText,
+			&i.TemplateIssuerName,
+			&i.TemplateSignatureName,
+			&i.TemplateFooterText,
 		); err != nil {
 			return nil, err
 		}
@@ -145,7 +202,7 @@ func (q *Queries) ListCertificatesByActivity(ctx context.Context, activityID uui
 }
 
 const listCertificatesPendingFile = `-- name: ListCertificatesPendingFile :many
-select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason from activity_certificates
+select id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason, category_name, template_primary_color, template_secondary_color, template_title, template_subtitle, template_body_text, template_issuer_name, template_signature_name, template_footer_text from activity_certificates
 where activity_id = $1 and r2_key is null and revoked_at is null
 `
 
@@ -173,6 +230,15 @@ func (q *Queries) ListCertificatesPendingFile(ctx context.Context, activityID uu
 			&i.R2Key,
 			&i.RevokedAt,
 			&i.RevokedReason,
+			&i.CategoryName,
+			&i.TemplatePrimaryColor,
+			&i.TemplateSecondaryColor,
+			&i.TemplateTitle,
+			&i.TemplateSubtitle,
+			&i.TemplateBodyText,
+			&i.TemplateIssuerName,
+			&i.TemplateSignatureName,
+			&i.TemplateFooterText,
 		); err != nil {
 			return nil, err
 		}
@@ -236,7 +302,7 @@ func (q *Queries) ListEligibleForCertificate(ctx context.Context, activityID uui
 }
 
 const listMyCertificates = `-- name: ListMyCertificates :many
-select ac.id, ac.activity_id, ac.user_id, ac.serial, ac.verify_token, ac.recipient_name, ac.activity_title, ac.activity_date, ac.issued_at, ac.r2_key, ac.revoked_at, ac.revoked_reason, c.name as category_name
+select ac.id, ac.activity_id, ac.user_id, ac.serial, ac.verify_token, ac.recipient_name, ac.activity_title, ac.activity_date, ac.issued_at, ac.r2_key, ac.revoked_at, ac.revoked_reason, ac.category_name, ac.template_primary_color, ac.template_secondary_color, ac.template_title, ac.template_subtitle, ac.template_body_text, ac.template_issuer_name, ac.template_signature_name, ac.template_footer_text, c.name as category_name
 from activity_certificates ac
 join activities a on a.id = ac.activity_id
 join activity_categories c on c.id = a.category_id
@@ -245,19 +311,28 @@ order by ac.issued_at desc
 `
 
 type ListMyCertificatesRow struct {
-	ID            uuid.UUID          `json:"id"`
-	ActivityID    uuid.UUID          `json:"activity_id"`
-	UserID        uuid.UUID          `json:"user_id"`
-	Serial        string             `json:"serial"`
-	VerifyToken   string             `json:"verify_token"`
-	RecipientName string             `json:"recipient_name"`
-	ActivityTitle string             `json:"activity_title"`
-	ActivityDate  pgtype.Date        `json:"activity_date"`
-	IssuedAt      pgtype.Timestamptz `json:"issued_at"`
-	R2Key         pgtype.Text        `json:"r2_key"`
-	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
-	RevokedReason pgtype.Text        `json:"revoked_reason"`
-	CategoryName  string             `json:"category_name"`
+	ID                     uuid.UUID          `json:"id"`
+	ActivityID             uuid.UUID          `json:"activity_id"`
+	UserID                 uuid.UUID          `json:"user_id"`
+	Serial                 string             `json:"serial"`
+	VerifyToken            string             `json:"verify_token"`
+	RecipientName          string             `json:"recipient_name"`
+	ActivityTitle          string             `json:"activity_title"`
+	ActivityDate           pgtype.Date        `json:"activity_date"`
+	IssuedAt               pgtype.Timestamptz `json:"issued_at"`
+	R2Key                  pgtype.Text        `json:"r2_key"`
+	RevokedAt              pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason          pgtype.Text        `json:"revoked_reason"`
+	CategoryName           string             `json:"category_name"`
+	TemplatePrimaryColor   string             `json:"template_primary_color"`
+	TemplateSecondaryColor string             `json:"template_secondary_color"`
+	TemplateTitle          string             `json:"template_title"`
+	TemplateSubtitle       string             `json:"template_subtitle"`
+	TemplateBodyText       string             `json:"template_body_text"`
+	TemplateIssuerName     string             `json:"template_issuer_name"`
+	TemplateSignatureName  string             `json:"template_signature_name"`
+	TemplateFooterText     string             `json:"template_footer_text"`
+	CategoryName_2         string             `json:"category_name_2"`
 }
 
 func (q *Queries) ListMyCertificates(ctx context.Context, userID uuid.UUID) ([]ListMyCertificatesRow, error) {
@@ -283,6 +358,15 @@ func (q *Queries) ListMyCertificates(ctx context.Context, userID uuid.UUID) ([]L
 			&i.RevokedAt,
 			&i.RevokedReason,
 			&i.CategoryName,
+			&i.TemplatePrimaryColor,
+			&i.TemplateSecondaryColor,
+			&i.TemplateTitle,
+			&i.TemplateSubtitle,
+			&i.TemplateBodyText,
+			&i.TemplateIssuerName,
+			&i.TemplateSignatureName,
+			&i.TemplateFooterText,
+			&i.CategoryName_2,
 		); err != nil {
 			return nil, err
 		}
@@ -298,7 +382,7 @@ const revokeCertificate = `-- name: RevokeCertificate :one
 update activity_certificates
 set revoked_at = now(), revoked_reason = $2
 where id = $1 and revoked_at is null
-returning id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason
+returning id, activity_id, user_id, serial, verify_token, recipient_name, activity_title, activity_date, issued_at, r2_key, revoked_at, revoked_reason, category_name, template_primary_color, template_secondary_color, template_title, template_subtitle, template_body_text, template_issuer_name, template_signature_name, template_footer_text
 `
 
 type RevokeCertificateParams struct {
@@ -322,6 +406,15 @@ func (q *Queries) RevokeCertificate(ctx context.Context, arg RevokeCertificatePa
 		&i.R2Key,
 		&i.RevokedAt,
 		&i.RevokedReason,
+		&i.CategoryName,
+		&i.TemplatePrimaryColor,
+		&i.TemplateSecondaryColor,
+		&i.TemplateTitle,
+		&i.TemplateSubtitle,
+		&i.TemplateBodyText,
+		&i.TemplateIssuerName,
+		&i.TemplateSignatureName,
+		&i.TemplateFooterText,
 	)
 	return i, err
 }

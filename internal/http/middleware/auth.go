@@ -8,12 +8,13 @@ import (
 	"github.com/google/uuid"
 
 	"marc/internal/auth"
+	"marc/internal/db/sqlc"
 )
 
 const userIDKey = "userID"
 const sessionIDKey = "sessionID"
 
-func RequireAuth(j *auth.JWT) gin.HandlerFunc {
+func RequireAuth(j *auth.JWT, q *sqlc.Queries) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		token, ok := strings.CutPrefix(header, "Bearer ")
@@ -25,6 +26,11 @@ func RequireAuth(j *auth.JWT) gin.HandlerFunc {
 		userID, sessionID, err := j.ParseAccessToken(token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token tidak sah"})
+			return
+		}
+
+		if ok, status, msg := familyAlive(c, q, userID, sessionID); !ok {
+			c.AbortWithStatusJSON(status, gin.H{"error": msg})
 			return
 		}
 
@@ -55,18 +61,43 @@ func SessionID(c *gin.Context) uuid.UUID {
 // kalau tiada/tak sah - untuk route awam yang nak "tahu siapa kalau log
 // masuk" tanpa wajibkan auth (cth: donation checkout, Stage 12 - ahli
 // MARC yang log masuk dikaitkan user_id, orang luar tetap boleh donate).
-func OptionalAuth(j *auth.JWT) gin.HandlerFunc {
+func OptionalAuth(j *auth.JWT, q *sqlc.Queries) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		token, ok := strings.CutPrefix(header, "Bearer ")
 		if ok && token != "" {
 			if userID, sessionID, err := j.ParseAccessToken(token); err == nil {
-				c.Set(userIDKey, userID)
-				c.Set(sessionIDKey, sessionID)
+				if ok, _, _ := familyAlive(c, q, userID, sessionID); ok {
+					c.Set(userIDKey, userID)
+					c.Set(sessionIDKey, sessionID)
+				}
 			}
 		}
 		c.Next()
 	}
+}
+
+// familyAlive - token lama tanpa sid (uuid.Nil) diluluskan; token baru
+// kena ada family refresh yang belum luput. Revoke/logout-all padam
+// family → access JWT ditolak serta-merta, bukan tunggu TTL.
+//
+// Ralat DB = 500 (bukan 401) supaya interceptor mobile tak clear sesi
+// semasa outage.
+func familyAlive(c *gin.Context, q *sqlc.Queries, userID, sessionID uuid.UUID) (ok bool, status int, msg string) {
+	if sessionID == uuid.Nil {
+		return true, 0, ""
+	}
+	alive, err := q.HasActiveRefreshTokenFamily(c.Request.Context(), sqlc.HasActiveRefreshTokenFamilyParams{
+		UserID:   userID,
+		FamilyID: sessionID,
+	})
+	if err != nil {
+		return false, http.StatusInternalServerError, "gagal sahkan sesi"
+	}
+	if !alive {
+		return false, http.StatusUnauthorized, "token tidak sah"
+	}
+	return true, 0, ""
 }
 
 // UserIDOptional pulangkan user id + true kalau OptionalAuth (atau

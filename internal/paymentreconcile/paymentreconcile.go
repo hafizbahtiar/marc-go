@@ -372,9 +372,8 @@ func (r *Reconciler) reconcileActivityRegistrations(ctx context.Context, w windo
 // IN ('pending','succeeded','failed') - set nilai SAMA dengan
 // Gateway.CheckStatus).
 func (r *Reconciler) reconcileDonations(ctx context.Context, w window, summary *ReconcileSummary) {
-	rows, err := r.queries.ListPendingDonationsOlderThan(ctx, sqlc.ListPendingDonationsOlderThanParams{
+	rows, err := r.queries.ListPendingStripeDonationsOlderThan(ctx, sqlc.ListPendingStripeDonationsOlderThanParams{
 		StaleBefore: w.staleBefore,
-		Oldest:      w.oldest,
 		RowLimit:    batchSize,
 	})
 	if err != nil {

@@ -198,6 +198,34 @@ func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (
 	return i, err
 }
 
+const hasActiveRefreshTokenFamily = `-- name: HasActiveRefreshTokenFamily :one
+select exists(
+  select 1 from refresh_tokens
+  where user_id = $1 and family_id = $2 and expires_at > now()
+)
+`
+
+type HasActiveRefreshTokenFamilyParams struct {
+	UserID   uuid.UUID `json:"user_id"`
+	FamilyID uuid.UUID `json:"family_id"`
+}
+
+// Family "hidup" = ada sekurang-kurangnya SATU baris belum luput
+// (sama tapisan ListActiveRefreshTokensByUser). consumed_at SENGAJA
+// tak ditapis: rotate meninggalkan baris consumed, sibling baru
+// belum sempat masuk - menapis consumed akan 401 race semasa refresh
+// dan trigger reuse-detection yang revoke family sendiri.
+//
+// Lepas DELETE family (revoke / logout-all / tukar password), exists
+// = false → RequireAuth tolak access JWT serta-merta, bukan tunggu
+// TTL 15 minit.
+func (q *Queries) HasActiveRefreshTokenFamily(ctx context.Context, arg HasActiveRefreshTokenFamilyParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveRefreshTokenFamily, arg.UserID, arg.FamilyID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listActiveRefreshTokensByUser = `-- name: ListActiveRefreshTokensByUser :many
 select id, user_id, token_hash, expires_at, created_at, family_id, consumed_at, consumed_ip, user_agent, created_ip from refresh_tokens
 where user_id = $1 and expires_at > now()

@@ -125,7 +125,10 @@ func NewRouter(
 	authGroup.POST("/password-reset/confirm", passwordResetCORS, passwordResetRateLimiter, authHandler.ConfirmPasswordReset)
 	authGroup.OPTIONS("/password-reset/confirm", passwordResetCORS)
 
-	protectedAuthGroup := r.Group("/auth", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
+	queries := sqlc.New(pool)
+	requireAuth := middleware.RequireAuth(jwtSvc, queries)
+
+	protectedAuthGroup := r.Group("/auth", requireAuth, middleware.RequireApprovedStatus(queries))
 	protectedAuthGroup.POST("/verify-email/request", verifyEmailRequestRateLimiter, authHandler.RequestEmailVerification)
 
 	profileHandler := handlers.NewProfileHandler(pool, emailClient, r2Client, registrationFeeCents, paymentGateways["toyyibpay"])
@@ -144,7 +147,7 @@ func NewRouter(
 	// yang berjaya cipta baris baharu.
 	accountDeletionRateLimiter := rateLimiter.Limit("account-deletion-request", rate.Every(3*time.Second), 10)
 
-	protected := r.Group("/", middleware.RequireAuth(jwtSvc))
+	protected := r.Group("/", requireAuth)
 	protected.GET("/me", profileHandler.Me)
 	protected.PATCH("/me", profileUpdateRateLimiter, profileHandler.UpdateMe)
 	protected.POST("/me/deletion-request", accountDeletionRateLimiter, profileHandler.RequestAccountDeletion)
@@ -183,7 +186,7 @@ func NewRouter(
 	// approved (Stage 11) - /members, /device-tokens, dan approve/reject
 	// sendiri perlu status=approved. /me sengaja TAK di sini (lihat
 	// RequireApprovedStatus).
-	approved := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)))
+	approved := r.Group("/", requireAuth, middleware.RequireApprovedStatus(queries))
 	approved.GET("/members", profileHandler.Members)
 	// Profil SATU ahli (view-only, tiered) - laluan dua segmen, tiada
 	// pertembungan dgn /members (satu segmen) atau tindakan tiga segmen
@@ -282,7 +285,7 @@ func NewRouter(
 	postCreateRateLimiter := rateLimiter.Limit("post-create", rate.Every(3*time.Second), 10)
 	commentCreateRateLimiter := rateLimiter.Limit("comment-create", rate.Every(3*time.Second), 10)
 
-	verified := r.Group("/", middleware.RequireAuth(jwtSvc), middleware.RequireApprovedStatus(sqlc.New(pool)), middleware.RequireVerifiedEmail(sqlc.New(pool)))
+	verified := r.Group("/", requireAuth, middleware.RequireApprovedStatus(queries), middleware.RequireVerifiedEmail(queries))
 	verified.GET("/posts", postHandler.List)
 	verified.POST("/posts", postCreateRateLimiter, postHandler.Create)
 	verified.GET("/posts/:id", postHandler.Get)
@@ -340,9 +343,14 @@ func NewRouter(
 	// config.go. Kosong = tiada perubahan tingkah laku sedia ada (QR
 	// terus ke laluan JSON awam Go, publicBaseURL + /verify/certificates/:token).
 	certificateHandler := handlers.NewCertificateHandler(pool, r2Client, pushSvc, publicBaseURL, certificateVerifyURL)
+	certificateTemplateHandler := handlers.NewCertificateTemplateHandler(pool)
 
 	verified.POST("/activities/:id/certificates", certificateHandler.Issue)
 	verified.POST("/certificates/:id/revoke", certificateHandler.Revoke)
+	verified.GET("/admin/certificate-templates", certificateTemplateHandler.List)
+	verified.GET("/admin/certificate-templates/:id", certificateTemplateHandler.Get)
+	verified.PATCH("/admin/certificate-templates/:id", certificateTemplateHandler.Update)
+	verified.POST("/admin/certificate-templates/:id/publish", certificateTemplateHandler.Publish)
 
 	approved.GET("/me/certificates", certificateHandler.ListMine)
 	approved.GET("/me/certificates/:id/file", certificateHandler.Download)
@@ -369,6 +377,9 @@ func NewRouter(
 	verified.GET("/notifications", notificationHandler.List)
 	verified.POST("/notifications/:id/read", notificationHandler.MarkRead)
 	verified.POST("/notifications/read-all", notificationHandler.MarkAllRead)
+	verified.DELETE("/notifications/read", notificationHandler.DeleteRead)
+	verified.DELETE("/notifications/selected", notificationHandler.DeleteSelected)
+	verified.DELETE("/notifications/:id", notificationHandler.Delete)
 
 	// Donation (Stage 12, Stripe sahaja buat masa ni - SociaBuzz/threshold
 	// routing belum wired) - route AWAM sengaja, guna OptionalAuth supaya
@@ -378,7 +389,7 @@ func NewRouter(
 	// (cmd/api/main.go), tiada perubahan di sini.
 	donationHandler := handlers.NewDonationHandler(pool, paymentGateways, emailClient)
 	donationRateLimiter := rateLimiter.Limit("donation", rate.Every(6*time.Second), 5)
-	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc), middleware.BlockTesterWrites(sqlc.New(pool)), donationHandler.Checkout)
+	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc, queries), middleware.BlockTesterWrites(sqlc.New(pool)), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
 
 	// Yuran pendaftaran ahli (Stage 12, ToyyibPay, SEKALI BAYAR - bukan

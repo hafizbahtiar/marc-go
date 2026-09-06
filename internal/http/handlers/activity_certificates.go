@@ -155,6 +155,29 @@ func issueCertificatesTx(
 		return nil, errActivityNotFinished
 	}
 
+	template, templateErr := qtx.GetActiveCertificateTemplate(ctx)
+	if templateErr != nil && !errors.Is(templateErr, pgx.ErrNoRows) {
+		return nil, templateErr
+	}
+	templatePrimaryColor := "#E21E28"
+	templateSecondaryColor := "#223145"
+	templateTitle := "Sijil Penyertaan"
+	templateSubtitle := "MARC"
+	templateBodyText := "Diberikan kepada [Nama penerima] atas penyertaan dalam aktiviti MARC."
+	templateIssuerName := "MARC"
+	templateSignatureName := "Pengurusan MARC"
+	templateFooterText := "Sijil ini dijana secara rasmi oleh MARC."
+	if templateErr == nil {
+		templatePrimaryColor = template.PrimaryColor
+		templateSecondaryColor = template.SecondaryColor
+		templateTitle = template.Title
+		templateSubtitle = template.Subtitle
+		templateBodyText = template.BodyText
+		templateIssuerName = template.IssuerName
+		templateSignatureName = template.SignatureName
+		templateFooterText = template.FooterText
+	}
+
 	totalSessions, err := qtx.CountActivitySessions(ctx, activityID)
 	if err != nil {
 		return nil, err
@@ -236,13 +259,22 @@ func issueCertificatesTx(
 		serial := fmt.Sprintf("MARC-%d-%06d", activity.StartsAt.Time.In(malaysiaTZ).Year(), seq)
 
 		row, err := qtx.CreateCertificate(ctx, sqlc.CreateCertificateParams{
-			ActivityID:    activityID,
-			UserID:        cand.UserID,
-			Serial:        serial,
-			VerifyToken:   token,
-			RecipientName: recipientName,
-			ActivityTitle: activity.Title,
-			ActivityDate:  pgDate(activity.StartsAt.Time),
+			ActivityID:             activityID,
+			UserID:                 cand.UserID,
+			Serial:                 serial,
+			VerifyToken:            token,
+			RecipientName:          recipientName,
+			ActivityTitle:          activity.Title,
+			ActivityDate:           pgDate(activity.StartsAt.Time),
+			CategoryName:           activity.CategoryName,
+			TemplatePrimaryColor:   templatePrimaryColor,
+			TemplateSecondaryColor: templateSecondaryColor,
+			TemplateTitle:          templateTitle,
+			TemplateSubtitle:       templateSubtitle,
+			TemplateBodyText:       templateBodyText,
+			TemplateIssuerName:     templateIssuerName,
+			TemplateSignatureName:  templateSignatureName,
+			TemplateFooterText:     templateFooterText,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			// on conflict do nothing → sijil sudah wujud. Bukan ralat;
@@ -309,24 +341,31 @@ func fillPendingCertificateFiles(
 		return nil, nil
 	}
 
-	activity, err := q.GetActivityByID(ctx, activityID)
-	if err != nil {
-		return nil, err
-	}
-
 	var completed []sqlc.ActivityCertificate
+
 	for _, cert := range pending {
 		link := strings.TrimRight(baseURL, "/") + "/verify/certificates/" + cert.VerifyToken
 		if verifyURL != "" {
 			link = verifyURL + "?token=" + cert.VerifyToken
 		}
+		templateStyle := &certificate.TemplateStyle{
+			PrimaryColor:   cert.TemplatePrimaryColor,
+			SecondaryColor: cert.TemplateSecondaryColor,
+			Title:          cert.TemplateTitle,
+			Subtitle:       cert.TemplateSubtitle,
+			BodyText:       cert.TemplateBodyText,
+			IssuerName:     cert.TemplateIssuerName,
+			SignatureName:  cert.TemplateSignatureName,
+			FooterText:     cert.TemplateFooterText,
+		}
 		pdf, err := certificate.GeneratePDF(certificate.Data{
 			Serial:        cert.Serial,
 			RecipientName: cert.RecipientName,
 			ActivityTitle: cert.ActivityTitle,
-			CategoryName:  activity.CategoryName,
+			CategoryName:  cert.CategoryName,
 			ActivityDate:  cert.ActivityDate.Time,
 			VerifyURL:     link,
+			Template:      templateStyle,
 		})
 		if err != nil {
 			// Ralat GeneratePDF menamakan medan yang menyinggung; ia
@@ -447,9 +486,8 @@ func (h *CertificateHandler) requireManagement(c *gin.Context) bool {
 
 // Issue - POST /activities/:id/certificates.
 //
-// Menjalankan fasa 1 (transaksi) kemudian fasa 2 (muat naik). Fasa 2 yang
-// gagal separuh jalan BUKAN kegagalan permintaan: sijil sudah wujud dan
-// sah, cuma failnya belum siap. Panggil semula endpoint untuk menyambung.
+// Mencipta metadata sijil dan snapshot style. PDF hanya dijana apabila
+// penerima memuat turun sijil secara on-demand.
 func (h *CertificateHandler) Issue(c *gin.Context) {
 	if !h.requireManagement(c) {
 		return
@@ -479,32 +517,12 @@ func (h *CertificateHandler) Issue(c *gin.Context) {
 		return
 	}
 
-	ready, err := fillPendingCertificateFiles(ctx, h.pool, h.r2, h.baseURL, h.verifyURL, activityID)
-
-	// Diberitahu untuk setiap sijil yang failnya SIAP dalam pusingan ini -
-	// termasuk pusingan yang gagal separuh jalan, kerana sijil yang sudah
-	// siap tetap boleh dimuat turun. Baris sijil sudah komit (fasa 1), jadi
-	// ini sudah pun di luar sebarang transaksi.
-	h.notifyCertificateReady(ready, middleware.UserID(c))
-
-	if err != nil {
-		log.Printf("sediakan fail sijil aktiviti %s: %v", activityID, err)
-		// Mesej TETAP. err di sini membalut ralat SDK AWS atau Postgres -
-		// nama bucket, hos endpoint, request id - dan tempatnya dalam log,
-		// bukan dalam badan respons. files_ready sudah memberitahu pemanggil
-		// sejauh mana ia sampai.
-		c.JSON(http.StatusAccepted, gin.H{
-			"issued":      len(issued),
-			"files_ready": h.countFilesReady(ctx, activityID),
-			"message":     "sijil sudah dicipta tetapi sebahagian failnya belum siap; panggil semula untuk menyambung",
-		})
-		return
-	}
+	h.notifyCertificateReady(issued, middleware.UserID(c))
 
 	c.JSON(http.StatusOK, gin.H{
 		"issued":      len(issued),
-		"files_ready": h.countFilesReady(ctx, activityID),
-		"message":     "sijil siap diterbitkan",
+		"files_ready": len(issued),
+		"message":     "sijil siap dimuat turun",
 	})
 }
 
@@ -612,8 +630,8 @@ type certificateResponse struct {
 	CategoryName  string    `json:"category_name"`
 	ActivityDate  string    `json:"activity_date"`
 	IssuedAt      time.Time `json:"issued_at"`
-	// FileReady, bukan r2_key: kunci objek dalaman tak pernah keluar ke
-	// klien - muat turun melalui Download yang menandatangani URL.
+	// FileReady dikekalkan untuk keserasian API lama. PDF kini dijana
+	// on-demand, jadi ia sentiasa tersedia selagi sijil tidak ditarik balik.
 	FileReady bool `json:"file_ready"`
 }
 
@@ -639,7 +657,7 @@ func (h *CertificateHandler) ListMine(c *gin.Context) {
 			CategoryName:  r.CategoryName,
 			ActivityDate:  r.ActivityDate.Time.Format("2006-01-02"),
 			IssuedAt:      r.IssuedAt.Time,
-			FileReady:     r.R2Key.Valid,
+			FileReady:     true,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"certificates": out})
@@ -722,8 +740,8 @@ func (h *CertificateHandler) Verify(c *gin.Context) {
 
 // Download - GET /me/certificates/:id/file.
 //
-// Memulangkan URL bertandatangan berumur pendek, bukan bait PDF: R2 yang
-// menyampaikan fail, backend tidak menjadi bottleneck lebar jalur.
+// Menjana PDF secara on-demand daripada snapshot sijil. PDF tidak disimpan
+// dalam R2; ini mengelakkan satu objek storage bagi setiap penerima.
 func (h *CertificateHandler) Download(c *gin.Context) {
 	certID, ok := parseUUIDParam(c, "id")
 	if !ok {
@@ -751,18 +769,33 @@ func (h *CertificateHandler) Download(c *gin.Context) {
 		c.JSON(http.StatusGone, gin.H{"error": "sijil ini telah ditarik balik"})
 		return
 	}
-	if !cert.R2Key.Valid {
-		// Fasa 2 belum siap untuk baris ini - keadaan sementara yang normal,
-		// bukan ralat.
-		c.JSON(http.StatusConflict, gin.H{"error": "sijil sedang disediakan, cuba sebentar lagi"})
-		return
-	}
 
-	url := h.r2.SignedURL(ctx, cert.R2Key.String)
-	if url == "" {
-		log.Printf("tandatangan URL sijil %s gagal", certID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sediakan pautan muat turun"})
+	link := strings.TrimRight(h.baseURL, "/") + "/verify/certificates/" + cert.VerifyToken
+	if h.verifyURL != "" {
+		link = h.verifyURL + "?token=" + cert.VerifyToken
+	}
+	pdf, err := certificate.GeneratePDF(certificate.Data{
+		Serial:        cert.Serial,
+		RecipientName: cert.RecipientName,
+		ActivityTitle: cert.ActivityTitle,
+		CategoryName:  cert.CategoryName,
+		ActivityDate:  cert.ActivityDate.Time,
+		VerifyURL:     link,
+		Template: &certificate.TemplateStyle{
+			PrimaryColor:   cert.TemplatePrimaryColor,
+			SecondaryColor: cert.TemplateSecondaryColor,
+			Title:          cert.TemplateTitle,
+			Subtitle:       cert.TemplateSubtitle,
+			BodyText:       cert.TemplateBodyText,
+			IssuerName:     cert.TemplateIssuerName,
+			SignatureName:  cert.TemplateSignatureName,
+			FooterText:     cert.TemplateFooterText,
+		},
+	})
+	if err != nil {
+		log.Printf("jana PDF sijil %s: %v", certID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal jana fail sijil"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"url": url})
+	c.Data(http.StatusOK, "application/pdf", pdf)
 }

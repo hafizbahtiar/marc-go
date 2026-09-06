@@ -109,6 +109,79 @@ func (q *Queries) GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, er
 	return i, err
 }
 
+const listCommentPreviewsByPostIDs = `-- name: ListCommentPreviewsByPostIDs :many
+select post_id, id, parent_comment_id, content, created_at, edited_at, author_id, author_member_id, author_display_name, author_avatar_r2_key, preview_rank
+from (
+  select
+    c.post_id,
+    c.id,
+    c.parent_comment_id,
+    c.content,
+    c.created_at,
+    c.edited_at,
+    c.author_id,
+    pr.member_id as author_member_id,
+    pr.display_name as author_display_name,
+    pr.avatar_r2_key as author_avatar_r2_key,
+    row_number() over (partition by c.post_id order by c.created_at desc) as preview_rank
+  from comments c
+  join profiles pr on pr.user_id = c.author_id
+  where c.post_id = any($1::uuid[])
+    and c.parent_comment_id is null
+    and c.deleted_at is null
+) previews
+where preview_rank <= 3
+order by post_id, created_at asc
+`
+
+type ListCommentPreviewsByPostIDsRow struct {
+	PostID            uuid.UUID          `json:"post_id"`
+	ID                uuid.UUID          `json:"id"`
+	ParentCommentID   pgtype.UUID        `json:"parent_comment_id"`
+	Content           string             `json:"content"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	EditedAt          pgtype.Timestamptz `json:"edited_at"`
+	AuthorID          uuid.UUID          `json:"author_id"`
+	AuthorMemberID    pgtype.Text        `json:"author_member_id"`
+	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
+	AuthorAvatarR2Key pgtype.Text        `json:"author_avatar_r2_key"`
+	PreviewRank       int64              `json:"preview_rank"`
+}
+
+// Tiga komen terbaharu setiap post, top-level sahaja. Feed gunakan ini
+// sebagai preview; laluan detail masih memuatkan thread penuh.
+func (q *Queries) ListCommentPreviewsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]ListCommentPreviewsByPostIDsRow, error) {
+	rows, err := q.db.Query(ctx, listCommentPreviewsByPostIDs, postIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCommentPreviewsByPostIDsRow
+	for rows.Next() {
+		var i ListCommentPreviewsByPostIDsRow
+		if err := rows.Scan(
+			&i.PostID,
+			&i.ID,
+			&i.ParentCommentID,
+			&i.Content,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.AuthorID,
+			&i.AuthorMemberID,
+			&i.AuthorDisplayName,
+			&i.AuthorAvatarR2Key,
+			&i.PreviewRank,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCommentsByPostID = `-- name: ListCommentsByPostID :many
 select
   c.id, c.post_id, c.parent_comment_id, c.author_id, c.content, c.created_at, c.edited_at, c.deleted_at,

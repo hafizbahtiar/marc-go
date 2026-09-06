@@ -117,3 +117,49 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func (h *NotificationHandler) Delete(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id tidak sah"})
+		return
+	}
+
+	if err := h.queries.DeleteNotification(c.Request.Context(), sqlc.DeleteNotificationParams{
+		ID: id, RecipientID: middleware.UserID(c),
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam notifikasi"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+func (h *NotificationHandler) DeleteRead(c *gin.Context) {
+	if err := h.queries.DeleteReadNotifications(c.Request.Context(), middleware.UserID(c)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam notifikasi dibaca"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+func (h *NotificationHandler) DeleteSelected(c *gin.Context) {
+	var body struct {
+		IDs []uuid.UUID `json:"ids" binding:"required,min=1,max=100"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "senarai notifikasi tidak sah"})
+		return
+	}
+
+	if err := h.queries.DeleteNotifications(c.Request.Context(), sqlc.DeleteNotificationsParams{
+		RecipientID: middleware.UserID(c),
+		Column2:     body.IDs,
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam notifikasi terpilih"})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}

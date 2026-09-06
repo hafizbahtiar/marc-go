@@ -176,6 +176,8 @@ type Querier interface {
 	DeleteDoneDeletedUploadsBefore(ctx context.Context, deletedAt pgtype.Timestamptz) (int64, error)
 	DeleteEmailVerificationToken(ctx context.Context, id uuid.UUID) error
 	DeleteEmailVerificationTokensByUser(ctx context.Context, userID uuid.UUID) error
+	DeleteNotification(ctx context.Context, arg DeleteNotificationParams) error
+	DeleteNotifications(ctx context.Context, arg DeleteNotificationsParams) error
 	// Dipanggil DUA tempat, atas sebab berbeza:
 	//   request - permintaan baharu membunuh pautan lama
 	//   confirm - sekali-guna, dalam transaksi yang sama dgn tukar kata laluan
@@ -186,6 +188,7 @@ type Querier interface {
 	DeletePendingUpload(ctx context.Context, arg DeletePendingUploadParams) error
 	// Tanpa skop user - untuk penyapu latar, bukan permintaan pengguna.
 	DeletePendingUploadByKey(ctx context.Context, r2Key string) error
+	DeleteReadNotifications(ctx context.Context, recipientID uuid.UUID) error
 	DeleteRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	// Ownership dikuatkuasakan DALAM query (bukan semak dalam Go selepas
 	// fetch) - padanan GetAddressByIDAndUser. `:execrows` supaya caller
@@ -213,6 +216,7 @@ type Querier interface {
 	// nothing` (tiada baris dipulangkan), dan utk pelaporan/staff semak status
 	// kemudian.
 	GetAccountDeletionRequestByUserID(ctx context.Context, userID uuid.UUID) (AccountDeletionRequest, error)
+	GetActiveCertificateTemplate(ctx context.Context) (CertificateTemplate, error)
 	GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivityByIDRow, error)
 	GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error)
 	GetActivitySessionByID(ctx context.Context, id uuid.UUID) (ActivitySession, error)
@@ -223,6 +227,7 @@ type Querier interface {
 	GetAttendance(ctx context.Context, arg GetAttendanceParams) (ActivityAttendance, error)
 	GetCertificateByID(ctx context.Context, id uuid.UUID) (ActivityCertificate, error)
 	GetCertificateByVerifyToken(ctx context.Context, verifyToken string) (ActivityCertificate, error)
+	GetCertificateTemplate(ctx context.Context, id uuid.UUID) (CertificateTemplate, error)
 	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
 	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
@@ -295,6 +300,16 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserIDByTelegramChatID(ctx context.Context, telegramChatID pgtype.Int8) (uuid.UUID, error)
+	// Family "hidup" = ada sekurang-kurangnya SATU baris belum luput
+	// (sama tapisan ListActiveRefreshTokensByUser). consumed_at SENGAJA
+	// tak ditapis: rotate meninggalkan baris consumed, sibling baru
+	// belum sempat masuk - menapis consumed akan 401 race semasa refresh
+	// dan trigger reuse-detection yang revoke family sendiri.
+	//
+	// Lepas DELETE family (revoke / logout-all / tukar password), exists
+	// = false → RequireAuth tolak access JWT serta-merta, bukan tunggu
+	// TTL 15 minit.
+	HasActiveRefreshTokenFamily(ctx context.Context, arg HasActiveRefreshTokenFamilyParams) (bool, error)
 	// Baris 'pending' MANA-MANA PUN - SENGAJA TANPA tapisan `gateway_ref is
 	// not null` (Opus verify 2026-08-24: tak macam
 	// ListPendingRegistrationPaymentsOlderThan, baris `gateway_ref` NULL di
@@ -364,10 +379,14 @@ type Querier interface {
 	ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsByEntityParams) ([]AuditLog, error)
 	// Skrin pengurusan CRUD domain disekat.
 	ListBlockedEmailDomains(ctx context.Context) ([]BlockedEmailDomain, error)
+	ListCertificateTemplates(ctx context.Context) ([]CertificateTemplate, error)
 	ListCertificatesByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error)
 	// Fasa 2 penerbitan menyambung dari sini. Baris tanpa r2_key ialah kerja
 	// yang belum siap, bukan ralat.
 	ListCertificatesPendingFile(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error)
+	// Tiga komen terbaharu setiap post, top-level sahaja. Feed gunakan ini
+	// sebagai preview; laluan detail masih memuatkan thread penuh.
+	ListCommentPreviewsByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]ListCommentPreviewsByPostIDsRow, error)
 	// Flat list, semua comment (top-level + reply) untuk satu post. Client
 	// bina tree guna parent_comment_id.
 	ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([]ListCommentsByPostIDRow, error)
@@ -488,6 +507,11 @@ type Querier interface {
 	// gateway. Padanan skop `ListPendingActivityRegistrationsOlderThan`,
 	// yang sudah lama menapis dgn cara sama atas sebab yang sama.
 	ListPendingRegistrationPaymentsOlderThan(ctx context.Context, arg ListPendingRegistrationPaymentsOlderThanParams) ([]RegistrationPayment, error)
+	// Stripe PaymentIntent yang masih memerlukan payment method boleh kekal
+	// requires_payment_method selama-lamanya. Selepas reconcile menandakannya
+	// failed, ia keluar daripada query ini; pending yang benar-benar
+	// asynchronous terus dipantau sehingga Stripe menghantar keputusan.
+	ListPendingStripeDonationsOlderThan(ctx context.Context, arg ListPendingStripeDonationsOlderThanParams) ([]Donation, error)
 	ListPostImageKeys(ctx context.Context, postID uuid.UUID) ([]string, error)
 	ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UUID) ([]PostImage, error)
 	// Keyset pagination atas (created_at, id) - bukan created_at je, elak
@@ -607,6 +631,7 @@ type Querier interface {
 	// Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
+	PublishCertificateTemplate(ctx context.Context, id uuid.UUID) (CertificateTemplate, error)
 	// Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
 	// selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 	// perubahan set sesi.
@@ -665,6 +690,7 @@ type Querier interface {
 	// nyahtetapkan default lama, supaya invariant "paling banyak SATU
 	// default" sentiasa dikekalkan sepanjang transaksi.
 	UpdateAddress(ctx context.Context, arg UpdateAddressParams) (MemberAddress, error)
+	UpdateCertificateTemplate(ctx context.Context, arg UpdateCertificateTemplateParams) (CertificateTemplate, error)
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
 	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error)
 	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook

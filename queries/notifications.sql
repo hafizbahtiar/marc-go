@@ -18,3 +18,12 @@ update notifications set read_at = now() where id = $1 and recipient_id = $2 and
 
 -- name: MarkAllNotificationsRead :exec
 update notifications set read_at = now() where recipient_id = $1 and read_at is null;
+
+-- name: DeleteNotification :exec
+delete from notifications where id = $1 and recipient_id = $2;
+
+-- name: DeleteReadNotifications :exec
+delete from notifications where recipient_id = $1 and read_at is not null;
+
+-- name: DeleteNotifications :exec
+delete from notifications where recipient_id = $1 and id = any($2::uuid[]);

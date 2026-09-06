@@ -8,23 +8,23 @@
 
 **Tech Stack:** Go/Gin/pgx/sqlc (backend), Flutter/Riverpod (frontend), Postgres migrations.
 
-**Spec:** `docs/superpowers/specs/2026-09-02-staff-id-verification-design.md` (v2) — READ IN FULL FIRST. It documents a v1 design bug found by Opus review (staff-exemption logic could silently defeat the `BypassPayment` admin-rank gate) and the fix baked into Task 8 below; do not re-derive that section from scratch, follow the spec's "Gate yuran - butiran KRITIKAL" section exactly.
+**Spec:** `docs/superpowers/specs/2026-09-02-staff-id-verification-design.md` (v2) - READ IN FULL FIRST. It documents a v1 design bug found by Opus review (staff-exemption logic could silently defeat the `BypassPayment` admin-rank gate) and the fix baked into Task 8 below; do not re-derive that section from scratch, follow the spec's "Gate yuran - butiran KRITIKAL" section exactly.
 
 ## Global Constraints
 
 - `staff_id` has NO format validation, max 64 chars, stored as an opaque string.
-- Verify endpoint (`POST /members/:id/verify-staff-id`) gate: rank >= 60 (`manager`). Correct endpoint (`PATCH /members/:id/staff-id`) gate: rank >= 80 (`admin`) — these are DIFFERENT thresholds, do not conflate them.
-- `:id` in every route this plan adds is a **`user_id`**, resolved via `GetProfileByUserID` — NOT a `profiles.id` primary key. `GetProfileByID` does not exist in this codebase; do not invent it.
-- Routes have **no `/admin` prefix** — they live in the existing `approved` route group exactly like `/members/:id/approve`.
+- Verify endpoint (`POST /members/:id/verify-staff-id`) gate: rank >= 60 (`manager`). Correct endpoint (`PATCH /members/:id/staff-id`) gate: rank >= 80 (`admin`) - these are DIFFERENT thresholds, do not conflate them.
+- `:id` in every route this plan adds is a **`user_id`**, resolved via `GetProfileByUserID` - NOT a `profiles.id` primary key. `GetProfileByID` does not exist in this codebase; do not invent it.
+- Routes have **no `/admin` prefix** - they live in the existing `approved` route group exactly like `/members/:id/approve`.
 - The staff-verification approval gate has no bypass flag (hard requirement). The existing `BypassPayment` gate is untouched for non-staff-exempt members, and MUST be forced to `false` before it can affect audit logging when a member is staff-exempt (see Task 8).
-- `generateMemberID` must run inside the SAME DB transaction as the verify write (mirror `activity_certificates.go:207-224`), never as a bare pre-transaction call — a rolled-back verify must not leak a sequence number silently without at least being logged.
+- `generateMemberID` must run inside the SAME DB transaction as the verify write (mirror `activity_certificates.go:207-224`), never as a bare pre-transaction call - a rolled-back verify must not leak a sequence number silently without at least being logged.
 - Every new DB write is idempotent per existing patterns (`ApproveProfile`, `AddBlockedEmailDomain`).
 - All new backend code must pass `go build ./...`, `go vet ./...`, `gofmt -l .` (empty output), and `go test ./...` before each commit.
 - All new Flutter code must pass `flutter analyze` (clean) and `flutter test` before each commit.
 
 ---
 
-### Task 1: Migration — `staff_id` columns + backfill + nullable `member_id`
+### Task 1: Migration - `staff_id` columns + backfill + nullable `member_id`
 
 **Files:**
 - Create: `internal/db/migrations/20260902100000_add_staff_id.sql`
@@ -35,7 +35,7 @@
 
 - [ ] **Step 1: Confirm this repo's migration header convention**
 
-Open `internal/db/migrations/20260825120000_add_profile_department_department.sql` and copy its up/down header style verbatim — do not assume `+goose`-style comments without checking.
+Open `internal/db/migrations/20260825120000_add_profile_department_department.sql` and copy its up/down header style verbatim - do not assume `+goose`-style comments without checking.
 
 - [ ] **Step 2: Write the migration**
 
@@ -49,7 +49,7 @@ alter table profiles
   alter column member_id drop not null;
 
 -- Only 'approved' rows are auto-verified. 'pending'/'rejected' rows
--- get a placeholder staff_id but stay UNVERIFIED — they never
+-- get a placeholder staff_id but stay UNVERIFIED - they never
 -- went through real verification and some may still owe the fee.
 -- Auto-verifying them would silently exempt them from payment AND
 -- make them one click from approval with no real check ever done.
@@ -64,7 +64,7 @@ alter table profiles
 create unique index profiles_staff_id_key on profiles (staff_id);
 ```
 
-Down migration: do NOT attempt to restore `member_id`'s `NOT NULL` —
+Down migration: do NOT attempt to restore `member_id`'s `NOT NULL` -
 it will fail once any unverified (`member_id IS NULL`) row exists.
 Add a comment in the Down section explaining this instead of writing
 code that will error on any real rollback attempt.
@@ -80,7 +80,7 @@ and `pending`/`rejected` rows show `count(staff_id_verified_at) = 0`.
 - [ ] **Step 4: Regenerate sqlc code**
 
 Run `sqlc generate`. Confirm `Profile.MemberID` is now `pgtype.Text`
-(was `string`) in the generated struct — this is the trigger for
+(was `string`) in the generated struct - this is the trigger for
 Task 2's blast-radius fix, do not skip acknowledging it here.
 
 - [ ] **Step 5: Update `DATABASE.md`**
@@ -100,13 +100,13 @@ git commit -m "feat: add staff_id columns, defer member_id to verification"
 
 ### Task 2: Fix every call site broken by nullable `member_id`
 
-**Files:** (confirm exact list via `grep -rn "\.MemberID\b" --include=*.go .` — the list below is what the spec's research found, treat it as a floor, not a ceiling)
+**Files:** (confirm exact list via `grep -rn "\.MemberID\b" --include=*.go .` - the list below is what the spec's research found, treat it as a floor, not a ceiling)
 - Modify: `internal/http/handlers/payments.go` (lines ~83, 148, 206)
 - Modify: `internal/http/handlers/registration_payment.go` (lines ~132, 187, 425)
 - Modify: `internal/http/handlers/activity_registration_payment.go` (lines ~147, 413)
 - Modify: `internal/http/handlers/donations.go` (line ~286)
-- Modify: `internal/http/handlers/profile.go` (lines ~119, 262, 500, 614, 734, 889 — line 500 is the `Members` list row, confirmed via Opus verify round 2, missing from the original grep)
-- Modify: `internal/http/handlers/audit_helpers.go` (lines ~49, ~64 — NOTE: this file lives under `internal/http/handlers/`, NOT `internal/audit/`; the v1 plan had the wrong path. Line 64's `actor.MemberID != ""` string-emptiness check also needs converting to a `.Valid` check.)
+- Modify: `internal/http/handlers/profile.go` (lines ~119, 262, 500, 614, 734, 889 - line 500 is the `Members` list row, confirmed via Opus verify round 2, missing from the original grep)
+- Modify: `internal/http/handlers/audit_helpers.go` (lines ~49, ~64 - NOTE: this file lives under `internal/http/handlers/`, NOT `internal/audit/`; the v1 plan had the wrong path. Line 64's `actor.MemberID != ""` string-emptiness check also needs converting to a `.Valid` check.)
 - Modify: `internal/http/handlers/activity_attendance.go` (line ~405)
 - Modify: `internal/http/handlers/comments.go` (line ~136)
 - Modify: `internal/receipt/receipt.go` (wherever it reads `MemberID`)
@@ -117,7 +117,7 @@ git commit -m "feat: add staff_id columns, defer member_id to verification"
 
 - [ ] **Step 1: Run `go build ./...` to enumerate every compile break**
 
-This is the authoritative list — grep is a starting point, the
+This is the authoritative list - grep is a starting point, the
 compiler is the source of truth. Expect ~15-20 errors of the shape
 `cannot use profile.MemberID (variable of type pgtype.Text) as string`.
 
@@ -126,15 +126,15 @@ compiler is the source of truth. Expect ~15-20 errors of the shape
 - **Display-only sites** (profile JSON responses, receipts): emit
   `null`/omit the field when `!Valid`, matching how this codebase
   already handles other nullable `pgtype` fields (e.g. `approved_at`)
-  — copy that exact pattern rather than inventing a new one.
+  - copy that exact pattern rather than inventing a new one.
 - **`registration_payment.go`'s `billTo` fallback** (~line 125, comment
-  currently says "member_id sentiasa diisi semasa daftar" — that
+  currently says "member_id sentiasa diisi semasa daftar" - that
   invariant is now false): change the fallback chain to
   `display_name → member_id (if valid) → email`. Update the stale
   comment to say why `email` was added as a third fallback.
 - **Any site that used `member_id` as a required non-empty value for
   an external call** (ToyyibPay `billTo`, receipt PDFs, notifications):
-  audit each one individually — if the flow can be reached by an
+  audit each one individually - if the flow can be reached by an
   unverified member (no `member_id` yet), it needs a fallback; if it's
   only reachable post-approval (`member_id` guaranteed non-null by
   then, since approval requires verification per Task 8), a comment
@@ -146,7 +146,7 @@ compiler is the source of truth. Expect ~15-20 errors of the shape
 Run: `go build ./... && go vet ./... && gofmt -l . && go test ./...`
 Expected: clean, zero regressions. Any pre-existing test that
 constructs a `Profile{MemberID: "..."}` literal will also need updating
-to `pgtype.Text{String: "...", Valid: true}` — fix each as found.
+to `pgtype.Text{String: "...", Valid: true}` - fix each as found.
 
 - [ ] **Step 4: Commit**
 
@@ -157,13 +157,13 @@ git commit -m "fix: handle nullable member_id across payment, receipt, and audit
 
 ---
 
-### Task 3: sqlc queries — `VerifyStaffID`, `CorrectStaffID`
+### Task 3: sqlc queries - `VerifyStaffID`, `CorrectStaffID`
 
 **Files:**
 - Modify: `queries/profiles.sql` (locate the `ApproveProfile` section via `grep -rl "ApproveProfile" queries/`)
 
 **Interfaces:**
-- Produces: `VerifyStaffID(ctx, VerifyStaffIDParams{UserID uuid.UUID, VerifiedBy uuid.UUID, StaffID pgtype.Text, MemberID pgtype.Text}) (Profile, error)` — zero rows affected (not an error — the handler checks `pgconn.CommandTag.RowsAffected()` via `:execrows` or checks the returned row against `sql.ErrNoRows` depending on which sqlc annotation is used; pick `:one` and treat `pgx.ErrNoRows` as "someone else verified first," per Step 1 below).
+- Produces: `VerifyStaffID(ctx, VerifyStaffIDParams{UserID uuid.UUID, VerifiedBy uuid.UUID, StaffID pgtype.Text, MemberID pgtype.Text}) (Profile, error)` - zero rows affected (not an error - the handler checks `pgconn.CommandTag.RowsAffected()` via `:execrows` or checks the returned row against `sql.ErrNoRows` depending on which sqlc annotation is used; pick `:one` and treat `pgx.ErrNoRows` as "someone else verified first," per Step 1 below).
 - Produces: `CorrectStaffID(ctx, CorrectStaffIDParams{UserID uuid.UUID, StaffID string}) (Profile, error)`.
 
 - [ ] **Step 1: Write the queries**
@@ -187,9 +187,9 @@ returning *;
 ```
 
 `VerifyStaffID` keys on `user_id` (matching `GetProfileByUserID`,
-NOT a `profiles.id` primary key — this was a bug in the v1 plan).
+NOT a `profiles.id` primary key - this was a bug in the v1 plan).
 `@member_id` is computed by the handler (Task 5) via the existing
-`generateMemberID`, inside the same transaction — the query itself
+`generateMemberID`, inside the same transaction - the query itself
 does not generate sequence numbers.
 
 - [ ] **Step 2: Regenerate sqlc code**
@@ -197,7 +197,7 @@ does not generate sequence numbers.
 Run `sqlc generate`. Confirm both queries appear on the `Queries`
 interface, and confirm whether this repo's sqlc config generates a
 `*Queries.WithTx(tx pgx.Tx) *Queries` method (it should, if
-`setMemberStatus` already uses transactional queries elsewhere — check
+`setMemberStatus` already uses transactional queries elsewhere - check
 `profile.go`'s existing tx usage for the pattern to match in Task 5).
 
 - [ ] **Step 3: Write query-level tests**
@@ -280,7 +280,7 @@ git commit -m "feat: add VerifyStaffID and CorrectStaffID queries"
 
 ---
 
-### Task 4: `POST /auth/register` — require `staff_id`, defer `member_id`, handle conflicts
+### Task 4: `POST /auth/register` - require `staff_id`, defer `member_id`, handle conflicts
 
 **Files:**
 - Modify: `internal/http/handlers/auth.go` (`Register` handler + request struct, ~lines 250-350)
@@ -349,10 +349,10 @@ Run: `go test ./internal/http/handlers/... -run TestRegister -v`
 
 Add `StaffID string \`json:"staff_id" binding:"required"\`` to
 the register request struct. Trim and validate length <=64,
-non-empty (mirror the `DisplayName` validation exactly — find and
+non-empty (mirror the `DisplayName` validation exactly - find and
 copy its error-response shape).
 
-Remove the `generateMemberID` call and `MemberID: memberID` field —
+Remove the `generateMemberID` call and `MemberID: memberID` field -
 replace with `MemberID: pgtype.Text{Valid: false}` and
 `StaffID: strings.TrimSpace(req.StaffID)` in
 `CreateProfileParams`.
@@ -367,7 +367,7 @@ does for other columns), return 409 with a clear message
 "nombor staff ini sudah didaftarkan" instead of falling through to the
 generic 500.
 
-Do **not** delete `generateMemberID` (auth.go:329) — Task 5 reuses it.
+Do **not** delete `generateMemberID` (auth.go:329) - Task 5 reuses it.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -560,19 +560,19 @@ const EntityStaffIDVerification Entity = "staff_id_verification"
 
 - [ ] **Step 4: Implement the handler**
 
-**Read `setMemberStatus` (profile.go) FIRST — do not copy the sketch
+**Read `setMemberStatus` (profile.go) FIRST - do not copy the sketch
 below verbatim, it uses placeholder names for illustration only.**
 Confirmed real APIs to use instead (checked against the actual code
 during Opus verify round 2):
 - Caller identity: `middleware.UserID(c)` (NOT `authFromContext(c)`,
   which does not exist).
 - Rank check: `authz.IsAtLeastRole(ctx, h.queries, callerUserID,
-  "manager")` returns `(bool, error)` — TWO return values, not a bare
+  "manager")` returns `(bool, error)` - TWO return values, not a bare
   bool. Handle the error (500) same as any other query error.
 - Audit: package-level `audit.Record(ctx, qtx, audit.Entry{...})`
   (check the exact `Entry` field names in `setMemberStatus`'s own
   call, ~profile.go:1341-1364) called **inside the transaction, before
-  `tx.Commit`** — not a method on `ProfileHandler`, and not after
+  `tx.Commit`** - not a method on `ProfileHandler`, and not after
   commit. `setMemberStatus` does it this way specifically so the audit
   row and the state change commit atomically; do the same here.
 
@@ -621,7 +621,7 @@ func (h *ProfileHandler) VerifyStaffID(c *gin.Context) {
     if target.StaffIDVerifiedAt.Valid {
         if body.StaffID != nil {
             // Already verified AND caller tried to change the value in
-            // the same call — do NOT silently no-op this (v1 gap found
+            // the same call - do NOT silently no-op this (v1 gap found
             // in Opus review round 2: an idempotent 200 that quietly
             // drops the override would hide a real typo-fix attempt).
             // Point them at the dedicated correction endpoint instead.
@@ -669,10 +669,10 @@ func (h *ProfileHandler) VerifyStaffID(c *gin.Context) {
     if errors.Is(err, pgx.ErrNoRows) {
         // Race: someone else's verify committed between our load and our
         // write attempt (they held the row lock, so our UPDATE blocked
-        // until they committed, then matched zero rows once unblocked —
+        // until they committed, then matched zero rows once unblocked -
         // this is NOT a stale read). Roll back via defer (the tx never
         // committed, so generateMemberID's sequence increment is fully
-        // reverted — NextSequence is a table upsert, not a bare nextval,
+        // reverted - NextSequence is a table upsert, not a bare nextval,
         // confirmed during Opus verify round 2), then re-read via the
         // non-tx querier to report the winner's actual committed state.
         refreshed, rErr := h.queries.GetProfileByUserID(ctx, targetUserID)
@@ -690,7 +690,7 @@ func (h *ProfileHandler) VerifyStaffID(c *gin.Context) {
         return
     }
 
-    // Audit INSIDE the transaction, before commit — mirror setMemberStatus
+    // Audit INSIDE the transaction, before commit - mirror setMemberStatus
     // exactly (profile.go ~1341-1364), do not move this after tx.Commit.
     if err := audit.Record(ctx, qtx, audit.Entry{
         Entity:   audit.EntityStaffIDVerification,
@@ -734,7 +734,7 @@ git commit -m "feat: add POST /members/:id/verify-staff-id"
 
 ---
 
-### Task 6: `PATCH /members/:id/staff-id` — admin/superadmin correction
+### Task 6: `PATCH /members/:id/staff-id` - admin/superadmin correction
 
 **Files:**
 - Modify: `internal/http/handlers/profile.go` (add `CorrectStaffID` handler)
@@ -820,18 +820,18 @@ Run: `go test ./internal/http/handlers/... -run TestCorrectStaffID -v`
 
 - [ ] **Step 3: Implement the handler**
 
-Mirror Task 5's structure but simpler (no transaction needed — single
+Mirror Task 5's structure but simpler (no transaction needed - single
 update, no `member_id` interaction): gate via `authz.IsAtLeastRole(ctx,
 h.queries, callerID, "admin")` (two return values, 403 on `false`/error),
 parse+validate `:id` as `user_id` via `middleware.UserID`-style resolution
 (400 if malformed), load target via `GetProfileByUserID` (404 if
-missing — **this load is the pre-image**, keep the old `staff_id`
+missing - **this load is the pre-image**, keep the old `staff_id`
 value from it), validate body `staff_id` non-empty/<=64 chars (400),
 call `CorrectStaffID`, map unique-violation (via `isUniqueViolation`,
 Task 4's helper) to 409.
 
 **Audit must record the old value, not just the new one** (gap found
-in Opus verify round 2 — `audit.Record`'s `Entry` struct takes
+in Opus verify round 2 - `audit.Record`'s `Entry` struct takes
 old/new state per `setMemberStatus`'s own call, ~profile.go:1353-1359):
 
 ```go
@@ -848,7 +848,7 @@ if err := audit.Record(ctx, h.queries, audit.Entry{
 ```
 
 Match the exact `Entry` field names to whatever `setMemberStatus`
-actually uses (`Old`/`New` above are illustrative — read the real
+actually uses (`Old`/`New` above are illustrative - read the real
 struct definition first). Return 200 with the updated profile's
 `staff_id`.
 
@@ -875,7 +875,7 @@ git commit -m "feat: add PATCH /members/:id/staff-id for admin correction"
 ### Task 7: Expose `staff_id` on management member list/detail endpoints
 
 **Files:**
-- Modify: `internal/http/handlers/profile.go` (wherever `GET /members` / pending-members list, and any single-member detail response, build their JSON — grep the response struct names near `ApproveMember`)
+- Modify: `internal/http/handlers/profile.go` (wherever `GET /members` / pending-members list, and any single-member detail response, build their JSON - grep the response struct names near `ApproveMember`)
 - Test: `internal/http/handlers/profile_test.go`
 
 **Interfaces:**
@@ -885,7 +885,7 @@ git commit -m "feat: add PATCH /members/:id/staff-id for admin correction"
 
 Run: `grep -n "member_id" internal/http/handlers/profile.go` to find
 every JSON response struct that already includes `member_id` for
-management views — add the two new fields to the same structs (a
+management views - add the two new fields to the same structs (a
 management view showing `member_id` should also show `staff_id`,
 since verifying one now determines the other).
 
@@ -924,14 +924,14 @@ git commit -m "feat: expose staff_id on member list/detail responses"
 
 ---
 
-### Task 8: `setMemberStatus` — require staff verification, exempt fee (with the v1-bug fix)
+### Task 8: `setMemberStatus` - require staff verification, exempt fee (with the v1-bug fix)
 
 **Files:**
 - Modify: `internal/http/handlers/profile.go` (`setMemberStatus`, the `status == "approved"` branch)
 - Test: `internal/http/handlers/profile_test.go`
 
 **Interfaces:**
-- Consumes: `target.StaffIDVerifiedAt` — confirm `setMemberStatus`'s existing profile fetch already selects this column (it will, if it uses `SELECT *`-backed sqlc structs); if it uses a narrower projection query, widen it.
+- Consumes: `target.StaffIDVerifiedAt` - confirm `setMemberStatus`'s existing profile fetch already selects this column (it will, if it uses `SELECT *`-backed sqlc structs); if it uses a narrower projection query, widen it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -973,7 +973,7 @@ func TestApproveMember_StaffVerifiedExemptsFeeEvenWithoutPayment(t *testing.T) {
 
 func TestApproveMember_ManagerCannotForgeBypassAuditOnExemptMember(t *testing.T) {
     // The v1 bug this test guards against: a manager (rank 60, NOT
-    // allowed to use bypass_payment — that's rank>=80) sends
+    // allowed to use bypass_payment - that's rank>=80) sends
     // bypass_payment=true on an already staff-exempt member. The
     // approval must succeed (exemption alone is sufficient), but the
     // audit record must NOT show bypass_payment=true, since the
@@ -1006,13 +1006,13 @@ func TestApproveMember_ManagerCannotForgeBypassAuditOnExemptMember(t *testing.T)
 // something like "non-exempt member still requires admin for bypass".
 // Since the hard staff-verification gate (Step 3, first check) returns
 // 400 before the payment-gate block runs at all, `staffExempt` is
-// ALWAYS true by the time that block executes — the `else` branch
+// ALWAYS true by the time that block executes - the `else` branch
 // (existing HasSucceededRegistrationPayment/BypassPayment/bypass_reason
 // logic) is unreachable through this handler today, by construction,
 // for every caller. A test asserting "200" while unable to construct a
 // real non-exempt-but-approvable member (a v1 draft attempted this and
 // produced a tautological test that only proved the exempt path works
-// again) is not a regression test — it is confirmation of the same
+// again) is not a regression test - it is confirmation of the same
 // exempt path already covered by the two tests above. If a future
 // "general member" type (non-staff, spec's flagged out-of-scope idea)
 // reintroduces a real non-exempt path, add the test then, against that
@@ -1040,9 +1040,9 @@ sub-parts: the `paid → BypassPayment=false` normalization, the admin-
 rank check, the `bypass_reason` check, and `HasPendingRegistrationPayment`):
 
 ```go
-staffExempt := target.StaffIDVerifiedAt.Valid // always true here (the hard gate above already returned otherwise) — kept as an explicit named variable, not inlined, because a future "staff vs general member" type (noted as out of scope in the spec) would make this NOT always true, and this keeps that extension point visible
+staffExempt := target.StaffIDVerifiedAt.Valid // always true here (the hard gate above already returned otherwise) - kept as an explicit named variable, not inlined, because a future "staff vs general member" type (noted as out of scope in the spec) would make this NOT always true, and this keeps that extension point visible
 if staffExempt {
-    req.BypassPayment = false // MUST run before anything below reads req.BypassPayment for audit purposes — this is the exact line that fixes the v1 bug: a manager's forged bypass_payment=true must never reach the audit log as if it were exercised
+    req.BypassPayment = false // MUST run before anything below reads req.BypassPayment for audit purposes - this is the exact line that fixes the v1 bug: a manager's forged bypass_payment=true must never reach the audit log as if it were exercised
 } else {
     // ...ALL FOUR existing sub-parts of the payment gate, completely unchanged...
 }
@@ -1050,13 +1050,13 @@ if staffExempt {
 
 Confirm the audit-record call after the transaction reads
 `req.BypassPayment` (post-mutation) rather than a value captured
-earlier — if it captured an earlier copy, fix that too, since the
+earlier - if it captured an earlier copy, fix that too, since the
 forced-false assignment above only closes the hole if the audit log
 actually observes it.
 
 For the `HasPendingRegistrationPayment` sub-part specifically: per the
 spec, do NOT hard-block a staff-exempt approval over a pending
-(unrelated) bill — but DO add a log line (`log.Warn` or whatever this
+(unrelated) bill - but DO add a log line (`log.Warn` or whatever this
 codebase's logger convention is) when `staffExempt && hasPendingPayment`,
 so staff have a paper trail to manually refund if that pending bill
 later resolves as `succeeded`.
@@ -1064,7 +1064,7 @@ later resolves as `succeeded`.
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `go test ./internal/http/handlers/... -run TestApproveMember -v`
-Also run the full `TestApproveMember*`/`TestRejectMember*` suite —
+Also run the full `TestApproveMember*`/`TestRejectMember*` suite -
 existing tests may need `verifyStaffID(t, q, ...)` added to their
 setup now that approval requires it; fix each fixture, not the gate.
 
@@ -1081,7 +1081,7 @@ git commit -m "feat: require staff verification before approval, exempt fee with
 
 ---
 
-### Task 9: `GET /me/payments` — outstanding fee flag
+### Task 9: `GET /me/payments` - outstanding fee flag
 
 **Files:**
 - Modify: `internal/http/handlers/payments.go` (`Mine` handler)
@@ -1089,7 +1089,7 @@ git commit -m "feat: require staff verification before approval, exempt fee with
 
 **Interfaces:**
 - Produces: response gains `outstanding_registration_fee: bool`.
-- Consumes: an ADDITIONAL `h.queries.GetProfileByUserID` call — the v1 plan incorrectly assumed a `profile` var already existed in `Mine`; it does not, add the call.
+- Consumes: an ADDITIONAL `h.queries.GetProfileByUserID` call - the v1 plan incorrectly assumed a `profile` var already existed in `Mine`; it does not, add the call.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1161,7 +1161,7 @@ git commit -m "feat: expose outstanding_registration_fee on GET /me/payments"
 
 ---
 
-### Task 10: Flutter — nullable `memberId` across all models
+### Task 10: Flutter - nullable `memberId` across all models
 
 **Files:**
 - Modify: `lib/features/profile/profile_providers.dart` (two sites, `~line 128, 352`)
@@ -1170,18 +1170,18 @@ git commit -m "feat: expose outstanding_registration_fee on GET /me/payments"
 - Test: matching test files for each
 
 **Interfaces:**
-- Produces: `Profile.memberId String?`, `MemberDetail.memberId String?` (or matching class names — confirm exact names via `grep -rn "memberId" lib/`), `Author.memberId String?` (if `post_models.dart`'s field is on `Author`).
+- Produces: `Profile.memberId String?`, `MemberDetail.memberId String?` (or matching class names - confirm exact names via `grep -rn "memberId" lib/`), `Author.memberId String?` (if `post_models.dart`'s field is on `Author`).
 
 - [ ] **Step 1: Grep every hard cast**
 
-Run: `grep -rn "member_id'\] as String\b" lib/` — this must return
+Run: `grep -rn "member_id'\] as String\b" lib/` - this must return
 ZERO results after this task; every one becomes `as String?`.
 
 - [ ] **Step 2: Write failing tests for each model**
 
 For each model file, mirror whatever existing "field is missing"
 back-compat test exists (e.g. the `donations` pattern documented in
-`marc_flutter/TODO.md`'s L33 section) — add an equivalent asserting
+`marc_flutter/TODO.md`'s L33 section) - add an equivalent asserting
 `memberId` parses to `null` when the JSON key is absent, and does not
 throw.
 
@@ -1195,13 +1195,13 @@ test('memberId is null when member_id key is absent', () {
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run: `flutter test test/features/profile/` (and the other two
-model test dirs) — expect a `TypeError` or a failing assertion.
+model test dirs) - expect a `TypeError` or a failing assertion.
 
 - [ ] **Step 4: Implement**
 
 Change each `String memberId` field to `String? memberId`, parsed as
 `json['member_id'] as String?`. Update every UI site that displays
-`memberId` to show a fallback ("Belum disahkan" / "-") when null —
+`memberId` to show a fallback ("Belum disahkan" / "-") when null -
 find each display site via
 `grep -rn "\.memberId\b" lib/features/profile lib/features/admin
 lib/features/posts` and fix each one, not just the model.
@@ -1223,7 +1223,7 @@ git commit -m "fix: handle nullable member_id across Profile, MemberDetail, and 
 
 ---
 
-### Task 11: Flutter — `staff_id` field on the register screen
+### Task 11: Flutter - `staff_id` field on the register screen
 
 **Files:**
 - Modify: register form file (`grep -rl "display_name" lib/features/auth/`)
@@ -1231,7 +1231,7 @@ git commit -m "fix: handle nullable member_id across Profile, MemberDetail, and 
 - Test: matching widget test file
 
 **Interfaces:**
-- Produces: `AuthService.register(..., staffNumber: String)` — request body gains `staff_id`.
+- Produces: `AuthService.register(..., staffNumber: String)` - request body gains `staff_id`.
 
 - [ ] **Step 1: Locate the existing field pattern**
 
@@ -1276,10 +1276,10 @@ git commit -m "feat: add mandatory staff ID field to registration"
 
 ---
 
-### Task 12: Flutter — verify + correct staff ID actions on pending members screen
+### Task 12: Flutter - verify + correct staff ID actions on pending members screen
 
 **Files:**
-- Modify: `lib/features/admin/pending_members_page.dart` (or wherever `ApproveMember`/`RejectMember` buttons live — `grep -rl "approveMember\|ApproveMember" lib/`)
+- Modify: `lib/features/admin/pending_members_page.dart` (or wherever `ApproveMember`/`RejectMember` buttons live - `grep -rl "approveMember\|ApproveMember" lib/`)
 - Modify: the matching repository/providers file
 - Test: matching widget/provider test file
 
@@ -1313,14 +1313,14 @@ On each pending-member list item: show `staff_id` (from Task 7's
 response) next to a "Sahkan Nombor Staff" button, visible only when
 the viewer's rank is >= manager (reuse/add an
 `isAtLeastManagerProvider` if `manage_providers.dart` doesn't already
-expose one — check before adding a duplicate). Disable/hide "Luluskan"
+expose one - check before adding a duplicate). Disable/hide "Luluskan"
 until `staffNumberVerifiedAt != null` for that row, with a tooltip
 "Sahkan nombor staff dulu" (mirrors the backend's hard gate so
 managers don't hit an avoidable 400). Separately, on the member detail
 view (any screen, not just pending), add a "Betulkan Nombor Staff"
 action visible only when the viewer's rank is >= admin (reuse
 `isSuperAdminProvider`'s sibling check if one exists for admin-rank,
-or add `isAtLeastAdminProvider` following the same pattern) — this one
+or add `isAtLeastAdminProvider` following the same pattern) - this one
 is NOT limited to pending members, since correction applies to already
 -verified members too (the backfilled-user use case from the product
 requirement).
@@ -1339,7 +1339,7 @@ git commit -m "feat: add staff ID verify and correct actions to admin screens"
 
 ---
 
-### Task 13: Flutter — outstanding fee banner on payment history page
+### Task 13: Flutter - outstanding fee banner on payment history page
 
 **Files:**
 - Modify: `lib/features/payments/payment_history_page.dart`
@@ -1348,7 +1348,7 @@ git commit -m "feat: add staff ID verify and correct actions to admin screens"
 
 **Interfaces:**
 - Consumes: `outstanding_registration_fee` (Task 9).
-- Produces: `MyPaymentHistory.outstandingRegistrationFee bool` (default `false` if key missing — same back-compat style as the existing `donations` field).
+- Produces: `MyPaymentHistory.outstandingRegistrationFee bool` (default `false` if key missing - same back-compat style as the existing `donations` field).
 
 - [ ] **Step 1: Write the failing model tests**
 
@@ -1375,7 +1375,7 @@ Add `final bool outstandingRegistrationFee;` parsed as
 Above the `registration_fee[]` list in `payment_history_page.dart`,
 show a banner when `history.outstandingRegistrationFee`, with a button
 routing to the existing `CheckoutPage` (`context.push('/checkout',
-extra: CheckoutRequest(...))`) — reuse it, do not build a new checkout
+extra: CheckoutRequest(...))`) - reuse it, do not build a new checkout
 flow.
 
 - [ ] **Step 4: Write a widget test for the banner**
@@ -1444,15 +1444,15 @@ git commit -m "docs: record staff ID verification feature in TODO.md"
 ## Self-review notes (v2)
 
 - **All Critical/High findings from the Opus v1 review are addressed**: C1 (wrong ID/query, Task 3/5 now use `user_id`/`GetProfileByUserID`), C2 (bypass-audit forgery, Task 8's `req.BypassPayment = false` fix + dedicated test), C3 (Flutter null crashes, Task 10 added), C4 (member_id blast radius, Task 2 added), H1 (backfill over-exemption, Task 1 fixed), H2 (duplicate staff_id 500, Task 4 fixed), H3 (route path, corrected throughout).
-- **Medium findings addressed**: M1 (transaction wrapping, Task 5 Step 4), M3 (correction endpoint, Task 6 — this doubles as the user's own follow-up requirement), M4 (member_id numbering semantics, documented as intended in spec Q1), M5 (down migration, Task 1 Step 2), M6 (Mine handler profile fetch, Task 9 Step 3).
-- **Low findings addressed**: L1 (self-lockout, Task 5), L3 (malformed-id 400, rejected-member 409, staff_id exposure — Task 7).
+- **Medium findings addressed**: M1 (transaction wrapping, Task 5 Step 4), M3 (correction endpoint, Task 6 - this doubles as the user's own follow-up requirement), M4 (member_id numbering semantics, documented as intended in spec Q1), M5 (down migration, Task 1 Step 2), M6 (Mine handler profile fetch, Task 9 Step 3).
+- **Low findings addressed**: L1 (self-lockout, Task 5), L3 (malformed-id 400, rejected-member 409, staff_id exposure - Task 7).
 - **New from user follow-up**: activity-fee-gated-join confirmed as already-built/unaffected (no task needed, documented in spec); admin/superadmin staff-id correction is Task 6 + the correction half of Task 12.
 
-## Opus verify round 2 (2026-09-02) — confirmed fixed, plus small corrections applied
+## Opus verify round 2 (2026-09-02) - confirmed fixed, plus small corrections applied
 
 Independent re-verification confirmed every Critical/High/Medium/Low
 finding from round 1 is structurally correct in v2 (not just
-addressed in wording) — including the two trickiest ones: the
+addressed in wording) - including the two trickiest ones: the
 `req.BypassPayment = false` fix genuinely closes the audit-forgery
 hole (`setMemberStatus`'s `req` is passed by value and the audit read
 happens after the payment-gate block, so the assignment is observed),
@@ -1460,7 +1460,7 @@ and the transaction/rollback logic in Task 5 is race-safe (`WithTx`
 is real, `NextSequence` is a table upsert so rollback fully reverts
 it, and an `ErrNoRows` after our `UPDATE ... WHERE
 staff_id_verified_at IS NULL` can only mean the other writer's
-transaction already committed — not a stale read, since our UPDATE
+transaction already committed - not a stale read, since our UPDATE
 would have blocked on the row lock otherwise).
 
 Round 2 found five smaller issues, all fixed directly in this
@@ -1468,18 +1468,18 @@ document: Task 2's file list was missing `profile.go:500` and had the
 wrong path for `audit_helpers.go` (now corrected); Task 5's handler
 sketch used three APIs that don't exist in this codebase
 (`authFromContext`, a single-arg `IsAtLeastRole`, `h.audit.Record` as
-a method) — replaced with the real `middleware.UserID`,
+a method) - replaced with the real `middleware.UserID`,
 `authz.IsAtLeastRole(ctx, q, userID, role) (bool, error)`, and
 package-level `audit.Record(ctx, qtx, audit.Entry{...})` called inside
 the transaction before commit; Task 5 also silently no-op'd a
-staff_id override on an already-verified profile — now returns
+staff_id override on an already-verified profile - now returns
 409 pointing at the correction endpoint, with a test; Task 6's audit
-call was missing the pre-image (old `staff_id` value) — now
+call was missing the pre-image (old `staff_id` value) - now
 captured from the pre-load; and Task 8's tautological "non-exempt"
 test (which could not actually construct a non-exempt approvable
 member) was replaced with an explanatory note instead of a fake test.
 The spec's "Kesan logik"/toyyibpay-retained paragraph was also
-corrected — the payment-gate `else` branch is confirmed **dead code
+corrected - the payment-gate `else` branch is confirmed **dead code
 today** (unreachable, since verification is now mandatory for any
 approval), kept only as a future extension point, not as a live
 "pay-to-bypass-unverified" path as v1's wording implied.

@@ -16,6 +16,7 @@ import (
 
 	"marc/internal/auth"
 	"marc/internal/db/sqlc"
+	"marc/internal/http/middleware"
 )
 
 // sessionsAuthHandler - AuthHandler minimum utk ujian sesi. emailClient
@@ -370,5 +371,91 @@ func TestRevokeMySessionsBulkTiadaPadanan404(t *testing.T) {
 	rec := callRevokeSessionsBulk(t, pool, me, []uuid.UUID{uuid.New()})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("kod = %d, mahu 404. Badan: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func callProtectedWithAccess(t *testing.T, pool *pgxpool.Pool, jwtSvc *auth.JWT, access string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.RequireAuth(jwtSvc, sqlc.New(pool)))
+	r.GET("/me", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// Access JWT masih dalam TTL selepas family direvoke - middleware mesti
+// 401, bukan 200. Tanpa semakan ni, mobile kekal "log masuk" sampai
+// access luput (15 min).
+func TestRequireAuthTolakAccessLepasFamilyDirevoke(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	row := seedRefreshToken(t, pool, me, "iPhone", "203.0.113.1", time.Hour)
+	jwtSvc := auth.NewJWT("ujian-rahsia", time.Hour)
+	access, err := jwtSvc.GenerateAccessToken(me, row.FamilyID)
+	if err != nil {
+		t.Fatalf("access: %v", err)
+	}
+
+	if _, err := sqlc.New(pool).DeleteRefreshTokenFamilyByIDAndUser(ctx, sqlc.DeleteRefreshTokenFamilyByIDAndUserParams{
+		FamilyID: row.FamilyID,
+		UserID:   me,
+	}); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+
+	rec := callProtectedWithAccess(t, pool, jwtSvc, access)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("kod = %d, mahu 401 lepas revoke. Badan: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRequireAuthTerimaAccessFamilyHidup(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	row := seedRefreshToken(t, pool, me, "iPhone", "203.0.113.1", time.Hour)
+	jwtSvc := auth.NewJWT("ujian-rahsia", time.Hour)
+	access, err := jwtSvc.GenerateAccessToken(me, row.FamilyID)
+	if err != nil {
+		t.Fatalf("access: %v", err)
+	}
+
+	rec := callProtectedWithAccess(t, pool, jwtSvc, access)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("kod = %d, mahu 200 untuk family hidup. Badan: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Rotate menandakan baris lama consumed_at, sibling baru belum sempat
+// masuk. Family mesti masih hidup - kalau tidak, request serentak
+// semasa refresh dapat 401, interceptor cuba refresh dgn token lama
+// (dah consumed) dan reuse-detection revoke family sendiri.
+func TestRequireAuthTerimaAccessFamilyConsumedBelumLuput(t *testing.T) {
+	pool := activityTestPool(t)
+	ctx := context.Background()
+	me := seedMember(t, ctx, pool, "ahli", "approved")
+
+	row := seedRefreshToken(t, pool, me, "iPhone", "203.0.113.1", time.Hour)
+	if _, err := pool.Exec(ctx, `update refresh_tokens set consumed_at = now() where id = $1`, row.ID); err != nil {
+		t.Fatalf("consume: %v", err)
+	}
+
+	jwtSvc := auth.NewJWT("ujian-rahsia", time.Hour)
+	access, err := jwtSvc.GenerateAccessToken(me, row.FamilyID)
+	if err != nil {
+		t.Fatalf("access: %v", err)
+	}
+
+	rec := callProtectedWithAccess(t, pool, jwtSvc, access)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("kod = %d, mahu 200 untuk family consumed belum luput. Badan: %s", rec.Code, rec.Body.String())
 	}
 }

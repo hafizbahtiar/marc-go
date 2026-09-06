@@ -346,7 +346,7 @@ func notifyManagementOfPendingMember(ctx context.Context, q *sqlc.Queries, newUs
 
 // memberIDCode returns the {code} segment for a newly-generated
 // member_id, and the sequence key to draw from if the role needs a
-// number (empty key means no sequence is drawn — currently only
+// number (empty key means no sequence is drawn - currently only
 // "superadmin"). Adding a future role (e.g. "penaung") is one entry
 // here, per docs/superpowers/specs/2026-09-03-member-id-format-redesign-design.md.
 func memberIDCode(ctx context.Context, q *sqlc.Queries, roleKey string) (string, error) {
@@ -359,7 +359,7 @@ func memberIDCode(ctx context.Context, q *sqlc.Queries, roleKey string) (string,
 			return "", err
 		}
 		return fmt.Sprintf("T%d", seq), nil
-	// case "penaung": // future role, not yet created — same pattern as "tester":
+	// case "penaung": // future role, not yet created - same pattern as "tester":
 	//     seq, err := q.NextSequence(ctx, "member_seq:penaung")
 	//     if err != nil { return "", err }
 	//     return fmt.Sprintf("P%d", seq), nil
@@ -418,6 +418,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	tokens, err := h.issueTokens(c, user.ID, uuid.New())
 	if err != nil {
+		log.Printf("log masuk gagal untuk user %s: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "log masuk gagal"})
 		return
 	}
@@ -478,6 +479,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	tokens, err := h.issueTokens(c, consumed.UserID, consumed.FamilyID)
 	if err != nil {
+		log.Printf("gagal reset sesi untuk user %s: %v", consumed.UserID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
 		return
 	}

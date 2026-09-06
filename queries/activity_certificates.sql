@@ -19,8 +19,11 @@ order by coalesce(pr.display_name, pr.member_id);
 -- name: CreateCertificate :one
 insert into activity_certificates (
   activity_id, user_id, serial, verify_token,
-  recipient_name, activity_title, activity_date
-) values ($1, $2, $3, $4, $5, $6, $7)
+  recipient_name, activity_title, activity_date, category_name,
+  template_primary_color, template_secondary_color, template_title,
+  template_subtitle, template_body_text, template_issuer_name,
+  template_signature_name, template_footer_text
+) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 on conflict (activity_id, user_id) do nothing
 returning *;
 
