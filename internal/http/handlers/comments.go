@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -109,6 +111,7 @@ func (h *CommentHandler) Create(c *gin.Context) {
 		ParentCommentID: nullableUUIDString(comment.ParentCommentID),
 		Content:         comment.Content,
 		CreatedAt:       formatTime(comment.CreatedAt),
+		UpdatedAt:       formatTime(comment.UpdatedAt),
 		EditedAt:        formatTimeNullable(comment.EditedAt),
 		Author:          author,
 		LikeCount:       0,
@@ -227,6 +230,7 @@ func (h *CommentHandler) List(c *gin.Context) {
 			ParentCommentID: nullableUUIDString(r.ParentCommentID),
 			Content:         r.Content,
 			CreatedAt:       formatTime(r.CreatedAt),
+			UpdatedAt:       formatTime(r.UpdatedAt),
 			EditedAt:        formatTimeNullable(r.EditedAt),
 			Author: authorResponse{
 				UserID:      r.AuthorID.String(),
@@ -243,7 +247,8 @@ func (h *CommentHandler) List(c *gin.Context) {
 }
 
 type updateCommentRequest struct {
-	Content string `json:"content" binding:"required,max=2000"`
+	Content   string `json:"content" binding:"required,max=2000"`
+	UpdatedAt string `json:"updated_at" binding:"required"`
 }
 
 func (h *CommentHandler) Update(c *gin.Context) {
@@ -280,9 +285,17 @@ func (h *CommentHandler) Update(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, req.UpdatedAt)
+	if !ok {
+		return
+	}
 
-	updated, err := q.UpdateComment(ctx, sqlc.UpdateCommentParams{ID: id, Content: req.Content})
+	updated, err := q.UpdateComment(ctx, sqlc.UpdateCommentParams{ID: id, Content: req.Content, UpdatedAt: expectedUpdatedAt})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			staleWrite(c, "comment telah berubah. Muat semula sebelum menyunting lagi.")
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini comment"})
 		return
 	}
@@ -322,6 +335,7 @@ func (h *CommentHandler) Update(c *gin.Context) {
 		ParentCommentID: nullableUUIDString(updated.ParentCommentID),
 		Content:         updated.Content,
 		CreatedAt:       formatTime(updated.CreatedAt),
+		UpdatedAt:       formatTime(updated.UpdatedAt),
 		EditedAt:        formatTimeNullable(updated.EditedAt),
 		Author:          h.authorOf(ctx, userID),
 		LikeCount:       likeCount,
@@ -338,6 +352,16 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
+	var request struct {
+		UpdatedAt string `json:"updated_at" binding:"required"`
+	}
+	if !bindJSON(c, &request) {
+		return
+	}
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, request.UpdatedAt)
+	if !ok {
+		return
+	}
 
 	existing, err := h.queries.GetCommentByID(ctx, id)
 	if err != nil {
@@ -359,8 +383,13 @@ func (h *CommentHandler) Delete(c *gin.Context) {
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
 
-	if err := q.SoftDeleteComment(ctx, id); err != nil {
+	rowsAffected, err := q.SoftDeleteComment(ctx, sqlc.SoftDeleteCommentParams{ID: id, UpdatedAt: expectedUpdatedAt})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam comment"})
+		return
+	}
+	if rowsAffected == 0 {
+		staleWrite(c, "comment telah berubah. Muat semula sebelum memadam lagi.")
 		return
 	}
 

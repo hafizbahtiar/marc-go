@@ -165,7 +165,7 @@ func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) 
 const createActivityCategory = `-- name: CreateActivityCategory :one
 insert into activity_categories (key, name, sort_order)
 values ($1, $2, $3)
-returning id, key, name, sort_order, is_active, created_at
+returning id, key, name, sort_order, is_active, created_at, updated_at
 `
 
 type CreateActivityCategoryParams struct {
@@ -184,6 +184,7 @@ func (q *Queries) CreateActivityCategory(ctx context.Context, arg CreateActivity
 		&i.SortOrder,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -298,7 +299,7 @@ func (q *Queries) GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivit
 }
 
 const getActivityCategoryByID = `-- name: GetActivityCategoryByID :one
-select id, key, name, sort_order, is_active, created_at from activity_categories where id = $1
+select id, key, name, sort_order, is_active, created_at, updated_at from activity_categories where id = $1
 `
 
 func (q *Queries) GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error) {
@@ -311,6 +312,7 @@ func (q *Queries) GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (Ac
 		&i.SortOrder,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -515,7 +517,7 @@ func (q *Queries) ListActivitiesNeedingReminder(ctx context.Context) ([]Activity
 }
 
 const listActivityCategories = `-- name: ListActivityCategories :many
-select id, key, name, sort_order, is_active, created_at from activity_categories
+select id, key, name, sort_order, is_active, created_at, updated_at from activity_categories
 where is_active = true
 order by sort_order, name
 `
@@ -536,6 +538,7 @@ func (q *Queries) ListActivityCategories(ctx context.Context) ([]ActivityCategor
 			&i.SortOrder,
 			&i.IsActive,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -610,7 +613,7 @@ func (q *Queries) ListActivitySessionsByIDs(ctx context.Context, activityIds []u
 }
 
 const listAllActivityCategories = `-- name: ListAllActivityCategories :many
-select id, key, name, sort_order, is_active, created_at from activity_categories
+select id, key, name, sort_order, is_active, created_at, updated_at from activity_categories
 order by sort_order, name
 `
 
@@ -633,6 +636,7 @@ func (q *Queries) ListAllActivityCategories(ctx context.Context) ([]ActivityCate
 			&i.SortOrder,
 			&i.IsActive,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -804,16 +808,19 @@ update activity_categories
 set
   name = coalesce($2::text, name),
   sort_order = coalesce($3::int, sort_order),
-  is_active = coalesce($4::boolean, is_active)
+  is_active = coalesce($4::boolean, is_active),
+  updated_at = now()
 where id = $1
-returning id, key, name, sort_order, is_active, created_at
+  and updated_at = $5::timestamptz
+returning id, key, name, sort_order, is_active, created_at, updated_at
 `
 
 type UpdateActivityCategoryParams struct {
-	ID        uuid.UUID   `json:"id"`
-	Name      pgtype.Text `json:"name"`
-	SortOrder pgtype.Int4 `json:"sort_order"`
-	IsActive  pgtype.Bool `json:"is_active"`
+	ID                uuid.UUID          `json:"id"`
+	Name              pgtype.Text        `json:"name"`
+	SortOrder         pgtype.Int4        `json:"sort_order"`
+	IsActive          pgtype.Bool        `json:"is_active"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 // `key` sengaja tidak boleh diubah selepas cipta - padanan corak role.key,
@@ -824,6 +831,7 @@ func (q *Queries) UpdateActivityCategory(ctx context.Context, arg UpdateActivity
 		arg.Name,
 		arg.SortOrder,
 		arg.IsActive,
+		arg.ExpectedUpdatedAt,
 	)
 	var i ActivityCategory
 	err := row.Scan(
@@ -833,6 +841,7 @@ func (q *Queries) UpdateActivityCategory(ctx context.Context, arg UpdateActivity
 		&i.SortOrder,
 		&i.IsActive,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

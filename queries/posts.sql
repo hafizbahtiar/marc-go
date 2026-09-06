@@ -38,12 +38,14 @@ limit sqlc.arg('row_limit');
 
 -- name: UpdatePost :one
 update posts
-set content = $2, edited_at = now()
+set content = $2, edited_at = now(), updated_at = now()
 where id = $1 and deleted_at is null
+  and updated_at = $3
 returning *;
 
--- name: SoftDeletePost :exec
-update posts set deleted_at = now() where id = $1;
+-- name: SoftDeletePost :execrows
+update posts set deleted_at = now(), updated_at = now()
+where id = $1 and deleted_at is null and updated_at = $2;
 
 -- name: GetPostAuthorID :one
 select author_id from posts where id = $1 and deleted_at is null;

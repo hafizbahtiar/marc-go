@@ -72,3 +72,23 @@ func TestValidateRejectsInvalidPhoneAndStatus(t *testing.T) {
 		t.Fatalf("warnings = %+v, want cleared phone warning", row.Warnings)
 	}
 }
+
+func TestCanonicalDepartmentCode(t *testing.T) {
+	departments := map[string]string{"bpi": "BPI"}
+
+	if got, ok := CanonicalDepartmentCode(" bpi ", departments); !ok || got != "BPI" {
+		t.Fatalf("CanonicalDepartmentCode() = %q, %v; want BPI, true", got, ok)
+	}
+	if _, ok := CanonicalDepartmentCode("UNKNOWN", departments); ok {
+		t.Fatal("unknown department should be rejected")
+	}
+}
+
+func TestUnknownDepartmentConflict(t *testing.T) {
+	if conflict := UnknownDepartmentConflict("UNKNOWN", map[string]string{"bpi": "BPI"}); conflict == nil || conflict.Code != "unknown_department" {
+		t.Fatalf("UnknownDepartmentConflict() = %+v, want unknown_department conflict", conflict)
+	}
+	if conflict := UnknownDepartmentConflict("BPI", map[string]string{"bpi": "BPI"}); conflict != nil {
+		t.Fatalf("known department returned conflict: %+v", conflict)
+	}
+}

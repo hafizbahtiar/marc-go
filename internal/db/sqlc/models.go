@@ -58,6 +58,7 @@ type ActivityCategory struct {
 	SortOrder int32              `json:"sort_order"`
 	IsActive  bool               `json:"is_active"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ActivityCertificate struct {
@@ -154,6 +155,7 @@ type Comment struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	EditedAt        pgtype.Timestamptz `json:"edited_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type CommentLike struct {
@@ -214,6 +216,53 @@ type EmailVerificationToken struct {
 	TokenHash string             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type LegacyMemberClaimToken struct {
+	ID         uuid.UUID          `json:"id"`
+	RowID      uuid.UUID          `json:"row_id"`
+	TokenHash  string             `json:"token_hash"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type LegacyMemberImportBatch struct {
+	ID             uuid.UUID          `json:"id"`
+	SourceFilename string             `json:"source_filename"`
+	SourceSha256   string             `json:"source_sha256"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	Status         string             `json:"status"`
+	TotalRows      int32              `json:"total_rows"`
+	ValidRows      int32              `json:"valid_rows"`
+	ConflictRows   int32              `json:"conflict_rows"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type LegacyMemberImportRow struct {
+	ID             uuid.UUID          `json:"id"`
+	BatchID        uuid.UUID          `json:"batch_id"`
+	SourceRow      int32              `json:"source_row"`
+	LegacyNumber   string             `json:"legacy_number"`
+	Status         string             `json:"status"`
+	LegacyStaffID  string             `json:"legacy_staff_id"`
+	MemberID       string             `json:"member_id"`
+	DisplayName    string             `json:"display_name"`
+	Email          string             `json:"email"`
+	Phone          string             `json:"phone"`
+	DepartmentCode string             `json:"department_code"`
+	Position       string             `json:"position"`
+	EmergencyName  string             `json:"emergency_name"`
+	EmergencyPhone string             `json:"emergency_phone"`
+	HealthNotes    string             `json:"health_notes"`
+	Address        string             `json:"address"`
+	Category       string             `json:"category"`
+	ClubPosition   string             `json:"club_position"`
+	LegacyStatus   string             `json:"legacy_status"`
+	Conflicts      []byte             `json:"conflicts"`
+	Warnings       []byte             `json:"warnings"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type MemberAddress struct {
@@ -284,6 +333,7 @@ type Post struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	EditedAt  pgtype.Timestamptz `json:"edited_at"`
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type PostImage struct {
@@ -324,6 +374,7 @@ type Profile struct {
 	StaffID               string             `json:"staff_id"`
 	StaffIDVerifiedAt     pgtype.Timestamptz `json:"staff_id_verified_at"`
 	StaffIDVerifiedBy     pgtype.UUID        `json:"staff_id_verified_by"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 type RefreshToken struct {

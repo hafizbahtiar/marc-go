@@ -25,8 +25,10 @@ update activity_categories
 set
   name = coalesce(sqlc.narg('name')::text, name),
   sort_order = coalesce(sqlc.narg('sort_order')::int, sort_order),
-  is_active = coalesce(sqlc.narg('is_active')::boolean, is_active)
+  is_active = coalesce(sqlc.narg('is_active')::boolean, is_active),
+  updated_at = now()
 where id = $1
+  and updated_at = sqlc.arg('expected_updated_at')::timestamptz
 returning *;
 
 -- name: CreateActivity :one

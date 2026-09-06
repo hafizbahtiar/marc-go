@@ -112,6 +112,7 @@ type certificateTemplateRequest struct {
 	IssuerName     string  `json:"issuer_name"`
 	SignatureName  string  `json:"signature_name"`
 	FooterText     string  `json:"footer_text"`
+	UpdatedAt      string  `json:"updated_at" binding:"required"`
 }
 
 func (r certificateTemplateRequest) values() (sqlc.UpdateCertificateTemplateParams, string) {
@@ -163,11 +164,16 @@ func (h *CertificateTemplateHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": validationError})
 		return
 	}
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, request.UpdatedAt)
+	if !ok {
+		return
+	}
 	params.ID = id
+	params.UpdatedAt = expectedUpdatedAt
 	row, err := h.queries.UpdateCertificateTemplate(c.Request.Context(), params)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "template sijil tidak dijumpai"})
+			staleWrite(c, "template sijil telah berubah. Muat semula sebelum menyunting lagi.")
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal simpan template sijil"})
@@ -184,10 +190,22 @@ func (h *CertificateTemplateHandler) Publish(c *gin.Context) {
 	if !ok {
 		return
 	}
-	row, err := h.queries.PublishCertificateTemplate(c.Request.Context(), id)
+	var request struct {
+		UpdatedAt string `json:"updated_at" binding:"required"`
+	}
+	if !bindJSON(c, &request) {
+		return
+	}
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, request.UpdatedAt)
+	if !ok {
+		return
+	}
+	row, err := h.queries.PublishCertificateTemplate(c.Request.Context(), sqlc.PublishCertificateTemplateParams{
+		ID: id, UpdatedAt: expectedUpdatedAt,
+	})
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "template sijil tidak dijumpai"})
+			staleWrite(c, "template sijil telah berubah. Muat semula sebelum menerbitkan lagi.")
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal terbitkan template sijil"})

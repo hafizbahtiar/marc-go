@@ -465,6 +465,7 @@ type updateCategoryRequest struct {
 	Name      *string `json:"name"`
 	SortOrder *int32  `json:"sort_order"`
 	IsActive  *bool   `json:"is_active"`
+	UpdatedAt string  `json:"updated_at" binding:"required"`
 }
 
 func (h *ActivityHandler) UpdateCategory(c *gin.Context) {
@@ -498,6 +499,10 @@ func (h *ActivityHandler) UpdateCategory(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, req.UpdatedAt)
+	if !ok {
+		return
+	}
 
 	before, err := q.GetActivityCategoryByID(ctx, id)
 	if err != nil {
@@ -519,12 +524,17 @@ func (h *ActivityHandler) UpdateCategory(c *gin.Context) {
 	}
 
 	updated, err := q.UpdateActivityCategory(ctx, sqlc.UpdateActivityCategoryParams{
-		ID:        id,
-		Name:      name,
-		SortOrder: sortOrder,
-		IsActive:  isActive,
+		ID:                id,
+		Name:              name,
+		SortOrder:         sortOrder,
+		IsActive:          isActive,
+		ExpectedUpdatedAt: expectedUpdatedAt,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			staleWrite(c, "kategori telah berubah. Muat semula sebelum menyunting lagi.")
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini kategori"})
 		return
 	}

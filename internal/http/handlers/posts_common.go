@@ -38,6 +38,7 @@ type postResponse struct {
 	Type            string            `json:"type"`
 	Content         string            `json:"content"`
 	CreatedAt       string            `json:"created_at"`
+	UpdatedAt       string            `json:"updated_at"`
 	EditedAt        *string           `json:"edited_at"`
 	Author          authorResponse    `json:"author"`
 	Images          []string          `json:"images"`
@@ -52,6 +53,7 @@ type commentResponse struct {
 	ParentCommentID *string        `json:"parent_comment_id"`
 	Content         string         `json:"content"`
 	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
 	EditedAt        *string        `json:"edited_at"`
 	Author          authorResponse `json:"author"`
 	LikeCount       int64          `json:"like_count"`
@@ -171,6 +173,7 @@ type postCore struct {
 	Type              string
 	Content           string
 	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
 	EditedAt          pgtype.Timestamptz
 	AuthorMemberID    string
 	AuthorDisplayName pgtype.Text
@@ -180,7 +183,7 @@ type postCore struct {
 func coreFromGetPostByIDRow(r sqlc.GetPostByIDRow) postCore {
 	return postCore{
 		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
-		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, EditedAt: r.EditedAt,
 		AuthorMemberID: r.AuthorMemberID.String, AuthorDisplayName: r.AuthorDisplayName,
 		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
 	}
@@ -189,7 +192,7 @@ func coreFromGetPostByIDRow(r sqlc.GetPostByIDRow) postCore {
 func coreFromListPostsRow(r sqlc.ListPostsRow) postCore {
 	return postCore{
 		ID: r.ID, AuthorID: r.AuthorID, Type: r.Type, Content: r.Content,
-		CreatedAt: r.CreatedAt, EditedAt: r.EditedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, EditedAt: r.EditedAt,
 		AuthorMemberID: r.AuthorMemberID.String, AuthorDisplayName: r.AuthorDisplayName,
 		AuthorAvatarR2Key: r.AuthorAvatarR2Key,
 	}
@@ -266,6 +269,7 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 			ParentCommentID: nullableUUIDString(row.ParentCommentID),
 			Content:         row.Content,
 			CreatedAt:       formatTime(row.CreatedAt),
+			UpdatedAt:       formatTime(row.UpdatedAt),
 			EditedAt:        formatTimeNullable(row.EditedAt),
 			Author: authorResponse{
 				UserID:      row.AuthorID.String(),
@@ -327,6 +331,7 @@ func (h *PostHandler) buildPostResponses(ctx context.Context, viewerID uuid.UUID
 			Type:      c.Type,
 			Content:   c.Content,
 			CreatedAt: formatTime(c.CreatedAt),
+			UpdatedAt: formatTime(c.UpdatedAt),
 			EditedAt:  formatTimeNullable(c.EditedAt),
 			Author: authorResponse{
 				UserID:      c.AuthorID.String(),

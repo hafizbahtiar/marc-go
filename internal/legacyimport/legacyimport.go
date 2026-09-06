@@ -289,6 +289,27 @@ func normalizeIdentifier(value string) string {
 	return strings.ToUpper(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
+// CanonicalDepartmentCode accepts the CSV value case-insensitively and
+// returns the exact code stored in departments for the foreign key write.
+func CanonicalDepartmentCode(value string, departments map[string]string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(value))
+	if key == "" {
+		return "", true
+	}
+	code, ok := departments[key]
+	return code, ok
+}
+
+func UnknownDepartmentConflict(value string, departments map[string]string) *Conflict {
+	if _, ok := CanonicalDepartmentCode(value, departments); ok {
+		return nil
+	}
+	return &Conflict{
+		Code:    "unknown_department",
+		Message: fmt.Sprintf("Kod bahagian tidak wujud: %s.", strings.TrimSpace(value)),
+	}
+}
+
 // SortedConflictCodes is useful for stable API responses and tests.
 func SortedConflictCodes(row ValidatedRow) []string {
 	codes := make([]string, 0, len(row.Conflicts))

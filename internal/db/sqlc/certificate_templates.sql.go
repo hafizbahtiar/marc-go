@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getActiveCertificateTemplate = `-- name: GetActiveCertificateTemplate :one
@@ -119,11 +120,17 @@ with deactivated as (
 update certificate_templates
 set is_active = true, updated_at = now()
 where certificate_templates.id = $1
+  and certificate_templates.updated_at = $2
 returning id, name, is_active, primary_color, secondary_color, logo_url, title, subtitle, body_text, issuer_name, signature_name, footer_text, created_at, updated_at
 `
 
-func (q *Queries) PublishCertificateTemplate(ctx context.Context, id uuid.UUID) (CertificateTemplate, error) {
-	row := q.db.QueryRow(ctx, publishCertificateTemplate, id)
+type PublishCertificateTemplateParams struct {
+	ID        uuid.UUID          `json:"id"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) PublishCertificateTemplate(ctx context.Context, arg PublishCertificateTemplateParams) (CertificateTemplate, error) {
+	row := q.db.QueryRow(ctx, publishCertificateTemplate, arg.ID, arg.UpdatedAt)
 	var i CertificateTemplate
 	err := row.Scan(
 		&i.ID,
@@ -158,22 +165,23 @@ set
   signature_name = $10,
   footer_text = $11,
   updated_at = now()
-where id = $1
+where id = $1 and updated_at = $12
 returning id, name, is_active, primary_color, secondary_color, logo_url, title, subtitle, body_text, issuer_name, signature_name, footer_text, created_at, updated_at
 `
 
 type UpdateCertificateTemplateParams struct {
-	ID             uuid.UUID `json:"id"`
-	Name           string    `json:"name"`
-	PrimaryColor   string    `json:"primary_color"`
-	SecondaryColor string    `json:"secondary_color"`
-	LogoUrl        string    `json:"logo_url"`
-	Title          string    `json:"title"`
-	Subtitle       string    `json:"subtitle"`
-	BodyText       string    `json:"body_text"`
-	IssuerName     string    `json:"issuer_name"`
-	SignatureName  string    `json:"signature_name"`
-	FooterText     string    `json:"footer_text"`
+	ID             uuid.UUID          `json:"id"`
+	Name           string             `json:"name"`
+	PrimaryColor   string             `json:"primary_color"`
+	SecondaryColor string             `json:"secondary_color"`
+	LogoUrl        string             `json:"logo_url"`
+	Title          string             `json:"title"`
+	Subtitle       string             `json:"subtitle"`
+	BodyText       string             `json:"body_text"`
+	IssuerName     string             `json:"issuer_name"`
+	SignatureName  string             `json:"signature_name"`
+	FooterText     string             `json:"footer_text"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) UpdateCertificateTemplate(ctx context.Context, arg UpdateCertificateTemplateParams) (CertificateTemplate, error) {
@@ -189,6 +197,7 @@ func (q *Queries) UpdateCertificateTemplate(ctx context.Context, arg UpdateCerti
 		arg.IssuerName,
 		arg.SignatureName,
 		arg.FooterText,
+		arg.UpdatedAt,
 	)
 	var i CertificateTemplate
 	err := row.Scan(

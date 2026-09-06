@@ -15,7 +15,7 @@ import (
 const createPost = `-- name: CreatePost :one
 insert into posts (author_id, type, content)
 values ($1, $2, $3)
-returning id, author_id, type, content, created_at, edited_at, deleted_at
+returning id, author_id, type, content, created_at, edited_at, deleted_at, updated_at
 `
 
 type CreatePostParams struct {
@@ -35,6 +35,7 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -76,7 +77,7 @@ func (q *Queries) GetPostAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID,
 
 const getPostByID = `-- name: GetPostByID :one
 select
-  p.id, p.author_id, p.type, p.content, p.created_at, p.edited_at, p.deleted_at,
+  p.id, p.author_id, p.type, p.content, p.created_at, p.edited_at, p.deleted_at, p.updated_at,
   u.email as author_email,
   pr.member_id as author_member_id,
   pr.display_name as author_display_name,
@@ -95,6 +96,7 @@ type GetPostByIDRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	AuthorEmail       string             `json:"author_email"`
 	AuthorMemberID    pgtype.Text        `json:"author_member_id"`
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
@@ -112,6 +114,7 @@ func (q *Queries) GetPostByID(ctx context.Context, id uuid.UUID) (GetPostByIDRow
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 		&i.AuthorEmail,
 		&i.AuthorMemberID,
 		&i.AuthorDisplayName,
@@ -207,7 +210,7 @@ func (q *Queries) ListPostImagesByPostIDs(ctx context.Context, postIds []uuid.UU
 
 const listPosts = `-- name: ListPosts :many
 select
-  p.id, p.author_id, p.type, p.content, p.created_at, p.edited_at, p.deleted_at,
+  p.id, p.author_id, p.type, p.content, p.created_at, p.edited_at, p.deleted_at, p.updated_at,
   u.email as author_email,
   pr.member_id as author_member_id,
   pr.display_name as author_display_name,
@@ -238,6 +241,7 @@ type ListPostsRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	AuthorEmail       string             `json:"author_email"`
 	AuthorMemberID    pgtype.Text        `json:"author_member_id"`
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
@@ -264,6 +268,7 @@ func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPos
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
+			&i.UpdatedAt,
 			&i.AuthorEmail,
 			&i.AuthorMemberID,
 			&i.AuthorDisplayName,
@@ -279,29 +284,40 @@ func (q *Queries) ListPosts(ctx context.Context, arg ListPostsParams) ([]ListPos
 	return items, nil
 }
 
-const softDeletePost = `-- name: SoftDeletePost :exec
-update posts set deleted_at = now() where id = $1
+const softDeletePost = `-- name: SoftDeletePost :execrows
+update posts set deleted_at = now(), updated_at = now()
+where id = $1 and deleted_at is null and updated_at = $2
 `
 
-func (q *Queries) SoftDeletePost(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, softDeletePost, id)
-	return err
+type SoftDeletePostParams struct {
+	ID        uuid.UUID          `json:"id"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeletePost, arg.ID, arg.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updatePost = `-- name: UpdatePost :one
 update posts
-set content = $2, edited_at = now()
+set content = $2, edited_at = now(), updated_at = now()
 where id = $1 and deleted_at is null
-returning id, author_id, type, content, created_at, edited_at, deleted_at
+  and updated_at = $3
+returning id, author_id, type, content, created_at, edited_at, deleted_at, updated_at
 `
 
 type UpdatePostParams struct {
-	ID      uuid.UUID `json:"id"`
-	Content string    `json:"content"`
+	ID        uuid.UUID          `json:"id"`
+	Content   string             `json:"content"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, error) {
-	row := q.db.QueryRow(ctx, updatePost, arg.ID, arg.Content)
+	row := q.db.QueryRow(ctx, updatePost, arg.ID, arg.Content, arg.UpdatedAt)
 	var i Post
 	err := row.Scan(
 		&i.ID,
@@ -311,6 +327,7 @@ func (q *Queries) UpdatePost(ctx context.Context, arg UpdatePostParams) (Post, e
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

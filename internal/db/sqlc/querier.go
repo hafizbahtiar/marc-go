@@ -631,7 +631,7 @@ type Querier interface {
 	// Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
-	PublishCertificateTemplate(ctx context.Context, id uuid.UUID) (CertificateTemplate, error)
+	PublishCertificateTemplate(ctx context.Context, arg PublishCertificateTemplateParams) (CertificateTemplate, error)
 	// Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
 	// selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 	// perubahan set sesi.
@@ -667,8 +667,8 @@ type Querier interface {
 	// yang sedia wujud (Opus verify 2026-08-15).
 	SetRegistrationPaymentRef(ctx context.Context, arg SetRegistrationPaymentRefParams) (ActivityRegistration, error)
 	SetTelegramLink(ctx context.Context, arg SetTelegramLinkParams) error
-	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
-	SoftDeletePost(ctx context.Context, id uuid.UUID) error
+	SoftDeleteComment(ctx context.Context, arg SoftDeleteCommentParams) (int64, error)
+	SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) (int64, error)
 	// fee_cents_paid = snapshot amaun yang BENAR-BENAR dibayar; sengaja
 	// BUKAN activities.fee_cents hidup (yuran boleh ditukar selepas bayar).
 	SumActivityRevenueThisMonth(ctx context.Context) (int64, error)

@@ -151,9 +151,15 @@ func (h *LegacyMemberImportHandler) GetBatch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id batch tidak sah"})
 		return
 	}
+	departments, err := h.departmentCodes(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak bahagian import"})
+		return
+	}
 	rows, err := h.pool.Query(c.Request.Context(), `
 		select id, source_row, status, legacy_staff_id, member_id, display_name,
-		       email, phone, department_code, position, conflicts, user_id
+		       email, phone, department_code, position, legacy_status,
+		       conflicts, warnings, user_id
 		from legacy_member_import_rows
 		where batch_id = $1
 		order by source_row`, batchID)
@@ -166,18 +172,37 @@ func (h *LegacyMemberImportHandler) GetBatch(c *gin.Context) {
 	for rows.Next() {
 		var id uuid.UUID
 		var sourceRow int
-		var status, staffID, memberID, name, emailAddress, phone, department, position string
-		var conflicts json.RawMessage
+		var status, staffID, memberID, name, emailAddress, phone, department, position, legacyStatus string
+		var conflicts, warnings json.RawMessage
 		var userID *uuid.UUID
-		if err := rows.Scan(&id, &sourceRow, &status, &staffID, &memberID, &name, &emailAddress, &phone, &department, &position, &conflicts, &userID); err != nil {
+		if err := rows.Scan(&id, &sourceRow, &status, &staffID, &memberID, &name, &emailAddress, &phone, &department, &position, &legacyStatus, &conflicts, &warnings, &userID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca baris import"})
 			return
+		}
+		var conflictList []legacyimport.Conflict
+		if err := json.Unmarshal(conflicts, &conflictList); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "format konflik import tidak sah"})
+			return
+		}
+		if unknown := legacyimport.UnknownDepartmentConflict(department, departments); unknown != nil {
+			found := false
+			for _, conflict := range conflictList {
+				if conflict.Code == unknown.Code {
+					found = true
+					break
+				}
+			}
+			if !found {
+				conflictList = append(conflictList, *unknown)
+				conflicts, _ = json.Marshal(conflictList)
+			}
 		}
 		result = append(result, gin.H{
 			"id": id, "source_row": sourceRow, "status": status,
 			"legacy_staff_id": staffID, "member_id": memberID, "display_name": name,
 			"email": emailAddress, "phone": phone, "department_code": department,
-			"position": position, "conflicts": json.RawMessage(conflicts), "user_id": userID,
+			"position": position, "legacy_status": legacyStatus,
+			"conflicts": json.RawMessage(conflicts), "warnings": json.RawMessage(warnings), "user_id": userID,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"rows": result})
@@ -203,6 +228,11 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 	defer tx.Rollback(ctx)
 	txQueries := h.queries.WithTx(tx)
 	actor := auditActor(c, txQueries)
+	departments, err := h.departmentCodes(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak bahagian import"})
+		return
+	}
 	rows, err := tx.Query(ctx, `
 		select id, legacy_staff_id, member_id, display_name, email, phone,
 		       department_code, position, emergency_name, emergency_phone,
@@ -217,6 +247,7 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 	}
 	defer rows.Close()
 	imported := 0
+	blocked := 0
 	for rows.Next() {
 		var rowID uuid.UUID
 		var staffID, memberID, name, emailAddress, phone, department, position, emergencyName, emergencyPhone, health, address, legacyStatus string
@@ -225,6 +256,23 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca data import"})
 			return
 		}
+		canonicalDepartment, departmentOK := legacyimport.CanonicalDepartmentCode(department, departments)
+		if !departmentOK {
+			conflict, _ := json.Marshal([]legacyimport.Conflict{
+				*legacyimport.UnknownDepartmentConflict(department, departments),
+			})
+			if _, err := tx.Exec(ctx, `
+				update legacy_member_import_rows
+				set status = 'conflict', conflicts = conflicts || $2::jsonb
+				where id = $1
+			`, rowID, conflict); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tandakan konflik import"})
+				return
+			}
+			blocked++
+			continue
+		}
+		department = canonicalDepartment
 		if userID == nil {
 			continue
 		}
@@ -244,6 +292,8 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 			  staff_id_verified_at = coalesce(staff_id_verified_at, now())
 			where user_id = $1
 			returning id`, *userID, name, phone, department, position, emergencyName, emergencyPhone, health, staffID, memberID, legacyStatus).Scan(&profileID); err != nil {
+			log.Printf("legacy import profile update failed: batch=%s row=%s user=%s email=%q department=%q err=%v",
+				batchID, rowID, userID, emailAddress, department, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil import"})
 			return
 		}
@@ -273,7 +323,11 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal import baris"})
 		return
 	}
-	if _, err := tx.Exec(ctx, `update legacy_member_import_batches set status = 'imported' where id = $1`, batchID); err != nil {
+	batchStatus := "imported"
+	if blocked > 0 {
+		batchStatus = "ready"
+	}
+	if _, err := tx.Exec(ctx, `update legacy_member_import_batches set status = $2 where id = $1`, batchID, batchStatus); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini batch import"})
 		return
 	}
@@ -281,7 +335,11 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan import"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"imported": imported, "unclaimed": "baris tanpa akaun kekal untuk claim"})
+	c.JSON(http.StatusOK, gin.H{
+		"imported":  imported,
+		"blocked":   blocked,
+		"unclaimed": "baris tanpa akaun kekal untuk claim",
+	})
 }
 
 type legacyClaimRequest struct {
@@ -369,6 +427,17 @@ func (h *LegacyMemberImportHandler) CompleteClaim(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "akaun untuk rekod ini sudah wujud"})
 		return
 	}
+	departments, err := h.departmentCodes(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak bahagian tuntutan"})
+		return
+	}
+	canonicalDepartment, departmentOK := legacyimport.CanonicalDepartmentCode(department, departments)
+	if !departmentOK {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("Kod bahagian tidak wujud: %s.", department)})
+		return
+	}
+	department = canonicalDepartment
 	var roleID int16
 	if err := tx.QueryRow(ctx, `select id from roles where key = 'ahli'`).Scan(&roleID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "role ahli tidak ditemui"})
@@ -430,8 +499,18 @@ func (h *LegacyMemberImportHandler) findClaimRow(ctx context.Context, emailAddre
 }
 
 func (h *LegacyMemberImportHandler) addDatabaseConflicts(ctx context.Context, report legacyimport.Report) (legacyimport.Report, error) {
+	departments, err := h.departmentCodes(ctx)
+	if err != nil {
+		return report, err
+	}
+
 	for i := range report.Rows {
 		row := &report.Rows[i]
+		if canonical, ok := legacyimport.CanonicalDepartmentCode(row.DepartmentCode, departments); ok {
+			row.DepartmentCode = canonical
+		} else {
+			row.Conflicts = append(row.Conflicts, *legacyimport.UnknownDepartmentConflict(row.DepartmentCode, departments))
+		}
 		var existingUser *uuid.UUID
 		err := h.pool.QueryRow(ctx, `select id from users where lower(email) = lower($1)`, row.NormalizedEmail).Scan(&existingUser)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -465,6 +544,27 @@ func (h *LegacyMemberImportHandler) addDatabaseConflicts(ctx context.Context, re
 		}
 	}
 	return report, nil
+}
+
+func (h *LegacyMemberImportHandler) departmentCodes(ctx context.Context) (map[string]string, error) {
+	rows, err := h.pool.Query(ctx, `select code from departments`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	departments := make(map[string]string)
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		departments[strings.ToLower(strings.TrimSpace(code))] = code
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return departments, nil
 }
 
 func (h *LegacyMemberImportHandler) storeReport(ctx context.Context, createdBy uuid.UUID, filename, checksum string, report legacyimport.Report) (uuid.UUID, error) {
