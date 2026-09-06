@@ -234,6 +234,8 @@ func NewRouter(
 	accountLifecycleHandler := handlers.NewAccountLifecycleHandler(pool)
 	approved.GET("/admin/account-deletion-requests", accountLifecycleHandler.List)
 	approved.POST("/admin/account-deletion-requests/:id/execute", accountLifecycleHandler.Execute)
+	approved.GET("/admin/account-deletion-targets", accountLifecycleHandler.ListTargets)
+	approved.POST("/admin/account-deletion-targets/:id/execute", accountLifecycleHandler.ExecuteDirect)
 	approved.POST("/admin/legacy-member-import/dry-run", legacyMemberImportHandler.DryRun)
 	approved.GET("/admin/legacy-member-import/batches", legacyMemberImportHandler.ListBatches)
 	approved.GET("/admin/legacy-member-import/:id", legacyMemberImportHandler.GetBatch)

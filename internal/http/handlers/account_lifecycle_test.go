@@ -6,6 +6,15 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestValidateDeletionReason(t *testing.T) {
+	if _, err := validateDeletionReason("  "); err == nil {
+		t.Fatal("empty reason should be rejected")
+	}
+	if got, err := validateDeletionReason("  Duplicate account  "); err != nil || got != "Duplicate account" {
+		t.Fatalf("validateDeletionReason() = %q, %v", got, err)
+	}
+}
+
 func TestDeletionRejection(t *testing.T) {
 	userID := uuid.New()
 

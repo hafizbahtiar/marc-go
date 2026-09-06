@@ -3,8 +3,10 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +21,17 @@ import (
 )
 
 const accountDeletionReason = "account_deleted"
+
+func validateDeletionReason(reason string) (string, error) {
+	trimmed := strings.TrimSpace(reason)
+	if trimmed == "" {
+		return "", fmt.Errorf("sebab pemadaman diperlukan")
+	}
+	if len(trimmed) > 500 {
+		return "", fmt.Errorf("sebab pemadaman terlalu panjang")
+	}
+	return trimmed, nil
+}
 
 type AccountLifecycleHandler struct {
 	pool    *pgxpool.Pool
@@ -109,6 +122,57 @@ func (h *AccountLifecycleHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"requests": result})
 }
 
+// ListTargets - GET /admin/account-deletion-targets.
+// Direct deletion intentionally excludes all superadmin accounts.
+func (h *AccountLifecycleHandler) ListTargets(c *gin.Context) {
+	if !h.requireSuperAdmin(c) {
+		return
+	}
+
+	rows, err := h.pool.Query(c.Request.Context(), `
+		select u.id, p.member_id, p.display_name, u.email, r.key,
+		       p.status, '', u.created_at, null
+		from users u
+		join profiles p on p.user_id = u.id
+		join roles r on r.id = p.role_id
+		where r.key <> $1
+		order by p.display_name nulls last, u.email
+	`, superAdminRoleKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal muat senarai akaun"})
+		return
+	}
+	defer rows.Close()
+
+	result := make([]accountDeletionRow, 0)
+	for rows.Next() {
+		var row accountDeletionRow
+		var createdAt time.Time
+		if err := rows.Scan(
+			&row.UserID,
+			&row.MemberID,
+			&row.DisplayName,
+			&row.Email,
+			&row.RoleKey,
+			&row.AccountState,
+			&row.Status,
+			&createdAt,
+			&row.CompletedAt,
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca senarai akaun"})
+			return
+		}
+		row.RequestedAt = createdAt.Format(time.RFC3339)
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca senarai akaun"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"accounts": result})
+}
+
 func deletionRejection(callerID, targetID uuid.UUID, targetRole string, superadminCount int64) string {
 	if callerID == targetID {
 		return "akaun sendiri tidak boleh dipadam melalui modul ini"
@@ -124,6 +188,28 @@ func deletionRejection(callerID, targetID uuid.UUID, targetRole string, superadm
 
 // Execute - POST /admin/account-deletion-requests/:id/execute.
 func (h *AccountLifecycleHandler) Execute(c *gin.Context) {
+	h.execute(c, true, "member_request", "")
+}
+
+type directDeletionRequest struct {
+	Reason string `json:"reason" binding:"required,max=500"`
+}
+
+// ExecuteDirect - POST /admin/account-deletion-targets/:id/execute.
+func (h *AccountLifecycleHandler) ExecuteDirect(c *gin.Context) {
+	var request directDeletionRequest
+	if !bindJSON(c, &request) {
+		return
+	}
+	reason, err := validateDeletionReason(request.Reason)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	h.execute(c, false, "admin_direct", reason)
+}
+
+func (h *AccountLifecycleHandler) execute(c *gin.Context, requiresRequest bool, mode, reason string) {
 	if !h.requireSuperAdmin(c) {
 		return
 	}
@@ -164,6 +250,22 @@ func (h *AccountLifecycleHandler) Execute(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca akaun sasaran"})
 		return
+	}
+	if requiresRequest {
+		var requested bool
+		if err := tx.QueryRow(ctx, `
+			select exists(
+				select 1 from account_deletion_requests
+				where user_id = $1 and status = 'pending'
+			)
+		`, targetID).Scan(&requested); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak permintaan pemadaman"})
+			return
+		}
+		if !requested {
+			c.JSON(http.StatusConflict, gin.H{"error": "akaun ini tiada permintaan pemadaman yang menunggu"})
+			return
+		}
 	}
 
 	var superadminCount int64
@@ -219,10 +321,12 @@ func (h *AccountLifecycleHandler) Execute(c *gin.Context) {
 		Action:     audit.ActionDelete,
 		Actor:      actor,
 		Old: map[string]any{
-			"email":        email,
-			"member_id":    pointerValue(memberID),
-			"display_name": pointerValue(displayName),
-			"role_key":     roleKey,
+			"email":         email,
+			"member_id":     pointerValue(memberID),
+			"display_name":  pointerValue(displayName),
+			"role_key":      roleKey,
+			"deletion_mode": mode,
+			"reason":        reason,
 		},
 	}); err != nil {
 		log.Printf("audit pemadaman akaun: %v", err)
