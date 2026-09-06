@@ -29,7 +29,7 @@ set
   signature_name = $10,
   footer_text = $11,
   updated_at = now()
-where id = $1
+where id = $1 and updated_at = $12
 returning *;
 
 -- name: PublishCertificateTemplate :one
@@ -41,4 +41,5 @@ with deactivated as (
 update certificate_templates
 set is_active = true, updated_at = now()
 where certificate_templates.id = $1
+  and certificate_templates.updated_at = $2
 returning *;

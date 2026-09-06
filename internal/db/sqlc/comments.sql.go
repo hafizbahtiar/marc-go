@@ -47,7 +47,7 @@ func (q *Queries) CountCommentsByPostIDs(ctx context.Context, postIds []uuid.UUI
 const createComment = `-- name: CreateComment :one
 insert into comments (post_id, parent_comment_id, author_id, content)
 values ($1, $2, $3, $4)
-returning id, post_id, parent_comment_id, author_id, content, created_at, edited_at, deleted_at
+returning id, post_id, parent_comment_id, author_id, content, created_at, edited_at, deleted_at, updated_at
 `
 
 type CreateCommentParams struct {
@@ -74,6 +74,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -90,7 +91,7 @@ func (q *Queries) GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UU
 }
 
 const getCommentByID = `-- name: GetCommentByID :one
-select id, post_id, parent_comment_id, author_id, content, created_at, edited_at, deleted_at from comments where id = $1 and deleted_at is null
+select id, post_id, parent_comment_id, author_id, content, created_at, edited_at, deleted_at, updated_at from comments where id = $1 and deleted_at is null
 `
 
 func (q *Queries) GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error) {
@@ -105,12 +106,13 @@ func (q *Queries) GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, er
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listCommentPreviewsByPostIDs = `-- name: ListCommentPreviewsByPostIDs :many
-select post_id, id, parent_comment_id, content, created_at, edited_at, author_id, author_member_id, author_display_name, author_avatar_r2_key, preview_rank
+select post_id, id, parent_comment_id, content, created_at, updated_at, edited_at, author_id, author_member_id, author_display_name, author_avatar_r2_key, preview_rank
 from (
   select
     c.post_id,
@@ -118,6 +120,7 @@ from (
     c.parent_comment_id,
     c.content,
     c.created_at,
+    c.updated_at,
     c.edited_at,
     c.author_id,
     pr.member_id as author_member_id,
@@ -140,6 +143,7 @@ type ListCommentPreviewsByPostIDsRow struct {
 	ParentCommentID   pgtype.UUID        `json:"parent_comment_id"`
 	Content           string             `json:"content"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
 	AuthorID          uuid.UUID          `json:"author_id"`
 	AuthorMemberID    pgtype.Text        `json:"author_member_id"`
@@ -165,6 +169,7 @@ func (q *Queries) ListCommentPreviewsByPostIDs(ctx context.Context, postIds []uu
 			&i.ParentCommentID,
 			&i.Content,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.EditedAt,
 			&i.AuthorID,
 			&i.AuthorMemberID,
@@ -184,7 +189,7 @@ func (q *Queries) ListCommentPreviewsByPostIDs(ctx context.Context, postIds []uu
 
 const listCommentsByPostID = `-- name: ListCommentsByPostID :many
 select
-  c.id, c.post_id, c.parent_comment_id, c.author_id, c.content, c.created_at, c.edited_at, c.deleted_at,
+  c.id, c.post_id, c.parent_comment_id, c.author_id, c.content, c.created_at, c.edited_at, c.deleted_at, c.updated_at,
   u.email as author_email,
   pr.member_id as author_member_id,
   pr.display_name as author_display_name,
@@ -205,6 +210,7 @@ type ListCommentsByPostIDRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	AuthorEmail       string             `json:"author_email"`
 	AuthorMemberID    pgtype.Text        `json:"author_member_id"`
 	AuthorDisplayName pgtype.Text        `json:"author_display_name"`
@@ -231,6 +237,7 @@ func (q *Queries) ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
+			&i.UpdatedAt,
 			&i.AuthorEmail,
 			&i.AuthorMemberID,
 			&i.AuthorDisplayName,
@@ -246,29 +253,40 @@ func (q *Queries) ListCommentsByPostID(ctx context.Context, postID uuid.UUID) ([
 	return items, nil
 }
 
-const softDeleteComment = `-- name: SoftDeleteComment :exec
-update comments set deleted_at = now() where id = $1
+const softDeleteComment = `-- name: SoftDeleteComment :execrows
+update comments set deleted_at = now(), updated_at = now()
+where id = $1 and deleted_at is null and updated_at = $2
 `
 
-func (q *Queries) SoftDeleteComment(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, softDeleteComment, id)
-	return err
+type SoftDeleteCommentParams struct {
+	ID        uuid.UUID          `json:"id"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) SoftDeleteComment(ctx context.Context, arg SoftDeleteCommentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteComment, arg.ID, arg.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateComment = `-- name: UpdateComment :one
 update comments
-set content = $2, edited_at = now()
+set content = $2, edited_at = now(), updated_at = now()
 where id = $1 and deleted_at is null
-returning id, post_id, parent_comment_id, author_id, content, created_at, edited_at, deleted_at
+  and updated_at = $3
+returning id, post_id, parent_comment_id, author_id, content, created_at, edited_at, deleted_at, updated_at
 `
 
 type UpdateCommentParams struct {
-	ID      uuid.UUID `json:"id"`
-	Content string    `json:"content"`
+	ID        uuid.UUID          `json:"id"`
+	Content   string             `json:"content"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error) {
-	row := q.db.QueryRow(ctx, updateComment, arg.ID, arg.Content)
+	row := q.db.QueryRow(ctx, updateComment, arg.ID, arg.Content, arg.UpdatedAt)
 	var i Comment
 	err := row.Scan(
 		&i.ID,
@@ -279,6 +297,7 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

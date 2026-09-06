@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -273,7 +274,8 @@ func (h *PostHandler) List(c *gin.Context) {
 }
 
 type updatePostRequest struct {
-	Content string `json:"content" binding:"required,max=10000"`
+	Content   string `json:"content" binding:"required,max=10000"`
+	UpdatedAt string `json:"updated_at" binding:"required"`
 }
 
 func (h *PostHandler) Update(c *gin.Context) {
@@ -308,9 +310,17 @@ func (h *PostHandler) Update(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, req.UpdatedAt)
+	if !ok {
+		return
+	}
 
-	updated, err := q.UpdatePost(ctx, sqlc.UpdatePostParams{ID: id, Content: req.Content})
+	updated, err := q.UpdatePost(ctx, sqlc.UpdatePostParams{ID: id, Content: req.Content, UpdatedAt: expectedUpdatedAt})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			staleWrite(c, "post telah berubah. Muat semula sebelum menyunting lagi.")
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini post"})
 		return
 	}
@@ -357,6 +367,16 @@ func (h *PostHandler) Delete(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
+	var request struct {
+		UpdatedAt string `json:"updated_at" binding:"required"`
+	}
+	if !bindJSON(c, &request) {
+		return
+	}
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, request.UpdatedAt)
+	if !ok {
+		return
+	}
 
 	before, err := h.queries.GetPostByID(ctx, id)
 	if err != nil {
@@ -378,8 +398,13 @@ func (h *PostHandler) Delete(c *gin.Context) {
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
 
-	if err := q.SoftDeletePost(ctx, id); err != nil {
+	rowsAffected, err := q.SoftDeletePost(ctx, sqlc.SoftDeletePostParams{ID: id, UpdatedAt: expectedUpdatedAt})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal padam post"})
+		return
+	}
+	if rowsAffected == 0 {
+		staleWrite(c, "post telah berubah. Muat semula sebelum memadam lagi.")
 		return
 	}
 

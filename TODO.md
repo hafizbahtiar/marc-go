@@ -18,6 +18,31 @@ simpanan. Modul aktiviti (backend penuh) siap - jurangnya direkod di bawah.
 
 ---
 
+## Audit concurrency dan race condition
+
+- [x] Audit semua mutation endpoint untuk lost update apabila dua pengguna mengubah rekod yang sama serentak.
+- [x] Audit webhook, retry, background job dan multi-replica execution untuk double processing.
+- [x] Audit transaksi, row lock, conditional update dan unique constraint yang digunakan oleh mutation kritikal.
+
+Penemuan utama:
+
+- Aktiviti, pendaftaran, attendance dan sijil sudah berkongsi activity-row lock yang kuat.
+- Auth/session, likes, webhook payment dan kebanyakan background payment jobs sudah guarded/idempotent.
+- Profile/member, posts/comments, activity category, certificate template dan department masih last-write-wins untuk edit medan yang sama.
+- Address count maksimum tiga masih terdedah kepada concurrent insert.
+- Activity payment reference boleh ditulis ganti oleh checkout serentak.
+- Registration fee checkout boleh menghasilkan lebih daripada satu pending bill.
+- R2 reaper belum claim kerja secara atomik dan berisiko race dengan attachment baharu.
+
+Tindakan susulan:
+
+- [x] Standardkan optimistic locking menggunakan `updated_at` atau `version` untuk profile, ahli, post, comment, activity category dan certificate template.
+- [ ] Lindungi had tiga alamat dengan per-user lock atau advisory lock.
+- [ ] Jadikan activity payment reference set-once dan serialkan checkout per registration.
+- [ ] Tambah idempotency/lock untuk registration payment checkout.
+- [ ] Claim kerja reaper menggunakan `FOR UPDATE SKIP LOCKED` atau status claim sebelum proses R2.
+- [ ] Tambah ujian concurrency Postgres dan dokumentasikan mutation yang sengaja last-write-wins.
+
 ## Verifikasi Staff ID - SPEC v2 + PLAN v2 SIAP 2026-09-02, kod SEDANG dibina
 
 Keperluan pemilik produk: nombor staff (medan DB/API kini `staff_id`,

@@ -100,6 +100,7 @@ type profileResponse struct {
 	// VerifiedAt null = belum disahkan.
 	StaffID           string  `json:"staff_id"`
 	StaffIDVerifiedAt *string `json:"staff_id_verified_at"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 // Me setara `myProfileProvider` di Flutter - profil user semasa. Sengaja
@@ -151,6 +152,7 @@ func (h *ProfileHandler) Me(c *gin.Context) {
 		Position:                  textToPtr(row.Position),
 		StaffID:                   row.StaffID,
 		StaffIDVerifiedAt:         formatTimeNullable(row.StaffIDVerifiedAt),
+		UpdatedAt:                 formatTime(row.UpdatedAt),
 	})
 }
 
@@ -173,6 +175,7 @@ type updateMeRequest struct {
 	EmergencyContactName  *string `json:"emergency_contact_name"`
 	EmergencyContactPhone *string `json:"emergency_contact_phone"`
 	HealthNotes           *string `json:"health_notes"`
+	UpdatedAt             string  `json:"updated_at" binding:"required"`
 }
 
 // UpdateMe setara `ProfileRepository.update` di Flutter - field yang
@@ -240,8 +243,13 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	userID := middleware.UserID(c)
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, req.UpdatedAt)
+	if !ok {
+		return
+	}
 
 	params := sqlc.UpdateProfileParams{UserID: userID}
+	params.ExpectedUpdatedAt = expectedUpdatedAt
 	if req.DisplayName != nil {
 		params.DisplayName = pgtype.Text{String: strings.TrimSpace(*req.DisplayName), Valid: true}
 	}
@@ -260,6 +268,10 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 
 	updated, err := h.queries.UpdateProfile(ctx, params)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			staleWrite(c, "profil telah berubah. Muat semula sebelum menyunting lagi.")
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini profil"})
 		return
 	}
@@ -276,6 +288,7 @@ func (h *ProfileHandler) UpdateMe(c *gin.Context) {
 		"display_name": textToPtr(updated.DisplayName),
 		"phone":        textToPtr(updated.Phone),
 		"avatar_url":   h.avatarURL(ctx, updated.AvatarR2Key),
+		"updated_at":   formatTime(updated.UpdatedAt),
 	})
 }
 
@@ -463,6 +476,7 @@ type memberResponse struct {
 	// barisan kelulusan (Task 7). null = belum disahkan.
 	StaffID           *string `json:"staff_id"`
 	StaffIDVerifiedAt *string `json:"staff_id_verified_at"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 // Members setara `membersProvider` di Flutter - gantian RLS
@@ -536,7 +550,7 @@ func (h *ProfileHandler) Members(c *gin.Context) {
 			AvatarKey: row.AvatarR2Key, RegistrationPaymentStatus: paymentStatus,
 			IsActive: row.IsActive, DepartmentCode: row.DepartmentCode,
 			DepartmentName: row.DepartmentName, Position: row.Position,
-			StaffID: staffID, StaffIDVerifiedAt: row.StaffIDVerifiedAt,
+			StaffID: staffID, StaffIDVerifiedAt: row.StaffIDVerifiedAt, UpdatedAt: row.UpdatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, members)
@@ -577,7 +591,8 @@ type memberDetailResponse struct {
 	// Phone. Ahli nampak nombor staff SENDIRI melalui GET /me (yang
 	// memulangkan staff_id + staff_id_verified_at), bukan melalui
 	// endpoint ni.
-	StaffID *string `json:"staff_id"`
+	StaffID   *string `json:"staff_id"`
+	UpdatedAt string  `json:"updated_at"`
 
 	// Tier 3 - caller.RoleKey == "superadmin" sahaja.
 	EmergencyContactName  *string           `json:"emergency_contact_name"`
@@ -668,6 +683,7 @@ func (h *ProfileHandler) GetMemberDetail(c *gin.Context) {
 		DepartmentCode:    textToPtr(target.DepartmentCode),
 		DepartmentName:    textToPtr(target.DepartmentName),
 		Position:          textToPtr(target.Position),
+		UpdatedAt:         formatTime(target.UpdatedAt),
 		StaffIDVerifiedAt: formatTimeNullable(target.StaffIDVerifiedAt),
 	}
 
@@ -768,6 +784,7 @@ type memberRow struct {
 	Position                  pgtype.Text
 	StaffID                   string // kosong = sembunyikan medan (padanan Email)
 	StaffIDVerifiedAt         pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
 }
 
 func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memberResponse {
@@ -801,6 +818,7 @@ func (h *ProfileHandler) toMemberResponse(ctx context.Context, m memberRow) memb
 		Position:                  textToPtr(m.Position),
 		StaffID:                   staffIDPtr,
 		StaffIDVerifiedAt:         formatTimeNullable(m.StaffIDVerifiedAt),
+		UpdatedAt:                 formatTime(m.UpdatedAt),
 	}
 }
 
@@ -844,7 +862,8 @@ func (h *ProfileHandler) ListRoles(c *gin.Context) {
 }
 
 type updateMemberRoleRequest struct {
-	RoleKey string `json:"role_key" binding:"required"`
+	RoleKey   string `json:"role_key" binding:"required"`
+	UpdatedAt string `json:"updated_at" binding:"required"`
 }
 
 // UpdateMemberRole (Stage 12) - management sahaja, dikawal hierarki
@@ -910,12 +929,19 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, req.UpdatedAt)
+	if !ok {
+		return
+	}
 
 	updated, err := q.UpdateProfileRole(ctx, sqlc.UpdateProfileRoleParams{
-		UserID: targetID,
-		RoleID: newRole.ID,
+		UserID: targetID, RoleID: newRole.ID, ExpectedUpdatedAt: expectedUpdatedAt,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			staleWrite(c, "profil ahli telah berubah. Muat semula sebelum mengemas kini lagi.")
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini role ahli"})
 		return
 	}
@@ -947,17 +973,19 @@ func (h *ProfileHandler) UpdateMemberRole(c *gin.Context) {
 		RoleRank: newRole.Rank, Category: newRole.Category, Status: updated.Status,
 		AvatarKey: updated.AvatarR2Key, IsActive: updated.IsActive,
 		DepartmentCode: updated.DepartmentCode, Position: updated.Position,
-		StaffID: updated.StaffID, StaffIDVerifiedAt: updated.StaffIDVerifiedAt,
+		StaffID: updated.StaffID, StaffIDVerifiedAt: updated.StaffIDVerifiedAt, UpdatedAt: updated.UpdatedAt,
 	}))
 }
 
 type updateMemberActiveRequest struct {
-	IsActive bool `json:"is_active"`
+	IsActive  bool   `json:"is_active"`
+	UpdatedAt string `json:"updated_at" binding:"required"`
 }
 
 type memberActiveResponse struct {
-	UserID   string `json:"user_id"`
-	IsActive bool   `json:"is_active"`
+	UserID    string `json:"user_id"`
+	IsActive  bool   `json:"is_active"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // UpdateMemberActive - PATCH /members/:id/active. Tukar flag KEAHLIAN
@@ -1011,12 +1039,19 @@ func (h *ProfileHandler) UpdateMemberActive(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, req.UpdatedAt)
+	if !ok {
+		return
+	}
 
 	updated, err := q.UpdateProfileActive(ctx, sqlc.UpdateProfileActiveParams{
-		UserID:   targetID,
-		IsActive: req.IsActive,
+		UserID: targetID, IsActive: req.IsActive, ExpectedUpdatedAt: expectedUpdatedAt,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			staleWrite(c, "profil ahli telah berubah. Muat semula sebelum mengemas kini lagi.")
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini status aktif ahli"})
 		return
 	}
@@ -1040,8 +1075,9 @@ func (h *ProfileHandler) UpdateMemberActive(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, memberActiveResponse{
-		UserID:   updated.UserID.String(),
-		IsActive: updated.IsActive,
+		UserID:    updated.UserID.String(),
+		IsActive:  updated.IsActive,
+		UpdatedAt: formatTime(updated.UpdatedAt),
 	})
 }
 
@@ -1052,6 +1088,7 @@ type updateMemberDepartmentRequest struct {
 	// berperingkat.
 	DepartmentCode *string `json:"department_code"`
 	Position       *string `json:"position"`
+	UpdatedAt      string  `json:"updated_at" binding:"required"`
 }
 
 type memberDepartmentResponse struct {
@@ -1059,6 +1096,7 @@ type memberDepartmentResponse struct {
 	DepartmentCode *string `json:"department_code"`
 	DepartmentName *string `json:"department_name"`
 	Position       *string `json:"position"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 // UpdateMemberDepartment - PATCH /members/:id/department. Manager KE ATAS
@@ -1144,12 +1182,21 @@ func (h *ProfileHandler) UpdateMemberDepartment(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 	q := h.queries.WithTx(tx)
+	expectedUpdatedAt, ok := parseExpectedUpdatedAt(c, req.UpdatedAt)
+	if !ok {
+		return
+	}
 
 	if _, err := q.UpdateProfileDepartment(ctx, sqlc.UpdateProfileDepartmentParams{
-		UserID:         targetID,
-		DepartmentCode: deptCode,
-		Position:       position,
+		UserID:            targetID,
+		DepartmentCode:    deptCode,
+		Position:          position,
+		ExpectedUpdatedAt: expectedUpdatedAt,
 	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			staleWrite(c, "profil ahli telah berubah. Muat semula sebelum mengemas kini lagi.")
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian/jawatan ahli"})
 		return
 	}
@@ -1192,6 +1239,7 @@ func (h *ProfileHandler) UpdateMemberDepartment(c *gin.Context) {
 		DepartmentCode: textToPtr(updated.DepartmentCode),
 		DepartmentName: textToPtr(updated.DepartmentName),
 		Position:       textToPtr(updated.Position),
+		UpdatedAt:      formatTime(updated.UpdatedAt),
 	})
 }
 

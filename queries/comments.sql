@@ -23,12 +23,14 @@ order by c.created_at asc;
 
 -- name: UpdateComment :one
 update comments
-set content = $2, edited_at = now()
+set content = $2, edited_at = now(), updated_at = now()
 where id = $1 and deleted_at is null
+  and updated_at = $3
 returning *;
 
--- name: SoftDeleteComment :exec
-update comments set deleted_at = now() where id = $1;
+-- name: SoftDeleteComment :execrows
+update comments set deleted_at = now(), updated_at = now()
+where id = $1 and deleted_at is null and updated_at = $2;
 
 -- name: GetCommentAuthorID :one
 select author_id from comments where id = $1 and deleted_at is null;
@@ -50,6 +52,7 @@ from (
     c.parent_comment_id,
     c.content,
     c.created_at,
+    c.updated_at,
     c.edited_at,
     c.author_id,
     pr.member_id as author_member_id,

@@ -22,6 +22,7 @@ type Querier interface {
 	AddBlockedEmailDomain(ctx context.Context, arg AddBlockedEmailDomainParams) (BlockedEmailDomain, error)
 	AddDepartment(ctx context.Context, arg AddDepartmentParams) (Department, error)
 	ApproveProfile(ctx context.Context, arg ApproveProfileParams) (Profile, error)
+	BanProfile(ctx context.Context, arg BanProfileParams) (Profile, error)
 	// `a.ends_at > now()` (L15, 2026-08-22): pendaftaran TAK boleh dibatalkan
 	// selepas aktiviti tamat.
 	//
@@ -334,6 +335,7 @@ type Querier interface {
 	// terbenam (internal/disposableemail), utk domain tambahan management.
 	IsEmailDomainBlocked(ctx context.Context, domain string) (bool, error)
 	IsPendingUploadOwnedByUser(ctx context.Context, arg IsPendingUploadOwnedByUserParams) (bool, error)
+	IsUserCurrentlyBanned(ctx context.Context, userID uuid.UUID) (bool, error)
 	// `:execrows`, bukan `:exec` (L35, 2026-08-22). Handler perlu tahu sama
 	// ada baris BENAR-BENAR masuk sebelum memberitahu penulis komen -
 	// `on conflict do nothing` bermakna like berulang ialah no-op, dan
@@ -377,6 +379,7 @@ type Querier interface {
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// Timeline satu entiti (cth semua suntingan pada satu post).
 	ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsByEntityParams) ([]AuditLog, error)
+	ListBannedProfiles(ctx context.Context) ([]ListBannedProfilesRow, error)
 	// Skrin pengurusan CRUD domain disekat.
 	ListBlockedEmailDomains(ctx context.Context) ([]BlockedEmailDomain, error)
 	ListCertificateTemplates(ctx context.Context) ([]CertificateTemplate, error)
@@ -631,7 +634,7 @@ type Querier interface {
 	// Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
-	PublishCertificateTemplate(ctx context.Context, id uuid.UUID) (CertificateTemplate, error)
+	PublishCertificateTemplate(ctx context.Context, arg PublishCertificateTemplateParams) (CertificateTemplate, error)
 	// Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
 	// selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 	// perubahan set sesi.
@@ -667,13 +670,14 @@ type Querier interface {
 	// yang sedia wujud (Opus verify 2026-08-15).
 	SetRegistrationPaymentRef(ctx context.Context, arg SetRegistrationPaymentRefParams) (ActivityRegistration, error)
 	SetTelegramLink(ctx context.Context, arg SetTelegramLinkParams) error
-	SoftDeleteComment(ctx context.Context, id uuid.UUID) error
-	SoftDeletePost(ctx context.Context, id uuid.UUID) error
+	SoftDeleteComment(ctx context.Context, arg SoftDeleteCommentParams) (int64, error)
+	SoftDeletePost(ctx context.Context, arg SoftDeletePostParams) (int64, error)
 	// fee_cents_paid = snapshot amaun yang BENAR-BENAR dibayar; sengaja
 	// BUKAN activities.fee_cents hidup (yuran boleh ditukar selepas bayar).
 	SumActivityRevenueThisMonth(ctx context.Context) (int64, error)
 	SumDonationRevenueThisMonth(ctx context.Context) (int64, error)
 	SumRegistrationRevenueThisMonth(ctx context.Context) (int64, error)
+	UnbanProfile(ctx context.Context, userID uuid.UUID) (Profile, error)
 	UnlikeComment(ctx context.Context, arg UnlikeCommentParams) error
 	UnlikePost(ctx context.Context, arg UnlikePostParams) error
 	// Nyahtetapkan default LAMA sebelum tetapkan default BAHARU, dalam

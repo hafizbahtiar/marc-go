@@ -87,6 +87,7 @@ func NewRouter(
 	r.GET("/healthz", handlers.Health)
 
 	authHandler := handlers.NewAuthHandler(pool, jwtSvc, refreshTTL, emailClient, publicBaseURL, emailVerifyURL, passwordResetURL)
+	legacyMemberImportHandler := handlers.NewLegacyMemberImportHandler(pool, emailClient, publicBaseURL)
 
 	// Satu factory, had bernama. Nama MESTI unik - dalam Redis ia
 	// yang mengasingkan baldi; tanpa itu login dan upload berkongsi kuota.
@@ -124,6 +125,8 @@ func NewRouter(
 	passwordResetCORS := middleware.CORS(corsAllowedOrigins, "POST, OPTIONS")
 	authGroup.POST("/password-reset/confirm", passwordResetCORS, passwordResetRateLimiter, authHandler.ConfirmPasswordReset)
 	authGroup.OPTIONS("/password-reset/confirm", passwordResetCORS)
+	authGroup.POST("/legacy-member-claim/request", authRateLimiter, legacyMemberImportHandler.RequestClaim)
+	authGroup.POST("/legacy-member-claim/complete", authRateLimiter, legacyMemberImportHandler.CompleteClaim)
 
 	queries := sqlc.New(pool)
 	requireAuth := middleware.RequireAuth(jwtSvc, queries)
@@ -228,6 +231,21 @@ func NewRouter(
 	approved.POST("/admin/departments", departmentsHandler.Create)
 	approved.PATCH("/admin/departments/:code", departmentsHandler.Update)
 	approved.DELETE("/admin/departments/:code", departmentsHandler.Delete)
+	accountLifecycleHandler := handlers.NewAccountLifecycleHandler(pool)
+	approved.GET("/admin/account-deletion-requests", accountLifecycleHandler.List)
+	approved.POST("/admin/account-deletion-requests/:id/execute", accountLifecycleHandler.Execute)
+	approved.GET("/admin/account-deletion-targets", accountLifecycleHandler.ListTargets)
+	approved.POST("/admin/account-deletion-targets/:id/execute", accountLifecycleHandler.ExecuteDirect)
+	memberBanHandler := handlers.NewMemberBanHandler(sqlc.New(pool))
+	approved.GET("/admin/banned-members", memberBanHandler.List)
+	approved.POST("/admin/members/:id/ban", memberBanHandler.Ban)
+	approved.DELETE("/admin/members/:id/ban", memberBanHandler.Unban)
+	approved.POST("/admin/legacy-member-import/dry-run", legacyMemberImportHandler.DryRun)
+	approved.GET("/admin/legacy-member-import/batches", legacyMemberImportHandler.ListBatches)
+	approved.GET("/admin/legacy-member-import/:id", legacyMemberImportHandler.GetBatch)
+	approved.POST("/admin/legacy-member-import/:id/import", legacyMemberImportHandler.Import)
+	approved.POST("/admin/legacy-member-import/:id/resolve-department", legacyMemberImportHandler.ResolveDepartment)
+	approved.PATCH("/admin/legacy-member-import/rows/:id", legacyMemberImportHandler.UpdateRow)
 	// Baca-sahaja, manager ke atas - pemilih bahagian utk
 	// PATCH /members/:id/department (bukan skrin CRUD superadmin di atas).
 	approved.GET("/departments", departmentsHandler.ListForAssignment)
@@ -391,6 +409,10 @@ func NewRouter(
 	donationRateLimiter := rateLimiter.Limit("donation", rate.Every(6*time.Second), 5)
 	r.POST("/donations/checkout", donationRateLimiter, middleware.OptionalAuth(jwtSvc, queries), middleware.BlockTesterWrites(sqlc.New(pool)), donationHandler.Checkout)
 	r.POST("/webhooks/:gateway", donationHandler.Webhook)
+	paymentStatusHandler := handlers.NewPaymentStatusHandler(paymentGateways)
+	paymentStatusRateLimiter := rateLimiter.Limit("payment-status", rate.Every(3*time.Second), 10)
+	paymentStatusCORS := middleware.CORS(corsAllowedOrigins, "GET, OPTIONS")
+	r.GET("/payment-status/:gateway/:reference", paymentStatusCORS, paymentStatusRateLimiter, paymentStatusHandler.Check)
 
 	// Yuran pendaftaran ahli (Stage 12, ToyyibPay, SEKALI BAYAR - bukan
 	// dues berulang, bukan yuran aktiviti). Checkout duduk atas `protected`

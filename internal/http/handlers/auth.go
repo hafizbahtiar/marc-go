@@ -415,6 +415,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "email atau kata laluan salah"})
 		return
 	}
+	banned, err := h.queries.IsUserCurrentlyBanned(ctx, user.ID)
+	if err != nil {
+		log.Printf("gagal semak ban user %s: %v", user.ID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak status akaun"})
+		return
+	}
+	if banned {
+		c.JSON(http.StatusForbidden, gin.H{"error": "akaun anda sedang digantung"})
+		return
+	}
 
 	tokens, err := h.issueTokens(c, user.ID, uuid.New())
 	if err != nil {

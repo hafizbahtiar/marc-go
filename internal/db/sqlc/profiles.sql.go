@@ -16,7 +16,7 @@ const approveProfile = `-- name: ApproveProfile :one
 update profiles
 set status = 'approved', approved_by = $2, approved_at = now()
 where user_id = $1 and status <> 'approved'
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type ApproveProfileParams struct {
@@ -52,6 +52,11 @@ func (q *Queries) ApproveProfile(ctx context.Context, arg ApproveProfileParams) 
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
@@ -69,19 +74,22 @@ func (q *Queries) ClearTelegramLink(ctx context.Context, userID uuid.UUID) error
 
 const correctMemberID = `-- name: CorrectMemberID :one
 update profiles
-set member_id = $1
+set member_id = $1, updated_at = now()
 where user_id = $2
   and member_id is not null
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($3::timestamptz is null
+       or updated_at = $3::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type CorrectMemberIDParams struct {
-	MemberID pgtype.Text `json:"member_id"`
-	UserID   uuid.UUID   `json:"user_id"`
+	MemberID          pgtype.Text        `json:"member_id"`
+	UserID            uuid.UUID          `json:"user_id"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 func (q *Queries) CorrectMemberID(ctx context.Context, arg CorrectMemberIDParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, correctMemberID, arg.MemberID, arg.UserID)
+	row := q.db.QueryRow(ctx, correctMemberID, arg.MemberID, arg.UserID, arg.ExpectedUpdatedAt)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
@@ -108,24 +116,32 @@ func (q *Queries) CorrectMemberID(ctx context.Context, arg CorrectMemberIDParams
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
 
 const correctStaffID = `-- name: CorrectStaffID :one
 update profiles
-set staff_id = $1
+set staff_id = $1, updated_at = now()
 where user_id = $2
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($3::timestamptz is null
+       or updated_at = $3::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type CorrectStaffIDParams struct {
-	StaffID string    `json:"staff_id"`
-	UserID  uuid.UUID `json:"user_id"`
+	StaffID           string             `json:"staff_id"`
+	UserID            uuid.UUID          `json:"user_id"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 func (q *Queries) CorrectStaffID(ctx context.Context, arg CorrectStaffIDParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, correctStaffID, arg.StaffID, arg.UserID)
+	row := q.db.QueryRow(ctx, correctStaffID, arg.StaffID, arg.UserID, arg.ExpectedUpdatedAt)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
@@ -152,6 +168,11 @@ func (q *Queries) CorrectStaffID(ctx context.Context, arg CorrectStaffIDParams) 
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
@@ -159,7 +180,7 @@ func (q *Queries) CorrectStaffID(ctx context.Context, arg CorrectStaffIDParams) 
 const createProfile = `-- name: CreateProfile :one
 insert into profiles (user_id, member_id, staff_id, role_id, phone)
 values ($1, $2, $3, $4, $5)
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type CreateProfileParams struct {
@@ -204,6 +225,11 @@ func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (P
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
@@ -221,7 +247,7 @@ func (q *Queries) GetEmailVerifiedByUserID(ctx context.Context, userID uuid.UUID
 
 const getProfileByUserID = `-- name: GetProfileByUserID :one
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position, p.staff_id, p.staff_id_verified_at, p.staff_id_verified_by,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position, p.staff_id, p.staff_id_verified_at, p.staff_id_verified_by, p.updated_at, p.banned_at, p.ban_expires_at, p.ban_reason, p.banned_by,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
@@ -260,6 +286,11 @@ type GetProfileByUserIDRow struct {
 	StaffID               string             `json:"staff_id"`
 	StaffIDVerifiedAt     pgtype.Timestamptz `json:"staff_id_verified_at"`
 	StaffIDVerifiedBy     pgtype.UUID        `json:"staff_id_verified_by"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	BannedAt              pgtype.Timestamptz `json:"banned_at"`
+	BanExpiresAt          pgtype.Timestamptz `json:"ban_expires_at"`
+	BanReason             pgtype.Text        `json:"ban_reason"`
+	BannedBy              pgtype.UUID        `json:"banned_by"`
 	Email                 string             `json:"email"`
 	RoleKey               string             `json:"role_key"`
 	RoleName              string             `json:"role_name"`
@@ -296,6 +327,11 @@ func (q *Queries) GetProfileByUserID(ctx context.Context, userID uuid.UUID) (Get
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 		&i.Email,
 		&i.RoleKey,
 		&i.RoleName,
@@ -414,7 +450,7 @@ func (q *Queries) ListManagementUserIDs(ctx context.Context, category string) ([
 
 const listVisibleProfiles = `-- name: ListVisibleProfiles :many
 select
-  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position, p.staff_id, p.staff_id_verified_at, p.staff_id_verified_by,
+  p.id, p.user_id, p.member_id, p.display_name, p.phone, p.role_id, p.email_verified, p.created_at, p.status, p.approved_by, p.approved_at, p.avatar_r2_key, p.telegram_chat_id, p.telegram_username, p.telegram_linked_at, p.emergency_contact_name, p.emergency_contact_phone, p.health_notes, p.is_active, p.department_code, p.position, p.staff_id, p.staff_id_verified_at, p.staff_id_verified_by, p.updated_at, p.banned_at, p.ban_expires_at, p.ban_reason, p.banned_by,
   u.email as email,
   r.key as role_key,
   r.name as role_name,
@@ -484,6 +520,11 @@ type ListVisibleProfilesRow struct {
 	StaffID                   string             `json:"staff_id"`
 	StaffIDVerifiedAt         pgtype.Timestamptz `json:"staff_id_verified_at"`
 	StaffIDVerifiedBy         pgtype.UUID        `json:"staff_id_verified_by"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	BannedAt                  pgtype.Timestamptz `json:"banned_at"`
+	BanExpiresAt              pgtype.Timestamptz `json:"ban_expires_at"`
+	BanReason                 pgtype.Text        `json:"ban_reason"`
+	BannedBy                  pgtype.UUID        `json:"banned_by"`
 	Email                     string             `json:"email"`
 	RoleKey                   string             `json:"role_key"`
 	RoleName                  string             `json:"role_name"`
@@ -543,6 +584,11 @@ func (q *Queries) ListVisibleProfiles(ctx context.Context, arg ListVisibleProfil
 			&i.StaffID,
 			&i.StaffIDVerifiedAt,
 			&i.StaffIDVerifiedBy,
+			&i.UpdatedAt,
+			&i.BannedAt,
+			&i.BanExpiresAt,
+			&i.BanReason,
+			&i.BannedBy,
 			&i.Email,
 			&i.RoleKey,
 			&i.RoleName,
@@ -574,7 +620,7 @@ const rejectProfile = `-- name: RejectProfile :one
 update profiles
 set status = 'rejected', approved_by = $2, approved_at = now()
 where user_id = $1 and status <> 'rejected'
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type RejectProfileParams struct {
@@ -610,6 +656,11 @@ func (q *Queries) RejectProfile(ctx context.Context, arg RejectProfileParams) (P
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
@@ -638,18 +689,22 @@ set
   phone = coalesce($3::text, phone),
   emergency_contact_name = coalesce($4::text, emergency_contact_name),
   emergency_contact_phone = coalesce($5::text, emergency_contact_phone),
-  health_notes = coalesce($6::text, health_notes)
+  health_notes = coalesce($6::text, health_notes),
+  updated_at = now()
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($7::timestamptz is null
+       or updated_at = $7::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type UpdateProfileParams struct {
-	UserID                uuid.UUID   `json:"user_id"`
-	DisplayName           pgtype.Text `json:"display_name"`
-	Phone                 pgtype.Text `json:"phone"`
-	EmergencyContactName  pgtype.Text `json:"emergency_contact_name"`
-	EmergencyContactPhone pgtype.Text `json:"emergency_contact_phone"`
-	HealthNotes           pgtype.Text `json:"health_notes"`
+	UserID                uuid.UUID          `json:"user_id"`
+	DisplayName           pgtype.Text        `json:"display_name"`
+	Phone                 pgtype.Text        `json:"phone"`
+	EmergencyContactName  pgtype.Text        `json:"emergency_contact_name"`
+	EmergencyContactPhone pgtype.Text        `json:"emergency_contact_phone"`
+	HealthNotes           pgtype.Text        `json:"health_notes"`
+	ExpectedUpdatedAt     pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error) {
@@ -660,6 +715,7 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		arg.EmergencyContactName,
 		arg.EmergencyContactPhone,
 		arg.HealthNotes,
+		arg.ExpectedUpdatedAt,
 	)
 	var i Profile
 	err := row.Scan(
@@ -687,26 +743,34 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
 
 const updateProfileActive = `-- name: UpdateProfileActive :one
 update profiles
-set is_active = $2
+set is_active = $2, updated_at = now()
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($3::timestamptz is null
+       or updated_at = $3::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type UpdateProfileActiveParams struct {
-	UserID   uuid.UUID `json:"user_id"`
-	IsActive bool      `json:"is_active"`
+	UserID            uuid.UUID          `json:"user_id"`
+	IsActive          bool               `json:"is_active"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 // Status AKTIF/TAK AKTIF keahlian - berasingan drpd `status` (kelulusan).
 // Management sahaja (dikuatkuasakan handler), padanan pola UpdateProfileRole.
 func (q *Queries) UpdateProfileActive(ctx context.Context, arg UpdateProfileActiveParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, updateProfileActive, arg.UserID, arg.IsActive)
+	row := q.db.QueryRow(ctx, updateProfileActive, arg.UserID, arg.IsActive, arg.ExpectedUpdatedAt)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
@@ -733,23 +797,31 @@ func (q *Queries) UpdateProfileActive(ctx context.Context, arg UpdateProfileActi
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
 
 const updateProfileAvatar = `-- name: UpdateProfileAvatar :one
-update profiles set avatar_r2_key = $2::text
+update profiles set avatar_r2_key = $2::text, updated_at = now()
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($3::timestamptz is null
+       or updated_at = $3::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type UpdateProfileAvatarParams struct {
-	UserID      uuid.UUID   `json:"user_id"`
-	AvatarR2Key pgtype.Text `json:"avatar_r2_key"`
+	UserID            uuid.UUID          `json:"user_id"`
+	AvatarR2Key       pgtype.Text        `json:"avatar_r2_key"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 func (q *Queries) UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvatarParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, updateProfileAvatar, arg.UserID, arg.AvatarR2Key)
+	row := q.db.QueryRow(ctx, updateProfileAvatar, arg.UserID, arg.AvatarR2Key, arg.ExpectedUpdatedAt)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
@@ -776,6 +848,11 @@ func (q *Queries) UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvat
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
@@ -783,15 +860,19 @@ func (q *Queries) UpdateProfileAvatar(ctx context.Context, arg UpdateProfileAvat
 const updateProfileDepartment = `-- name: UpdateProfileDepartment :one
 update profiles
 set department_code = $1::text,
-  position = $2::text
+  position = $2::text,
+  updated_at = now()
 where user_id = $3
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($4::timestamptz is null
+       or updated_at = $4::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type UpdateProfileDepartmentParams struct {
-	DepartmentCode pgtype.Text `json:"department_code"`
-	Position       pgtype.Text `json:"position"`
-	UserID         uuid.UUID   `json:"user_id"`
+	DepartmentCode    pgtype.Text        `json:"department_code"`
+	Position          pgtype.Text        `json:"position"`
+	UserID            uuid.UUID          `json:"user_id"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 // Bahagian/jawatan ahli - management (manager ke atas) sahaja. Semantik
@@ -799,7 +880,12 @@ type UpdateProfileDepartmentParams struct {
 // hantar nilai akhir terus (Valid:false = kosongkan), sebab tindakan ni
 // satu borang "tetapkan bahagian+jawatan skrg", bukan patch berperingkat.
 func (q *Queries) UpdateProfileDepartment(ctx context.Context, arg UpdateProfileDepartmentParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, updateProfileDepartment, arg.DepartmentCode, arg.Position, arg.UserID)
+	row := q.db.QueryRow(ctx, updateProfileDepartment,
+		arg.DepartmentCode,
+		arg.Position,
+		arg.UserID,
+		arg.ExpectedUpdatedAt,
+	)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
@@ -826,24 +912,32 @@ func (q *Queries) UpdateProfileDepartment(ctx context.Context, arg UpdateProfile
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
 
 const updateProfileRole = `-- name: UpdateProfileRole :one
 update profiles
-set role_id = $2
+set role_id = $2, updated_at = now()
 where user_id = $1
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($3::timestamptz is null
+       or updated_at = $3::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type UpdateProfileRoleParams struct {
-	UserID uuid.UUID `json:"user_id"`
-	RoleID int16     `json:"role_id"`
+	UserID            uuid.UUID          `json:"user_id"`
+	RoleID            int16              `json:"role_id"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 func (q *Queries) UpdateProfileRole(ctx context.Context, arg UpdateProfileRoleParams) (Profile, error) {
-	row := q.db.QueryRow(ctx, updateProfileRole, arg.UserID, arg.RoleID)
+	row := q.db.QueryRow(ctx, updateProfileRole, arg.UserID, arg.RoleID, arg.ExpectedUpdatedAt)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
@@ -870,6 +964,11 @@ func (q *Queries) UpdateProfileRole(ctx context.Context, arg UpdateProfileRolePa
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }
@@ -879,17 +978,21 @@ update profiles
 set staff_id = coalesce($1, staff_id),
     staff_id_verified_at = now(),
     staff_id_verified_by = $2,
-    member_id = coalesce(member_id, $3)
+    member_id = coalesce(member_id, $3),
+    updated_at = now()
 where user_id = $4
   and staff_id_verified_at is null
-returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by
+  and ($5::timestamptz is null
+       or updated_at = $5::timestamptz)
+returning id, user_id, member_id, display_name, phone, role_id, email_verified, created_at, status, approved_by, approved_at, avatar_r2_key, telegram_chat_id, telegram_username, telegram_linked_at, emergency_contact_name, emergency_contact_phone, health_notes, is_active, department_code, position, staff_id, staff_id_verified_at, staff_id_verified_by, updated_at, banned_at, ban_expires_at, ban_reason, banned_by
 `
 
 type VerifyStaffIDParams struct {
-	StaffID    pgtype.Text `json:"staff_id"`
-	VerifiedBy pgtype.UUID `json:"verified_by"`
-	MemberID   pgtype.Text `json:"member_id"`
-	UserID     uuid.UUID   `json:"user_id"`
+	StaffID           pgtype.Text        `json:"staff_id"`
+	VerifiedBy        pgtype.UUID        `json:"verified_by"`
+	MemberID          pgtype.Text        `json:"member_id"`
+	UserID            uuid.UUID          `json:"user_id"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 func (q *Queries) VerifyStaffID(ctx context.Context, arg VerifyStaffIDParams) (Profile, error) {
@@ -898,6 +1001,7 @@ func (q *Queries) VerifyStaffID(ctx context.Context, arg VerifyStaffIDParams) (P
 		arg.VerifiedBy,
 		arg.MemberID,
 		arg.UserID,
+		arg.ExpectedUpdatedAt,
 	)
 	var i Profile
 	err := row.Scan(
@@ -925,6 +1029,11 @@ func (q *Queries) VerifyStaffID(ctx context.Context, arg VerifyStaffIDParams) (P
 		&i.StaffID,
 		&i.StaffIDVerifiedAt,
 		&i.StaffIDVerifiedBy,
+		&i.UpdatedAt,
+		&i.BannedAt,
+		&i.BanExpiresAt,
+		&i.BanReason,
+		&i.BannedBy,
 	)
 	return i, err
 }

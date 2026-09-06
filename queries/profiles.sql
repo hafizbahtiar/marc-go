@@ -25,16 +25,21 @@ set
   phone = coalesce(sqlc.narg('phone')::text, phone),
   emergency_contact_name = coalesce(sqlc.narg('emergency_contact_name')::text, emergency_contact_name),
   emergency_contact_phone = coalesce(sqlc.narg('emergency_contact_phone')::text, emergency_contact_phone),
-  health_notes = coalesce(sqlc.narg('health_notes')::text, health_notes)
+  health_notes = coalesce(sqlc.narg('health_notes')::text, health_notes),
+  updated_at = now()
 where user_id = $1
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: UpdateProfileActive :one
 -- Status AKTIF/TAK AKTIF keahlian - berasingan drpd `status` (kelulusan).
 -- Management sahaja (dikuatkuasakan handler), padanan pola UpdateProfileRole.
 update profiles
-set is_active = $2
+set is_active = $2, updated_at = now()
 where user_id = $1
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: UpdateProfileDepartment :one
@@ -44,14 +49,19 @@ returning *;
 -- satu borang "tetapkan bahagian+jawatan skrg", bukan patch berperingkat.
 update profiles
 set department_code = sqlc.narg('department_code')::text,
-  position = sqlc.narg('position')::text
+  position = sqlc.narg('position')::text,
+  updated_at = now()
 where user_id = sqlc.arg('user_id')
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: UpdateProfileRole :one
 update profiles
-set role_id = $2
+set role_id = $2, updated_at = now()
 where user_id = $1
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: MarkEmailVerified :exec
@@ -145,22 +155,29 @@ update profiles
 set staff_id = coalesce(sqlc.narg('staff_id'), staff_id),
     staff_id_verified_at = now(),
     staff_id_verified_by = @verified_by,
-    member_id = coalesce(member_id, @member_id)
+    member_id = coalesce(member_id, @member_id),
+    updated_at = now()
 where user_id = @user_id
   and staff_id_verified_at is null
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: CorrectStaffID :one
 update profiles
-set staff_id = @staff_id
+set staff_id = @staff_id, updated_at = now()
 where user_id = @user_id
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: CorrectMemberID :one
 update profiles
-set member_id = @member_id
+set member_id = @member_id, updated_at = now()
 where user_id = @user_id
   and member_id is not null
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: ListManagementUserIDs :many
@@ -170,8 +187,10 @@ join roles r on r.id = p.role_id
 where r.category = $1;
 
 -- name: UpdateProfileAvatar :one
-update profiles set avatar_r2_key = sqlc.narg('avatar_r2_key')::text
+update profiles set avatar_r2_key = sqlc.narg('avatar_r2_key')::text, updated_at = now()
 where user_id = $1
+  and (sqlc.narg('expected_updated_at')::timestamptz is null
+       or updated_at = sqlc.narg('expected_updated_at')::timestamptz)
 returning *;
 
 -- name: ListApprovedUserIDs :many
