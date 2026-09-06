@@ -949,7 +949,12 @@ func (h *LegacyMemberImportHandler) UpdateRow(c *gin.Context) {
 type resolveDepartmentRequest struct {
 	From string `json:"from" binding:"required,max=200"`
 	Code string `json:"code" binding:"required,max=64"`
-	Name string `json:"name" binding:"required,max=200"`
+	// Name hanya diperlukan bila `Code` merujuk bahagian BAHARU. Untuk
+	// merge ke bahagian sedia ada, superadmin cuma memilih kod daripada
+	// senarai - memaksa nama di situ bermakna borang perlu menghantar
+	// semula nama sedia ada, dan satu salah taip akan menamakan semula
+	// bahagian yang orang lain sedang guna.
+	Name string `json:"name" binding:"omitempty,max=200"`
 }
 
 // ResolveDepartment mencipta bahagian yang hilang DAN menulis semula
@@ -976,8 +981,8 @@ func (h *LegacyMemberImportHandler) ResolveDepartment(c *gin.Context) {
 	from := strings.TrimSpace(req.From)
 	code := strings.TrimSpace(req.Code)
 	name := strings.TrimSpace(req.Name)
-	if from == "" || code == "" || name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "nilai asal, kod dan nama bahagian diperlukan"})
+	if from == "" || code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nilai asal dan kod bahagian diperlukan"})
 		return
 	}
 	if strings.Contains(code, "/") {
@@ -993,17 +998,35 @@ func (h *LegacyMemberImportHandler) ResolveDepartment(c *gin.Context) {
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `
-		insert into departments (code, name, added_by) values ($1, $2, $3)
-		on conflict (code) do nothing`, code, name, middleware.UserID(c)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tambah bahagian"})
+	// Padanan tanpa mengira huruf besar/kecil supaya memilih "bkp" bila
+	// "BKP" sudah wujud jadi MERGE, bukan cipta bahagian kedua yang
+	// hampir serupa. Kod yang tersimpan yang digunakan selepas ini.
+	var canonical string
+	err = tx.QueryRow(ctx,
+		`select code from departments where lower(btrim(code)) = lower(btrim($1))`, code).Scan(&canonical)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		if name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "nama diperlukan untuk bahagian baharu"})
+			return
+		}
+		if _, err := tx.Exec(ctx,
+			`insert into departments (code, name, added_by) values ($1, $2, $3)`,
+			code, name, middleware.UserID(c)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tambah bahagian"})
+			return
+		}
+		canonical = code
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal semak bahagian"})
 		return
 	}
+
 	if _, err := tx.Exec(ctx, `
 		update legacy_member_import_rows
 		set department_code = $3
 		where batch_id = $1 and lower(btrim(department_code)) = lower(btrim($2))`,
-		batchID, from, code); err != nil {
+		batchID, from, canonical); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal kemas kini bahagian baris import"})
 		return
 	}
@@ -1016,5 +1039,5 @@ func (h *LegacyMemberImportHandler) ResolveDepartment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan bahagian baharu"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": code, "name": name})
+	c.JSON(http.StatusOK, gin.H{"code": canonical})
 }

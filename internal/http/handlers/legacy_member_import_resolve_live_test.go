@@ -268,3 +268,66 @@ func TestShortcutImportDitolakUntukBukanSuperadmin(t *testing.T) {
 		t.Errorf("ResolveDepartment status = %d, mahu 403", rec.Code)
 	}
 }
+
+// Merge ke bahagian SEDIA ADA: superadmin cuma pilih kod yang sudah
+// wujud, jadi `name` tak sepatutnya wajib. Nama bahagian sedia ada juga
+// MESTI kekal - merge memetakan baris, ia bukan tempat menamakan semula
+// bahagian yang orang lain guna.
+func TestResolveDepartmentMergeKeBahagianSediaAda(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	superadmin := seedMember(t, ctx, pool, "superadmin", "approved")
+	seedBKP(t, ctx, pool)
+	h := NewLegacyMemberImportHandler(pool, nil, "http://localhost")
+
+	csv := legacyCSVHeader + "\n" +
+		legacyCSVRow(1, "S-MRG-1", "M-MRG-1", "mrg1@test.local", "PEJ. TKPE (P) / BKP", "2020") + "\n"
+	batchID := runLegacyDryRun(t, h, superadmin, csv)
+
+	// Ambil nama SEBENAR sebelum merge - BKP dibekalkan oleh migrasi
+	// (20260825110000), jadi menetapkan nama jangkaan secara literal
+	// hanya menguji data seed, bukan tingkah laku merge.
+	var sebelum string
+	if err := pool.QueryRow(ctx, `select name from departments where code = 'BKP'`).Scan(&sebelum); err != nil {
+		t.Fatalf("baca bahagian: %v", err)
+	}
+
+	rec := callResolveDepartment(t, h, superadmin, batchID,
+		`{"from":"PEJ. TKPE (P) / BKP","code":"BKP"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	after := legacyRowsOf(t, h, superadmin, batchID)
+	if got := after[0]["department_code"]; got != "BKP" {
+		t.Errorf("department_code = %v, mahu BKP", got)
+	}
+	if got := after[0]["status"]; got != "valid" {
+		t.Errorf("status = %v, mahu valid", got)
+	}
+
+	var selepas string
+	if err := pool.QueryRow(ctx, `select name from departments where code = 'BKP'`).Scan(&selepas); err != nil {
+		t.Fatalf("baca bahagian: %v", err)
+	}
+	if selepas != sebelum {
+		t.Errorf("nama bahagian berubah daripada %q kepada %q", sebelum, selepas)
+	}
+}
+
+// Sebaliknya, kod yang BELUM wujud tetap perlu nama - kalau tidak kita
+// cipta bahagian tanpa nama yang bermakna.
+func TestResolveDepartmentBahagianBaharuPerluNama(t *testing.T) {
+	pool, ctx := statusTestPool(t)
+	superadmin := seedMember(t, ctx, pool, "superadmin", "approved")
+	seedBKP(t, ctx, pool)
+	h := NewLegacyMemberImportHandler(pool, nil, "http://localhost")
+
+	csv := legacyCSVHeader + "\n" +
+		legacyCSVRow(1, "S-NEW-1", "M-NEW-1", "new1@test.local", "HEP", "2020") + "\n"
+	batchID := runLegacyDryRun(t, h, superadmin, csv)
+
+	rec := callResolveDepartment(t, h, superadmin, batchID, `{"from":"HEP","code":"HEP-BARU"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, mahu 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
