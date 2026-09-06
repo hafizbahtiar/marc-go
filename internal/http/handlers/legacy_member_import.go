@@ -33,6 +33,37 @@ const (
 	legacyClaimTTL       = time.Hour
 )
 
+// marshalJSONArray memarshal slice kepada JSON, tetapi memulangkan `[]`
+// untuk slice nil.
+//
+// encoding/json memarshal slice NIL sebagai `null`, bukan `[]`. Lajur
+// conflicts/warnings ialah `jsonb not null default '[]'` - tetapi
+// DEFAULT tak terpakai bila nilai dibekalkan secara eksplisit, dan
+// `null` JSON bukan NULL SQL, jadi constraint NOT NULL pun tak
+// menangkapnya. Hasilnya baris bersih tersimpan sebagai jsonb `null`
+// dan API memulangkan `"conflicts": null`.
+//
+// Portal web memanggil `row.conflicts.length` terus, jadi `null` itu
+// meletupkan render SSR seluruh halaman /settings/legacy-import.
+func marshalJSONArray[T any](items []T) ([]byte, error) {
+	if items == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal(items)
+}
+
+// normalizeJSONArray menukar jsonb `null` (dan bacaan kosong) kepada
+// `[]` semasa BACA. Diperlukan berasingan daripada marshalJSONArray
+// sebab baris yang SUDAH tersimpan sebagai `null` sebelum pembetulan
+// ini masih ada dalam DB - normalisasi di sini memulihkan halaman
+// tanpa perlu menyentuh data produksi.
+func normalizeJSONArray(raw json.RawMessage) json.RawMessage {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return json.RawMessage("[]")
+	}
+	return raw
+}
+
 type LegacyMemberImportHandler struct {
 	pool          *pgxpool.Pool
 	queries       *sqlc.Queries
@@ -179,6 +210,8 @@ func (h *LegacyMemberImportHandler) GetBatch(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal baca baris import"})
 			return
 		}
+		conflicts = normalizeJSONArray(conflicts)
+		warnings = normalizeJSONArray(warnings)
 		var conflictList []legacyimport.Conflict
 		if err := json.Unmarshal(conflicts, &conflictList); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "format konflik import tidak sah"})
@@ -194,7 +227,7 @@ func (h *LegacyMemberImportHandler) GetBatch(c *gin.Context) {
 			}
 			if !found {
 				conflictList = append(conflictList, *unknown)
-				conflicts, _ = json.Marshal(conflictList)
+				conflicts, _ = marshalJSONArray(conflictList)
 			}
 		}
 		result = append(result, gin.H{
@@ -258,12 +291,13 @@ func (h *LegacyMemberImportHandler) Import(c *gin.Context) {
 		}
 		canonicalDepartment, departmentOK := legacyimport.CanonicalDepartmentCode(department, departments)
 		if !departmentOK {
-			conflict, _ := json.Marshal([]legacyimport.Conflict{
+			conflict, _ := marshalJSONArray([]legacyimport.Conflict{
 				*legacyimport.UnknownDepartmentConflict(department, departments),
 			})
 			if _, err := tx.Exec(ctx, `
 				update legacy_member_import_rows
-				set status = 'conflict', conflicts = conflicts || $2::jsonb
+				set status = 'conflict',
+				    conflicts = coalesce(nullif(conflicts, 'null'::jsonb), '[]'::jsonb) || $2::jsonb
 				where id = $1
 			`, rowID, conflict); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal tandakan konflik import"})
@@ -582,8 +616,8 @@ func (h *LegacyMemberImportHandler) storeReport(ctx context.Context, createdBy u
 		return uuid.Nil, err
 	}
 	for _, row := range report.Rows {
-		conflicts, _ := json.Marshal(row.Conflicts)
-		warnings, _ := json.Marshal(row.Warnings)
+		conflicts, _ := marshalJSONArray(row.Conflicts)
+		warnings, _ := marshalJSONArray(row.Warnings)
 		status := "valid"
 		if len(row.Conflicts) > 0 {
 			status = "conflict"

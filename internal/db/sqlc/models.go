@@ -375,6 +375,10 @@ type Profile struct {
 	StaffIDVerifiedAt     pgtype.Timestamptz `json:"staff_id_verified_at"`
 	StaffIDVerifiedBy     pgtype.UUID        `json:"staff_id_verified_by"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	BannedAt              pgtype.Timestamptz `json:"banned_at"`
+	BanExpiresAt          pgtype.Timestamptz `json:"ban_expires_at"`
+	BanReason             pgtype.Text        `json:"ban_reason"`
+	BannedBy              pgtype.UUID        `json:"banned_by"`
 }
 
 type RefreshToken struct {

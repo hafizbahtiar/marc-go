@@ -34,6 +34,16 @@ func RequireAuth(j *auth.JWT, q *sqlc.Queries) gin.HandlerFunc {
 			c.AbortWithStatusJSON(status, gin.H{"error": msg})
 			return
 		}
+		banned, err := q.IsUserCurrentlyBanned(c.Request.Context(), userID)
+		if err != nil {
+			log.Printf("gagal semak ban user %s: %v", userID, err)
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "gagal sahkan status akaun"})
+			return
+		}
+		if banned {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "akaun anda sedang digantung"})
+			return
+		}
 
 		c.Set(userIDKey, userID)
 		c.Set(sessionIDKey, sessionID)
@@ -69,8 +79,11 @@ func OptionalAuth(j *auth.JWT, q *sqlc.Queries) gin.HandlerFunc {
 		if ok && token != "" {
 			if userID, sessionID, err := j.ParseAccessToken(token); err == nil {
 				if ok, _, _ := familyAlive(c, q, userID, sessionID); ok {
-					c.Set(userIDKey, userID)
-					c.Set(sessionIDKey, sessionID)
+					banned, err := q.IsUserCurrentlyBanned(c.Request.Context(), userID)
+					if err == nil && !banned {
+						c.Set(userIDKey, userID)
+						c.Set(sessionIDKey, sessionID)
+					}
 				}
 			}
 		}
