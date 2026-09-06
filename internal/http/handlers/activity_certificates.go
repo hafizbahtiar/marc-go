@@ -315,6 +315,25 @@ func fillPendingCertificateFiles(
 	}
 
 	var completed []sqlc.ActivityCertificate
+	template, err := q.GetActiveCertificateTemplate(ctx)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return completed, err
+	}
+
+	var templateStyle *certificate.TemplateStyle
+	if err == nil {
+		templateStyle = &certificate.TemplateStyle{
+			PrimaryColor:   template.PrimaryColor,
+			SecondaryColor: template.SecondaryColor,
+			Title:          template.Title,
+			Subtitle:       template.Subtitle,
+			BodyText:       template.BodyText,
+			IssuerName:     template.IssuerName,
+			SignatureName:  template.SignatureName,
+			FooterText:     template.FooterText,
+		}
+	}
+
 	for _, cert := range pending {
 		link := strings.TrimRight(baseURL, "/") + "/verify/certificates/" + cert.VerifyToken
 		if verifyURL != "" {
@@ -327,6 +346,7 @@ func fillPendingCertificateFiles(
 			CategoryName:  activity.CategoryName,
 			ActivityDate:  cert.ActivityDate.Time,
 			VerifyURL:     link,
+			Template:      templateStyle,
 		})
 		if err != nil {
 			// Ralat GeneratePDF menamakan medan yang menyinggung; ia

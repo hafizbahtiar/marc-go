@@ -343,9 +343,14 @@ func NewRouter(
 	// config.go. Kosong = tiada perubahan tingkah laku sedia ada (QR
 	// terus ke laluan JSON awam Go, publicBaseURL + /verify/certificates/:token).
 	certificateHandler := handlers.NewCertificateHandler(pool, r2Client, pushSvc, publicBaseURL, certificateVerifyURL)
+	certificateTemplateHandler := handlers.NewCertificateTemplateHandler(pool)
 
 	verified.POST("/activities/:id/certificates", certificateHandler.Issue)
 	verified.POST("/certificates/:id/revoke", certificateHandler.Revoke)
+	verified.GET("/admin/certificate-templates", certificateTemplateHandler.List)
+	verified.GET("/admin/certificate-templates/:id", certificateTemplateHandler.Get)
+	verified.PATCH("/admin/certificate-templates/:id", certificateTemplateHandler.Update)
+	verified.POST("/admin/certificate-templates/:id/publish", certificateTemplateHandler.Publish)
 
 	approved.GET("/me/certificates", certificateHandler.ListMine)
 	approved.GET("/me/certificates/:id/file", certificateHandler.Download)

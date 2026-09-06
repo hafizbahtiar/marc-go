@@ -119,6 +119,23 @@ type BlockedEmailDomain struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type CertificateTemplate struct {
+	ID             uuid.UUID          `json:"id"`
+	Name           string             `json:"name"`
+	IsActive       bool               `json:"is_active"`
+	PrimaryColor   string             `json:"primary_color"`
+	SecondaryColor string             `json:"secondary_color"`
+	LogoUrl        pgtype.Text        `json:"logo_url"`
+	Title          string             `json:"title"`
+	Subtitle       string             `json:"subtitle"`
+	BodyText       string             `json:"body_text"`
+	IssuerName     string             `json:"issuer_name"`
+	SignatureName  string             `json:"signature_name"`
+	FooterText     string             `json:"footer_text"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Comment struct {
 	ID              uuid.UUID          `json:"id"`
 	PostID          uuid.UUID          `json:"post_id"`

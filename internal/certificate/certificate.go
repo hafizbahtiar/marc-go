@@ -3,6 +3,8 @@ package certificate
 import (
 	"bytes"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,68 @@ type Data struct {
 	CategoryName  string
 	ActivityDate  time.Time
 	VerifyURL     string
+	Template      *TemplateStyle
+}
+
+type TemplateStyle struct {
+	PrimaryColor   string
+	SecondaryColor string
+	Title          string
+	Subtitle       string
+	BodyText       string
+	IssuerName     string
+	SignatureName  string
+	FooterText     string
+}
+
+func defaultTemplateStyle() TemplateStyle {
+	return TemplateStyle{
+		PrimaryColor:   "#105e4a",
+		SecondaryColor: "#093d30",
+		Title:          "SIJIL PENYERTAAN",
+		Subtitle:       "Dengan ini disahkan bahawa",
+		BodyText:       "telah menyertai",
+		IssuerName:     "MARC",
+		SignatureName:  "Pengurusan MARC",
+		FooterText:     "Imbas QR untuk mengesahkan sijil ini",
+	}
+}
+
+func templateStyle(data Data) TemplateStyle {
+	style := defaultTemplateStyle()
+	if data.Template != nil {
+		style = *data.Template
+	}
+	if style.PrimaryColor == "" {
+		style.PrimaryColor = "#105e4a"
+	}
+	if style.SecondaryColor == "" {
+		style.SecondaryColor = "#093d30"
+	}
+	if style.Title == "" {
+		style.Title = "SIJIL PENYERTAAN"
+	}
+	if style.Subtitle == "" {
+		style.Subtitle = "Dengan ini disahkan bahawa"
+	}
+	if style.BodyText == "" {
+		style.BodyText = "telah menyertai"
+	}
+	return style
+}
+
+func hexColor(value string, fallback [3]int) [3]int {
+	value = strings.TrimPrefix(value, "#")
+	if len(value) != 6 {
+		return fallback
+	}
+	r, errR := strconv.ParseInt(value[0:2], 16, 0)
+	g, errG := strconv.ParseInt(value[2:4], 16, 0)
+	b, errB := strconv.ParseInt(value[4:6], 16, 0)
+	if errR != nil || errG != nil || errB != nil {
+		return fallback
+	}
+	return [3]int{int(r), int(g), int(b)}
 }
 
 // Penterjemah cp1252 dikongsi untuk semakan pra-terbang.
@@ -94,6 +158,7 @@ func EncodableName(name string) bool {
 }
 
 func GeneratePDF(d Data) ([]byte, error) {
+	style := templateStyle(d)
 	// Setiap medan yang sampai kepada penterjemah disemak, bukan nama
 	// sahaja - tajuk atau kategori yang rosak sama teruknya. VerifyURL
 	// dikecualikan: ia masuk ke QR, tidak pernah dicetak sebagai teks.
@@ -102,6 +167,12 @@ func GeneratePDF(d Data) ([]byte, error) {
 		{"RecipientName", d.RecipientName},
 		{"ActivityTitle", d.ActivityTitle},
 		{"CategoryName", d.CategoryName},
+		{"TemplateTitle", style.Title},
+		{"TemplateSubtitle", style.Subtitle},
+		{"TemplateBodyText", style.BodyText},
+		{"TemplateIssuerName", style.IssuerName},
+		{"TemplateSignatureName", style.SignatureName},
+		{"TemplateFooterText", style.FooterText},
 	} {
 		if r, bad := unencodable(f.nilai); bad {
 			return nil, fmt.Errorf(
@@ -118,10 +189,10 @@ func GeneratePDF(d Data) ([]byte, error) {
 	tr := pdf.UnicodeTranslatorFromDescriptor("")
 	pdf.AddPage()
 
-	drawBorder(pdf)
-	drawHeading(pdf, tr)
-	drawRecipient(pdf, tr, d)
-	if err := drawFooter(pdf, tr, d); err != nil {
+	drawBorder(pdf, style)
+	drawHeading(pdf, tr, style)
+	drawRecipient(pdf, tr, d, style)
+	if err := drawFooter(pdf, tr, d, style); err != nil {
 		return nil, err
 	}
 
@@ -132,44 +203,49 @@ func GeneratePDF(d Data) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func drawBorder(pdf *fpdf.Fpdf) {
-	pdf.SetFillColor(brandColor[0], brandColor[1], brandColor[2])
+func drawBorder(pdf *fpdf.Fpdf, style TemplateStyle) {
+	primary := hexColor(style.PrimaryColor, brandColor)
+	secondary := hexColor(style.SecondaryColor, brandDark)
+	pdf.SetFillColor(primary[0], primary[1], primary[2])
 	pdf.Rect(0, 0, pageW, 14, "F")
-	pdf.SetFillColor(brandDark[0], brandDark[1], brandDark[2])
+	pdf.SetFillColor(secondary[0], secondary[1], secondary[2])
 	pdf.Rect(0, 14, pageW, 1.6, "F")
 
-	pdf.SetDrawColor(brandColor[0], brandColor[1], brandColor[2])
+	pdf.SetDrawColor(primary[0], primary[1], primary[2])
 	pdf.SetLineWidth(0.6)
 	pdf.Rect(10, 22, pageW-20, pageH-32, "D")
 }
 
-func drawHeading(pdf *fpdf.Fpdf, tr func(string) string) {
+func drawHeading(pdf *fpdf.Fpdf, tr func(string) string, style TemplateStyle) {
+	primary := hexColor(style.PrimaryColor, brandColor)
 	pdf.SetTextColor(255, 255, 255)
 	pdf.SetXY(marginX, 3)
 	pdf.SetFont("Helvetica", "B", 15)
 	pdf.CellFormat(contentW, 8, "MARC", "", 0, "L", false, 0, "")
 
-	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
+	pdf.SetTextColor(primary[0], primary[1], primary[2])
 	pdf.SetXY(marginX, 42)
 	pdf.SetFont("Helvetica", "B", 30)
-	pdf.CellFormat(contentW, 14, tr("SIJIL PENYERTAAN"), "", 2, "C", false, 0, "")
+	pdf.CellFormat(contentW, 14, tr(style.Title), "", 2, "C", false, 0, "")
 
 	pdf.SetFont("Helvetica", "", 11)
 	pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
-	pdf.CellFormat(contentW, 8, tr("Dengan ini disahkan bahawa"), "", 2, "C", false, 0, "")
+	pdf.CellFormat(contentW, 8, tr(style.Subtitle), "", 2, "C", false, 0, "")
 }
 
-func drawRecipient(pdf *fpdf.Fpdf, tr func(string) string, d Data) {
+func drawRecipient(pdf *fpdf.Fpdf, tr func(string) string, d Data, style TemplateStyle) {
+	primary := hexColor(style.PrimaryColor, brandColor)
+	secondary := hexColor(style.SecondaryColor, brandDark)
 	pdf.SetY(78)
-	pdf.SetTextColor(brandDark[0], brandDark[1], brandDark[2])
+	pdf.SetTextColor(secondary[0], secondary[1], secondary[2])
 	pdf.SetFont("Helvetica", "B", 26)
 	pdf.CellFormat(contentW, 14, tr(clip(pdf, d.RecipientName, contentW)), "", 2, "C", false, 0, "")
 
 	pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
 	pdf.SetFont("Helvetica", "", 11)
-	pdf.CellFormat(contentW, 8, tr("telah menyertai"), "", 2, "C", false, 0, "")
+	pdf.CellFormat(contentW, 8, tr(style.BodyText), "", 2, "C", false, 0, "")
 
-	pdf.SetTextColor(inkColor[0], inkColor[1], inkColor[2])
+	pdf.SetTextColor(primary[0], primary[1], primary[2])
 	pdf.SetFont("Helvetica", "B", 16)
 	pdf.CellFormat(contentW, 10, tr(clip(pdf, d.ActivityTitle, contentW)), "", 2, "C", false, 0, "")
 
@@ -179,7 +255,7 @@ func drawRecipient(pdf *fpdf.Fpdf, tr func(string) string, d Data) {
 	pdf.CellFormat(contentW, 7, tr(clip(pdf, meta, contentW)), "", 2, "C", false, 0, "")
 }
 
-func drawFooter(pdf *fpdf.Fpdf, tr func(string) string, d Data) error {
+func drawFooter(pdf *fpdf.Fpdf, tr func(string) string, d Data, style TemplateStyle) error {
 	png, err := qrcode.Encode(d.VerifyURL, qrcode.Medium, 256)
 	if err != nil {
 		return fmt.Errorf("jana QR: %w", err)
@@ -192,7 +268,10 @@ func drawFooter(pdf *fpdf.Fpdf, tr func(string) string, d Data) error {
 	pdf.SetTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
 	pdf.SetFont("Helvetica", "", 9)
 	pdf.CellFormat(contentW/2, 5, tr("No. Sijil  "+d.Serial), "", 2, "L", false, 0, "")
-	pdf.CellFormat(contentW/2, 5, tr("Imbas QR untuk mengesahkan sijil ini"), "", 2, "L", false, 0, "")
+	pdf.CellFormat(contentW/2, 5, tr(style.FooterText), "", 2, "L", false, 0, "")
+	pdf.SetXY(pageW/2, pageH-44)
+	pdf.CellFormat(contentW/2, 5, tr(style.SignatureName), "", 2, "R", false, 0, "")
+	pdf.CellFormat(contentW/2, 5, tr(style.IssuerName), "", 2, "R", false, 0, "")
 	return nil
 }
 

@@ -216,6 +216,7 @@ type Querier interface {
 	// nothing` (tiada baris dipulangkan), dan utk pelaporan/staff semak status
 	// kemudian.
 	GetAccountDeletionRequestByUserID(ctx context.Context, userID uuid.UUID) (AccountDeletionRequest, error)
+	GetActiveCertificateTemplate(ctx context.Context) (CertificateTemplate, error)
 	GetActivityByID(ctx context.Context, id uuid.UUID) (GetActivityByIDRow, error)
 	GetActivityCategoryByID(ctx context.Context, id uuid.UUID) (ActivityCategory, error)
 	GetActivitySessionByID(ctx context.Context, id uuid.UUID) (ActivitySession, error)
@@ -226,6 +227,7 @@ type Querier interface {
 	GetAttendance(ctx context.Context, arg GetAttendanceParams) (ActivityAttendance, error)
 	GetCertificateByID(ctx context.Context, id uuid.UUID) (ActivityCertificate, error)
 	GetCertificateByVerifyToken(ctx context.Context, verifyToken string) (ActivityCertificate, error)
+	GetCertificateTemplate(ctx context.Context, id uuid.UUID) (CertificateTemplate, error)
 	GetCommentAuthorID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	GetCommentByID(ctx context.Context, id uuid.UUID) (Comment, error)
 	GetDonationByGatewayRef(ctx context.Context, arg GetDonationByGatewayRefParams) (Donation, error)
@@ -377,6 +379,7 @@ type Querier interface {
 	ListAuditLogsByEntity(ctx context.Context, arg ListAuditLogsByEntityParams) ([]AuditLog, error)
 	// Skrin pengurusan CRUD domain disekat.
 	ListBlockedEmailDomains(ctx context.Context) ([]BlockedEmailDomain, error)
+	ListCertificateTemplates(ctx context.Context) ([]CertificateTemplate, error)
 	ListCertificatesByActivity(ctx context.Context, activityID uuid.UUID) ([]ActivityCertificate, error)
 	// Fasa 2 penerbitan menyambung dari sini. Baris tanpa r2_key ialah kerja
 	// yang belum siap, bukan ralat.
@@ -623,6 +626,7 @@ type Querier interface {
 	// Untuk tandakan "liked_by_me" bila list post - pulang subset post_ids
 	// yang user ni dah like.
 	PostsLikedByUser(ctx context.Context, arg PostsLikedByUserParams) ([]uuid.UUID, error)
+	PublishCertificateTemplate(ctx context.Context, id uuid.UUID) (CertificateTemplate, error)
 	// Menjaga invarian denormalisasi. SATU tempat yang menulis starts_at/ends_at
 	// selepas cipta - dipanggil dalam transaksi yang sama dengan setiap
 	// perubahan set sesi.
@@ -681,6 +685,7 @@ type Querier interface {
 	// nyahtetapkan default lama, supaya invariant "paling banyak SATU
 	// default" sentiasa dikekalkan sepanjang transaksi.
 	UpdateAddress(ctx context.Context, arg UpdateAddressParams) (MemberAddress, error)
+	UpdateCertificateTemplate(ctx context.Context, arg UpdateCertificateTemplateParams) (CertificateTemplate, error)
 	UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error)
 	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error)
 	// `status <> 'succeeded'` = 'succeeded' ialah keadaan TERMINAL: webhook
