@@ -103,11 +103,15 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		Port:            getEnv("PORT", "8080"),
-		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		JWTSecret:       os.Getenv("JWT_SECRET"),
-		AccessTokenTTL:  15 * time.Minute,
-		RefreshTokenTTL: 30 * 24 * time.Hour,
+		Port:        getEnv("PORT", "8080"),
+		DatabaseURL: os.Getenv("DATABASE_URL"),
+		JWTSecret:   os.Getenv("JWT_SECRET"),
+		// ACCESS_TOKEN_TTL_MINUTES / REFRESH_TOKEN_TTL_DAYS - kosong atau
+		// tak sah = default. Sifar ditolak (getEnvInt): sesi 0 minit/hari
+		// cuma paksa log masuk semula tanpa henti. marc_next punya
+		// MARC_REFRESH_TTL_DAYS mesti <= REFRESH_TOKEN_TTL_DAYS.
+		AccessTokenTTL:  time.Duration(getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 15)) * time.Minute,
+		RefreshTokenTTL: time.Duration(getEnvInt("REFRESH_TOKEN_TTL_DAYS", 30)) * 24 * time.Hour,
 		// Optional - kalau kosong, push notification jadi no-op senyap
 		// (padanan dengan initOneSignal() di Flutter).
 		OneSignalAppID:  os.Getenv("ONESIGNAL_APP_ID"),
