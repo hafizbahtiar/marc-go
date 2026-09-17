@@ -61,6 +61,25 @@ func TestLoadBootDenganDuaEnvWajibSahaja(t *testing.T) {
 	}
 }
 
+func TestLoadTokenTTLDariEnv(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/marc")
+	t.Setenv("JWT_SECRET", "s3cret")
+	t.Setenv("ACCESS_TOKEN_TTL_MINUTES", "60")
+	t.Setenv("REFRESH_TOKEN_TTL_DAYS", "0")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() gagal: %v", err)
+	}
+	if cfg.AccessTokenTTL != time.Hour {
+		t.Errorf("AccessTokenTTL = %v, mahu 1h", cfg.AccessTokenTTL)
+	}
+	// Sifar tak sah untuk sesi - jatuh ke default, bukan sesi 0 hari.
+	if cfg.RefreshTokenTTL != 30*24*time.Hour {
+		t.Errorf("RefreshTokenTTL = %v, mahu 30 hari", cfg.RefreshTokenTTL)
+	}
+}
+
 // PublicBaseURL lalai dibina drpd PORT - dua getEnv("PORT") berasingan
 // dalam ekspresi yang sama, jadi ia senyap terpesong kalau salah satu
 // diubah tanpa yang lain.

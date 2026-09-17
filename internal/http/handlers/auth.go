@@ -137,8 +137,9 @@ type tokenPairResponse struct {
 
 // issueTokens generate access token + refresh token (rekod refresh token
 // dalam DB). Access token TTL diambil dari j.accessTTL secara implicit
-// melalui GenerateAccessToken.
-func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (tokenPairResponse, error) {
+// melalui GenerateAccessToken. q = h.queries, atau queries dalam tx
+// (Refresh) supaya consume + insert token baru jatuh bersama.
+func (h *AuthHandler) issueTokens(c *gin.Context, q *sqlc.Queries, userID, familyID uuid.UUID) (tokenPairResponse, error) {
 	access, err := h.jwt.GenerateAccessToken(userID, familyID)
 	if err != nil {
 		return tokenPairResponse{}, err
@@ -149,7 +150,7 @@ func (h *AuthHandler) issueTokens(c *gin.Context, userID, familyID uuid.UUID) (t
 		return tokenPairResponse{}, err
 	}
 
-	_, err = h.queries.CreateRefreshToken(c.Request.Context(), sqlc.CreateRefreshTokenParams{
+	_, err = q.CreateRefreshToken(c.Request.Context(), sqlc.CreateRefreshTokenParams{
 		UserID:    userID,
 		TokenHash: auth.HashToken(refresh),
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(h.refreshTTL), Valid: true},
@@ -310,7 +311,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.issueTokens(c, user.ID, uuid.New())
+	tokens, err := h.issueTokens(c, h.queries, user.ID, uuid.New())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pendaftaran berjaya tapi gagal log masuk, sila log masuk semula"})
 		return
@@ -426,7 +427,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.issueTokens(c, user.ID, uuid.New())
+	tokens, err := h.issueTokens(c, h.queries, user.ID, uuid.New())
 	if err != nil {
 		log.Printf("log masuk gagal untuk user %s: %v", user.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "log masuk gagal"})
@@ -449,32 +450,57 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	ctx := c.Request.Context()
 	hash := auth.HashToken(req.RefreshToken)
 
+	// Consume + insert token baru dalam SATU tx. Tanpa ni, kegagalan DB
+	// selepas consume (cth: Postgres baru bangun dari sleep) membakar
+	// token lama tanpa ganti - client cuba semula dgn token sama, kena
+	// reuse-detection, family direvoke, user tercampak ke /login.
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		log.Printf("refresh: gagal mula tx: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := h.queries.WithTx(tx)
+
 	// Atomic single-use: UPDATE...RETURNING guard "consumed_at is null"
 	// dalam SATU statement, sama race-safety macam DELETE...RETURNING
 	// asal - kalau dua request serentak hantar hash yang sama, cuma
 	// satu dapat row balik (menang); yang satu lagi dapat 0 rows.
-	consumed, err := h.queries.ConsumeRefreshToken(ctx, sqlc.ConsumeRefreshTokenParams{
+	consumed, err := q.ConsumeRefreshToken(ctx, sqlc.ConsumeRefreshTokenParams{
 		TokenHash:  hash,
 		ConsumedIp: pgtype.Text{String: c.ClientIP(), Valid: true},
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Sama ada token ni tak pernah wujud, ATAU dah consumed
-			// sebelum ni. Kalau row wujud dan consumed_at dah set,
-			// ini REUSE - tanda token dicuri (attacker consume dulu,
-			// user asli cuba guna token yang sama lepas tu). Revoke
-			// SEMUA token dalam family ni supaya chain attacker (dan
-			// session user asli yang sama) sama-sama terputus, paksa
-			// re-login penuh.
-			if existing, ferr := h.queries.GetRefreshTokenByHash(ctx, hash); ferr == nil && existing.ConsumedAt.Valid {
-				withinGrace := time.Since(existing.ConsumedAt.Time) <= refreshReuseGraceWindow &&
-					consumedIPMatches(existing.ConsumedIp, c.ClientIP())
-				if !withinGrace {
-					if rerr := h.queries.RevokeRefreshTokenFamily(ctx, existing.FamilyID); rerr != nil {
-						log.Printf("gagal revoke refresh token family lepas reuse dikesan: %v", rerr)
-					} else {
-						log.Printf("refresh token reuse dikesan, family %s direvoke", existing.FamilyID)
-					}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			// Ralat DB BUKAN penolakan token - 500, bukan 401. Mobile
+			// clear sesi pada 401 refresh, jadi 401 di sini = logout palsu.
+			log.Printf("refresh: gagal consume token: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
+			return
+		}
+		_ = tx.Rollback(ctx)
+		// Sama ada token ni tak pernah wujud, ATAU dah consumed
+		// sebelum ni. Kalau row wujud dan consumed_at dah set,
+		// ini REUSE - tanda token dicuri (attacker consume dulu,
+		// user asli cuba guna token yang sama lepas tu). Revoke
+		// SEMUA token dalam family ni supaya chain attacker (dan
+		// session user asli yang sama) sama-sama terputus, paksa
+		// re-login penuh.
+		existing, ferr := h.queries.GetRefreshTokenByHash(ctx, hash)
+		if ferr != nil && !errors.Is(ferr, pgx.ErrNoRows) {
+			log.Printf("refresh: gagal semak reuse: %v", ferr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
+			return
+		}
+		if ferr == nil && existing.ConsumedAt.Valid {
+			withinGrace := time.Since(existing.ConsumedAt.Time) <= refreshReuseGraceWindow &&
+				consumedIPMatches(existing.ConsumedIp, c.ClientIP())
+			if !withinGrace {
+				if rerr := h.queries.RevokeRefreshTokenFamily(ctx, existing.FamilyID); rerr != nil {
+					log.Printf("gagal revoke refresh token family lepas reuse dikesan: %v", rerr)
+				} else {
+					log.Printf("refresh token reuse dikesan, family %s direvoke", existing.FamilyID)
 				}
 			}
 		}
@@ -487,9 +513,14 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 
-	tokens, err := h.issueTokens(c, consumed.UserID, consumed.FamilyID)
+	tokens, err := h.issueTokens(c, q, consumed.UserID, consumed.FamilyID)
 	if err != nil {
 		log.Printf("gagal reset sesi untuk user %s: %v", consumed.UserID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("refresh: gagal commit untuk user %s: %v", consumed.UserID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal reset sesi"})
 		return
 	}
